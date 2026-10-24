@@ -1,0 +1,44 @@
+# Agak eksperimental, tapi intinya adalah biar tiap PR bisa langsung request review ke pemilik kode (kalau ada request)
+
+# Default (alias tumbal)
+*  @m-akma1
+
+# Query processor (G1 - QP)
+/src/main/java/org/rafendb/mock/processor/      @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/src/main/java/org/rafendb/processor/           @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/src/main/java/org/rafendb/net/                 @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/src/main/java/org/rafendb/server/              @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/src/main/java/org/rafendb/client/              @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/src/test/java/org/rafendb/processor/           @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+/test-scenarios/processor/                      @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
+
+# Query optimizer (G3 - QO) (-1)
+/src/main/java/org/rafendb/mock/optimizer/      @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
+/src/main/java/org/rafendb/optimizer/           @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
+/src/test/java/org/rafendb/optimizer/           @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
+/test-scenarios/optimizer/                      @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
+
+# Storage manager (G4 - SM)
+/src/main/java/org/rafendb/mock/storage/        @Akram17t @bangedaw @Shui7 @fahdmz @Spicycoincracker
+/src/main/java/org/rafendb/storage/             @Akram17t @bangedaw @Shui7 @fahdmz @Spicycoincracker
+/src/test/java/org/rafendb/storage/             @Akram17t @bangedaw @Shui7 @fahdmz @Spicycoincracker
+/test-scenarios/storage/                        @Akram17t @bangedaw @Shui7 @fahdmz @Spicycoincracker
+
+# Concurrency control manager (G2 - CCM) [-1]
+/src/main/java/org/rafendb/mock/concurrency/    @rhenprojects @staplesmaster @miguelsinaga @Awan-Haidir
+/src/main/java/org/rafendb/concurrency/         @rhenprojects @staplesmaster @miguelsinaga @Awan-Haidir
+/src/test/java/org/rafendb/concurrency/         @rhenprojects @staplesmaster @miguelsinaga @Awan-Haidir
+/test-scenarios/concurrency/                    @rhenprojects @staplesmaster @miguelsinaga @Awan-Haidir
+
+# Failure recovery manager (G5 - FRM) [-1]
+/src/main/java/org/rafendb/mock/recovery/       @Tensai-033 @SukaBotol @tengkuNaufal
+/src/main/java/org/rafendb/recovery/            @Tensai-033 @SukaBotol @tengkuNaufal
+/src/test/java/org/rafendb/recovery/            @Tensai-033 @SukaBotol @tengkuNaufal
+/test-scenarios/recovery/                       @Tensai-033 @SukaBotol @tengkuNaufal
+
+# API (atmint groups)
+/src/main/java/org/rafendb/api/processor/               @m-akma1 @Celtors
+/src/main/java/org/rafendb/api/optimizer/               @m-akma1 @achideon
+/src/main/java/org/rafendb/api/storage/                 @m-akma1 @Akram17t
+/src/main/java/org/rafendb/api/concurrency/             @m-akma1 @staplesmaster
+/src/main/java/org/rafendb/api/recovery/                @m-akma1 @Tensai-033
