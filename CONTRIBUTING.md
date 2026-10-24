@@ -43,7 +43,7 @@ git switch -c qp/client-server-setup
 ./mvnw verify
 
 # Commit and push as usual
-git commit -m "feat(sm): implement client sever message passing communication"
+git commit -m "feat(qp): implement client sever message passing communication"
 git push -u origin qp/client-server-setup
 
 # Create PR from GitHub Web or via CLI
@@ -70,8 +70,7 @@ gh pr create
 3. **Package-private by default.** Make a class `public` only when another package needs it. Internals then stay out of other groups' autocomplete.
 4. **Every `api` method's Javadoc states** preconditions, nullability, exceptions, and thread-safety. **Thread-safety** is not optional: several client sessions call every component at the same time. Hati-hati dengan race condition dan deadlock ya guys.
 5. **No libraries in main code.** The JDK only, with Test code may use JUnit. The build rejects any other dependency.
-6. **Cross-component imports are reported but not blocked.** CI lists imports that bypass `api` in the run summary. Reviewers decide whether they are fine.
-7. **Document how each method/class/record works.** Pakai javadoc. Contoh:
+6. **Document how each method/class/record works.** Pakai javadoc. Contoh:
 
 ```java
 /**
@@ -162,7 +161,7 @@ Kontrak Antarmuka ada di `api/` dan tipe data didefinisikan di `common/`. Lapora
 
 ## 5. Drivers and mocks
 
-* Every component has an interactive driver: `scripts/run driver <component>`.
+* Every component has an interactive driver: `scripts/run.sh driver <component>`.
 * **Drivers use the real components by default.** Pakai flag `--mock=storage,recovery` untuk diisi mocks. The driver prints which components are mocked at startup. Running your driver against the real system is integration testing for free. Mock bisa dipakai untuk sementara saja dan sebagai *fallback* ketika demo.
 * Untuk **mempermudah testing driver dan pengecekan beberapa skenario**, ada folder `test-scenarios/` untuk **script atau txt file per komponen**. Check `test-scenarios/<component>/` and run with `run <file>` inside the driver. They are plain files so they can change without a rebuild.
 * `mock/<component>/` is written by the group that owns the interface. Mocks only return dummy values, behaviour-rich fakes that a driver needs belong to the group that needs them.

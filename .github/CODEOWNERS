@@ -12,7 +12,7 @@
 /src/test/java/org/rafendb/processor/           @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
 /test-scenarios/processor/                      @Celtors @m-akma1 @suryaniutaami @llennmaha @NathanaelGun
 
-# Query optimizer (G3 - QO) (-1)
+# Query optimizer (G3 - QO)
 /src/main/java/org/rafendb/mock/optimizer/      @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
 /src/main/java/org/rafendb/optimizer/           @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
 /src/test/java/org/rafendb/optimizer/           @achideon @RND815 @alyanrrhma @StevenT-1 @MikhaelBenrael
@@ -42,3 +42,5 @@
 /src/main/java/org/rafendb/api/storage/                 @m-akma1 @Akram17t
 /src/main/java/org/rafendb/api/concurrency/             @m-akma1 @staplesmaster
 /src/main/java/org/rafendb/api/recovery/                @m-akma1 @Tensai-033
+
+# etc. TBD (masih bisa diedit lagi)

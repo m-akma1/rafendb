@@ -46,6 +46,6 @@ if [[ ! -f "$JAR" ]]; then
   exit 1
 fi
 
-# Run from the repo root so relative paths (data/, scenarios/...) mean the same thing for everyone.
+# Run from the repo root so relative paths (data/, test-scenarios/...) mean the same thing for everyone.
 cd "$ROOT"
 exec java -cp "$JAR" "$main" "$@"
