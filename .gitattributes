@@ -1,0 +1,17 @@
+# All LF endlines
+* text=auto eol=lf
+
+# Windows scripts need CRLF or cmd.exe misreads them.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Unix scripts need LF or they fail with "bad interpreter: /bin/sh^M".
+mvnw        text eol=lf
+*.sh        text eol=lf
+scripts/run text eol=lf
+
+# Binary files: never convert.
+*.jar binary
+*.png binary
+*.jpg binary
+*.pdf binary

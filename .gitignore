@@ -1,4 +1,13 @@
+# Maven build outputs
 target/
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# Pom files
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
@@ -7,11 +16,52 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
+
 # https://maven.apache.org/tools/wrapper/#Usage_with_or_without_Binary_JAR
 .mvn/wrapper/maven-wrapper.jar
 
 # Eclipse m2e generated files
+
 # Eclipse Core
+.settings/
 .project
+.classpath
+.factorypath
+bin/
+tmp/
+
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+# Log and local files
+*.log
+*.sqlite
+*.db
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Other IDEs and editors
+.vscode/
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+desktop.ini
