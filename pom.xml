@@ -6,7 +6,7 @@
 
   <groupId>org.rafendb</groupId>
   <artifactId>rafendb</artifactId>
-  <!-- Set for each release. Local builds are 0-SNAPSHOT. -->
+  <!-- Set for each release. Local builds are x.y.z-dev-SNAPSHOT -->
   <version>${revision}</version>
   <packaging>jar</packaging>
 
@@ -14,7 +14,7 @@
   <description>mini Database Management System from scratch. Made for IF3140 Database System Sem 1 2026/2027</description>
 
   <properties>
-    <revision>0-SNAPSHOT</revision>
+    <revision>0.1.0-dev-SNAPSHOT</revision>
 
     <!-- Language level. javac checks against the Java 25 API even on a newer JDK. -->
     <maven.compiler.release>25</maven.compiler.release>

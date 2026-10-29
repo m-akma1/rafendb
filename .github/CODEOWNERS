@@ -37,10 +37,17 @@
 /test-scenarios/recovery/                       @Tensai-033 @SukaBotol @tengkuNaufal
 
 # API (atmint groups)
-/src/main/java/org/rafendb/api/processor/               @m-akma1 @Celtors
-/src/main/java/org/rafendb/api/optimizer/               @m-akma1 @achideon
-/src/main/java/org/rafendb/api/storage/                 @m-akma1 @Akram17t
-/src/main/java/org/rafendb/api/concurrency/             @m-akma1 @staplesmaster
-/src/main/java/org/rafendb/api/recovery/                @m-akma1 @Tensai-033
+/src/main/java/org/rafendb/api/processor/       @m-akma1 @Celtors
+/src/main/java/org/rafendb/api/optimizer/       @m-akma1 @achideon
+/src/main/java/org/rafendb/api/storage/         @m-akma1 @Akram17t
+/src/main/java/org/rafendb/api/concurrency/     @m-akma1 @staplesmaster
+/src/main/java/org/rafendb/api/recovery/        @m-akma1 @Tensai-033
+
+# Common codes
+/src/main/java/org/rafendb/common/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
+/src/main/java/org/rafendb/driver/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
+/src/main/java/org/rafendb/engine/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
+/src/main/java/org/resources/                   @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
+/src/test/                                      @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
 
 # etc. TBD (masih bisa diedit lagi)
