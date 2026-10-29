@@ -1,11 +1,11 @@
 package org.rafendb.client;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 import org.rafendb.engine.Version;
+import org.rafendb.net.Protocol;
 
 /**
  * Placeholder for client entry point.
@@ -15,23 +15,30 @@ import org.rafendb.engine.Version;
 public final class ClientMain {
     private ClientMain() {}
 
+    private static boolean quit(String msg) {
+        return msg.equals("q") || msg.equals("quit") || msg.equals("exit");
+    }
+
     public static void main(String[] args) {
         try {
-            System.out.println("Starting a new client!");
-            Socket publisher = new Socket("127.0.0.1", 3140);
-            System.out.println("Connection established, write messages below!");
+            System.out.println(Version.banner("Client"));
 
-            OutputStream output = publisher.getOutputStream();
+            System.out.println("Starting a new client...");
+            Socket publisher = new Socket("127.0.0.1", 3140);
+            System.out.println("Connection established, welcome to RafenDB!");
+
+            DataOutputStream output = new DataOutputStream(publisher.getOutputStream());
+
+            System.out.print("RafenDB # ");
 
             Scanner stdin = new Scanner(System.in);
-            String input = "A message from client.";
+            String input = stdin.nextLine();
 
-            do {
-                byte[] buffer = input.getBytes(StandardCharsets.UTF_8);
-                output.write(buffer);
-
+            while (input != null && !quit(input)) {
+                Protocol.writeFrame(output, input);
+                System.out.print("RafenDB # ");
                 input = stdin.nextLine();
-            } while (input != null && !input.equals("q"));
+            }
 
             stdin.close();
             publisher.close();
@@ -40,8 +47,5 @@ public final class ClientMain {
         } catch (IOException e) {
             System.err.println("Error encountered: " + e.getMessage());
         }
-
-        System.out.println(Version.banner("Client"));
-        System.out.println("Not implemented yet.");
     }
 }
