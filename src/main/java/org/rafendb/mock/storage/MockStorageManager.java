@@ -308,8 +308,8 @@ public final class MockStorageManager implements StorageManager {
      * {@inheritDoc}
      *
      * <p>
-     * Mock: validates the definition against the dummy tables and indexes; no index
-     * is created.
+     * Mock: validates the arguments only and does not record the index, so
+     * {@code listIndexes} is unchanged afterwards.
      */
     @Override
     public void createIndex(IndexInfo index) {
