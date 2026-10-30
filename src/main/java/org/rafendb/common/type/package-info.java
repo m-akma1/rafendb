@@ -1,6 +1,11 @@
 /**
- * DataType (INTEGER, FLOAT, CHAR(n), VARCHAR(n)) and Value. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Column types and typed values: {@link org.rafendb.common.type.DataType}
+ * enumerates INTEGER, FLOAT,
+ * CHAR and VARCHAR, and {@link org.rafendb.common.type.Value} is one typed
+ * value or SQL NULL. Both
+ * are immutable and thread-safe.
  *
- * <p>Owner: Supergroup.
+ * <p>
+ * Owner: Supergroup.
  */
 package org.rafendb.common.type;
