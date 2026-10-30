@@ -1,5 +1,6 @@
 package org.rafendb.common.plan;
 
+import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
 // butuh IndexType dan IndexConditionType tapi nanti aja
