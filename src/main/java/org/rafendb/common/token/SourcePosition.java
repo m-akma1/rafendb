@@ -11,11 +11,21 @@ public class SourcePosition {
         this.line = line;
         this.column = column;
     }
-    public int getOffset(){ return offset; }
-    public int getLine(){ return line; }
-    public int getColumn(){ return column; }
-    @Override 
-    public String toString(){
+
+    public int getOffset() {
+        return offset;
+    }
+
+    public int getLine() {
+        return line;
+    }
+
+    public int getColumn() {
+        return column;
+    }
+
+    @Override
+    public String toString() {
         return "line " + line + ", column " + column;
     }
 }
