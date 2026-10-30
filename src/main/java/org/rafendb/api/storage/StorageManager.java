@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.function.ToLongFunction;
 import org.rafendb.common.error.StorageException;
 import org.rafendb.common.schema.IndexInfo;
+import org.rafendb.common.schema.ReferencingForeignKey;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
@@ -33,13 +34,55 @@ public interface StorageManager extends AutoCloseable {
     List<String> listTables();
 
     /**
-     * Returns a table's schema.
+     * Returns a table's schema, including its outgoing foreign keys.
      *
      * @param table the table name
      * @return the schema
      * @throws StorageException if the table does not exist
      */
     TableSchema getSchema(String table);
+
+    /**
+     * Lists every foreign key that references {@code table}, from any table including itself.
+     * Thread-safe.
+     *
+     * @param table the referenced table name, non-null
+     * @return the foreign keys with their owning tables; unmodifiable, empty if none
+     * @throws NullPointerException if {@code table} is {@code null}
+     * @throws StorageException if the table does not exist
+     */
+    List<ReferencingForeignKey> listReferencingForeignKeys(String table);
+
+    /**
+     * Registers a new empty table in the catalog. DDL: not logged by the Failure Recovery Manager
+     * and cannot be rolled back. Thread-safe.
+     *
+     * <p>A foreign key may reference the table itself. Its referenced columns must be exactly the
+     * referenced table's primary key columns, in order, and each pair must have the same type
+     * family (INTEGER, FLOAT, text).
+     *
+     * @param schema the table definition, non-null
+     * @throws NullPointerException if {@code schema} is {@code null}
+     * @throws StorageException if the table exists, a referenced table does not exist, the
+     *     referenced columns are not the referenced primary key in order, or the column counts or
+     *     type families differ
+     */
+    void createTable(TableSchema schema);
+
+    /**
+     * Removes a table's data, indexes and catalog entry. DDL: not logged by the Failure Recovery
+     * Manager and cannot be undone. Thread-safe.
+     *
+     * <p>Self-referencing foreign keys are ignored. With {@code cascade}, the foreign keys of
+     * other tables that reference this table are removed; those tables and their rows remain.
+     *
+     * @param table the table name, non-null
+     * @param cascade whether to remove foreign keys of other tables that reference this table
+     * @throws NullPointerException if {@code table} is {@code null}
+     * @throws StorageException if the table does not exist, or {@code cascade} is {@code false}
+     *     and another table has a foreign key referencing it
+     */
+    void dropTable(String table, boolean cascade);
 
     /**
      * Returns a table's statistics. Record and block counts are always current; the other fields
