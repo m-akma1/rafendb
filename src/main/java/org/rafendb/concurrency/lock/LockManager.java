@@ -1,5 +1,7 @@
 package org.rafendb.concurrency.lock;
 
+import java.util.Map;
+import java.util.Set;
 import org.rafendb.common.txn.AccessType;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
@@ -33,6 +35,12 @@ public interface LockManager {
      * @throws NullPointerException if any argument is null
      */
     boolean tryAcquire(TxId tx, AccessType type, ResourceId resource);
+
+    /**
+     * Returns a non-null, consistent, deeply unmodifiable wait-for snapshot for CC-07. Include
+     * holder and queue-order blockers across table/row levels and upgrades; exclude self-edges.
+     */
+    Map<TxId, Set<TxId>> waitForGraph();
 
     /**
      * Idempotently removes queued requests, including upgrades, without releasing held locks.
