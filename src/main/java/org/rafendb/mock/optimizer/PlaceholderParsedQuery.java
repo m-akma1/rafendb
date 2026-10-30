@@ -1,6 +1,7 @@
 package org.rafendb.mock.optimizer;
 
 import org.rafendb.common.query.ParsedQuery;
+
 /**
  * Minimal {@link ParsedQuery} that just echoes the original SQL.
  * Replace with real query subtypes once parsing is implemented.

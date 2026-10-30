@@ -1,7 +1,8 @@
 package org.rafendb.mock.optimizer;
 
-import org.rafendb.common.plan.PlanNode;
 import java.util.List;
+import org.rafendb.common.plan.PlanNode;
+
 /**
  * Minimal leaf {@link PlanNode} with a fixed description and no children.
  * Replace with real plan nodes (table scan, selection, join, ...).
