@@ -1,5 +1,7 @@
 package org.rafendb.common.expr;
 
+import org.rafendb.common.type.Value;
+
 /**
  * Expression tree produced by the query parser for WHERE conditions, JOIN ... ON
  * conditions, and the value part of SET. Nodes are immutable and thread-safe;
@@ -20,7 +22,7 @@ public sealed interface Expr {
      *
      * @param value a {@link Long}, {@link Double}, or {@link String}; never {@code null}
      */
-    record Literal(Object value) implements Expr {}
+    record Literal(Value value) implements Expr {}
 
     /**
      * A binary operation. {@code AND} chains are left-nested:
