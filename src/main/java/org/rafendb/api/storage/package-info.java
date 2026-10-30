@@ -1,6 +1,11 @@
 /**
- * Interfaces SM provides to other components. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Storage Manager contract: {@link org.rafendb.api.storage.StorageManager}, its
+ * {@link
+ * org.rafendb.api.storage.RecordCursor}, the
+ * {@link org.rafendb.api.storage.WalSync} hook and
+ * {@link org.rafendb.api.storage.StorageException}.
  *
- * <p>Owner: G4 Storage Manager.
+ * <p>
+ * Owner: Storage Manager.
  */
 package org.rafendb.api.storage;
