@@ -1,6 +1,5 @@
 package org.rafendb.common.plan;
 
-import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
 // butuh IndexType dan IndexConditionType tapi nanti aja
@@ -9,10 +8,7 @@ public class IndexScanDescriptor {
     private final String column;
     private final Expr condition;
 
-    public IndexScanDescriptor(
-            String indexName,
-            String column,
-            Expr condition) {
+    public IndexScanDescriptor(String indexName, String column, Expr condition) {
         Objects.requireNonNull(indexName, "indexName");
         Objects.requireNonNull(column, "column");
         Objects.requireNonNull(condition, "condition");

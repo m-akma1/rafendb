@@ -3,8 +3,8 @@ package org.rafendb.common.plan;
 import java.util.List;
 
 public class TableScanNode implements PlanNode {
-    public String alias;
-    public String table;
+    private String alias;
+    private String table;
 
     public TableScanNode(String alias, String table) {
         this.alias = alias;
