@@ -61,6 +61,9 @@ public interface StorageManager extends AutoCloseable {
      * referenced table's primary key columns, in order, and each pair must have the same type
      * family (INTEGER, FLOAT, text).
      *
+     * <p>Neither creating a table nor declaring a primary key creates any index; callers use
+     * {@link #createIndex}.
+     *
      * @param schema the table definition, non-null
      * @throws NullPointerException if {@code schema} is {@code null}
      * @throws StorageException if the table exists, a referenced table does not exist, the
@@ -75,6 +78,9 @@ public interface StorageManager extends AutoCloseable {
      *
      * <p>Self-referencing foreign keys are ignored. With {@code cascade}, the foreign keys of
      * other tables that reference this table are removed; those tables and their rows remain.
+     *
+     * <p>The table's indexes are removed too. A table later created with the same name starts
+     * empty.
      *
      * @param table the table name, non-null
      * @param cascade whether to remove foreign keys of other tables that reference this table
@@ -189,7 +195,8 @@ public interface StorageManager extends AutoCloseable {
     /**
      * Deletes every live record, keeping the table and indexes. For each record, {@code logDelete}
      * runs first on the calling thread to log the DELETE and return its LSN. If it throws, clearing
-     * stops and the exception propagates; earlier deletions stay.
+     * stops and the exception propagates; earlier deletions stay. The index entries of each deleted
+     * record are removed as part of deleting that record, like {@link #delete}.
      *
      * @param table the table name
      * @param logDelete logs a record's DELETE and returns its LSN
@@ -201,8 +208,18 @@ public interface StorageManager extends AutoCloseable {
     /**
      * Builds an index from the existing records and registers it.
      *
+     * <p>NULL values are not indexed: rows with a NULL key are never returned by {@link
+     * #lookupIndex} or {@link #rangeIndex}, so IS NULL must not be answered through an index.
+     *
+     * <p>A text column too wide for the index structure is rejected. The B_PLUS_TREE limit is
+     * currently 1337 UTF-8 bytes; HASH has no such limit. The limit is an implementation detail
+     * and may change.
+     *
+     * <p>The build is atomic: if it fails, no index is registered and existing data is unchanged.
+     *
      * @param index the index definition
-     * @throws StorageException if the table or column does not exist or the name is used
+     * @throws StorageException if the table or column does not exist, the name is used, or a text
+     *     column is too wide for the index structure
      */
     void createIndex(IndexInfo index);
 
