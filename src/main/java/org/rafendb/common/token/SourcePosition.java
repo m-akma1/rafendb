@@ -11,8 +11,10 @@ package org.rafendb.common.token;
 public class SourcePosition {
     /** Zero-based character offset from the start of the source. */
     public int offset;
+
     /** One-based line number. */
     public int line;
+
     /** One-based column number within the line. */
     public int column;
 
