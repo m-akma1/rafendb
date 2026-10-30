@@ -1,26 +1,26 @@
 package org.rafendb.common.tuple;
 
-import java.util.Objects;
-
 /**
- * Address of a record slot. It does not change when the record's byte offset in the page changes;
- * a move that would change it must be a logged DELETE plus INSERT. With the table name it
- * identifies a record for CCM locking.
+ * Address of a record slot in a table's heap file. A Rid only has meaning together with its table
+ * name, which every Storage Manager call passes alongside it. It does not change when the record's
+ * byte offset inside the page changes; a move that would change it must be done as a logged DELETE
+ * plus INSERT. Together with the table name it identifies a record for CCM locking.
  *
  * <p>Immutable and thread-safe.
  *
- * @param block the block holding the slot
- * @param slot the slot number, starting at zero
+ * @param block the block number inside the table's heap file, starting at zero
+ * @param slot the slot number inside that block, starting at zero
  */
-public record Rid(BlockId block, int slot) implements Comparable<Rid> {
+public record Rid(long block, int slot) implements Comparable<Rid> {
     /**
      * Validates the components.
      *
-     * @throws NullPointerException if {@code block} is {@code null}
-     * @throws IllegalArgumentException if {@code slot} is negative
+     * @throws IllegalArgumentException if {@code block} or {@code slot} is negative
      */
     public Rid {
-        Objects.requireNonNull(block, "block");
+        if (block < 0) {
+            throw new IllegalArgumentException("block must be >= 0, got " + block);
+        }
         if (slot < 0) {
             throw new IllegalArgumentException("slot must be >= 0, got " + slot);
         }
@@ -35,8 +35,7 @@ public record Rid(BlockId block, int slot) implements Comparable<Rid> {
      */
     @Override
     public int compareTo(Rid other) {
-        Objects.requireNonNull(other, "other");
-        int c = block.compareTo(other.block);
+        int c = Long.compare(block, other.block);
         return c != 0 ? c : Integer.compare(slot, other.slot);
     }
 }
