@@ -20,9 +20,6 @@ import org.rafendb.common.type.Value;
  */
 public final class IndexKeys {
 
-    /** Bytes of a Rid in an entry: a {@code long} block and an {@code int} slot. */
-    static final int RID_BYTES = 12;
-
     /** Bytes of a B+ tree node header: {@code isLeaf}, {@code count} and {@code nextLeaf}. */
     static final int NODE_HEADER_BYTES = 11;
 
@@ -100,7 +97,7 @@ public final class IndexKeys {
      */
     public static void requireIndexable(Column column, IndexType type, int pageSize) {
         Objects.requireNonNull(type, "type");
-        int maxEntry = maxEntrySize(column);
+        int maxEntry = KeyCodec.maxEntrySize(column);
         int needed =
                 switch (type) {
                     case B_PLUS_TREE ->
@@ -112,18 +109,5 @@ public final class IndexKeys {
         if (needed > pageSize) {
             throw new StorageException("column " + column.name() + " is too wide to index");
         }
-    }
-
-    /**
-     * Returns the size of the widest encoded entry of a column: the key (4 bytes for INTEGER and
-     * FLOAT; a 2-byte length plus up to {@code length} UTF-8 bytes for text) and the Rid.
-     *
-     * @param column the column
-     * @return the size in bytes
-     * @throws NullPointerException if {@code column} is {@code null}
-     */
-    static int maxEntrySize(Column column) {
-        int keyBytes = column.type().isText() ? 2 + column.length() : 4;
-        return keyBytes + RID_BYTES;
     }
 }
