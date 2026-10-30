@@ -13,8 +13,11 @@ import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageException;
 import org.rafendb.common.schema.Column;
+import org.rafendb.common.schema.ForeignKey;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
+import org.rafendb.common.schema.ReferencingForeignKey;
+import org.rafendb.common.schema.ReferentialAction;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
@@ -36,12 +39,21 @@ public final class MockStorageManager implements StorageManager {
     private static final int BLOCK_SIZE = 4096;
     private static final int NUMERIC_SIZE = 4;
 
+    private static final ForeignKey MAHASISWA_PRODI_FK =
+            new ForeignKey(
+                    "mahasiswa_prodi_fk",
+                    List.of("kode_prodi"),
+                    "prodi",
+                    List.of("kode"),
+                    ReferentialAction.RESTRICT);
+
     private static final Table PRODI =
             table(
                     "prodi",
                     List.of(
                             new Column("kode", DataType.CHAR, 3, false, true),
                             new Column("nama", DataType.VARCHAR, 50, false, false)),
+                    List.of(),
                     List.of(
                             prodiRow("IF", "Teknik Informatika"),
                             prodiRow("STI", "Sistem dan Teknologi Informasi"),
@@ -55,6 +67,7 @@ public final class MockStorageManager implements StorageManager {
                             new Column("nama", DataType.VARCHAR, 50, false, false),
                             new Column("ipk", DataType.FLOAT, 0, true, false),
                             new Column("kode_prodi", DataType.CHAR, 3, false, false)),
+                    List.of(MAHASISWA_PRODI_FK),
                     List.of(
                             mahasiswaRow(13524275, "John Doe", 3.75f, "IF"),
                             mahasiswaRow(13524276, "Jane Smith", 3.92f, "IF"),
@@ -97,6 +110,50 @@ public final class MockStorageManager implements StorageManager {
     public TableSchema getSchema(String table) {
         ensureOpen();
         return tableNamed(table).schema();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Mock: returns the dummy foreign keys that reference the table, possibly none.
+     */
+    @Override
+    public List<ReferencingForeignKey> listReferencingForeignKeys(String table) {
+        ensureOpen();
+        return referencingKeys(tableNamed(table));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Mock: throws if the name is a dummy table; otherwise does nothing.
+     */
+    @Override
+    public void createTable(TableSchema schema) {
+        ensureOpen();
+        Objects.requireNonNull(schema, "schema");
+        if (TABLES.containsKey(schema.table())) {
+            throw new StorageException("table already exists: " + schema.table());
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Mock: throws if another dummy table references the table and {@code cascade} is
+     * {@code false}; nothing is dropped.
+     */
+    @Override
+    public void dropTable(String table, boolean cascade) {
+        ensureOpen();
+        Table t = tableNamed(table);
+        if (!cascade
+                && referencingKeys(t).stream().anyMatch(k -> !k.referencingTable().equals(table))) {
+            throw new StorageException("table is referenced by a foreign key: " + table);
+        }
     }
 
     /**
@@ -421,6 +478,28 @@ public final class MockStorageManager implements StorageManager {
     }
 
     /**
+     * Collects the dummy foreign keys that reference a table, owners in listing order.
+     *
+     * @param t the referenced table
+     * @return the foreign keys with their owning tables; unmodifiable
+     */
+    private static List<ReferencingForeignKey> referencingKeys(Table t) {
+        return List.of(MAHASISWA, PRODI).stream()
+                .flatMap(
+                        owner ->
+                                owner.schema().foreignKeys().stream()
+                                        .filter(
+                                                fk ->
+                                                        fk.referencedTable()
+                                                                .equals(t.schema().table()))
+                                        .map(
+                                                fk ->
+                                                        new ReferencingForeignKey(
+                                                                owner.schema().table(), fk)))
+                .toList();
+    }
+
+    /**
      * Finds a dummy index.
      *
      * @param name the index name
@@ -556,15 +635,17 @@ public final class MockStorageManager implements StorageManager {
      *
      * @param name    the table name
      * @param columns the columns
+     * @param foreignKeys the outgoing foreign keys
      * @param rows    the row values in order
      * @return the table
      */
-    private static Table table(String name, List<Column> columns, List<Row> rows) {
+    private static Table table(
+            String name, List<Column> columns, List<ForeignKey> foreignKeys, List<Row> rows) {
         List<StoredRow> stored =
                 IntStream.range(0, rows.size())
                         .mapToObj(i -> new StoredRow(ridAt(i), rows.get(i)))
                         .toList();
-        return new Table(new TableSchema(name, columns), stored);
+        return new Table(new TableSchema(name, columns, foreignKeys), stored);
     }
 
     /**
