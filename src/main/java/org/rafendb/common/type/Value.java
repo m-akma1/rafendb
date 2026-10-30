@@ -9,6 +9,9 @@ import java.util.Objects;
  * and FLOAT never equal each other. Two NULLs of one family are equal here, which is not SQL NULL
  * semantics.
  *
+ * <p>A FLOAT of {@code -0.0f} is normalized to {@code 0.0f} on construction, so {@link #equals},
+ * {@link #hashCode} and {@link #compareTo} treat the two zeros as the same value, as in SQL.
+ *
  * <p>Immutable and thread-safe.
  *
  * @param type the value type, also set for NULL
@@ -17,7 +20,7 @@ import java.util.Objects;
  */
 public record Value(DataType type, Object value) implements Comparable<Value> {
     /**
-     * Validates the components.
+     * Validates the components and normalizes a FLOAT {@code -0.0f} to {@code 0.0f}.
      *
      * @throws NullPointerException if {@code type} is {@code null}
      * @throws IllegalArgumentException if a non-null {@code value} has the wrong Java class
@@ -38,6 +41,9 @@ public record Value(DataType type, Object value) implements Comparable<Value> {
                                 + " is not valid for type "
                                 + type);
             }
+            if (value instanceof Float f && f == 0.0f) {
+                value = 0.0f;
+            }
         }
     }
 
@@ -52,7 +58,7 @@ public record Value(DataType type, Object value) implements Comparable<Value> {
     }
 
     /**
-     * Creates a FLOAT value.
+     * Creates a FLOAT value; {@code -0.0f} is stored as {@code 0.0f}.
      *
      * @param v the float
      * @return the value
