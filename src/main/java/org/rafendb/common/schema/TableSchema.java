@@ -14,14 +14,15 @@ import java.util.Set;
  * @param table the table name, non-blank
  * @param columns the columns in declaration order; non-empty, unique names, copied and
  *     unmodifiable
+ * @param foreignKeys the outgoing foreign keys; unique names, columns must exist in this table,
+ *     copied and unmodifiable
  */
-public record TableSchema(String table, List<Column> columns) {
+public record TableSchema(String table, List<Column> columns, List<ForeignKey> foreignKeys) {
     /**
-     * Validates and copies the components.
+     * Validates and copies the components. Referenced tables are not checked here.
      *
-     * @throws NullPointerException if {@code table}, {@code columns} or a column is {@code null}
-     * @throws IllegalArgumentException if the table name is blank, there are no columns, or column
-     *     names repeat
+     * @throws NullPointerException if a component or list element is {@code null}
+     * @throws IllegalArgumentException if a rule above is violated
      */
     public TableSchema {
         Objects.requireNonNull(table, "table");
@@ -38,6 +39,29 @@ public record TableSchema(String table, List<Column> columns) {
                 throw new IllegalArgumentException("duplicate column name: " + c.name());
             }
         }
+        foreignKeys = List.copyOf(foreignKeys);
+        Set<String> fkNames = new HashSet<>();
+        for (ForeignKey fk : foreignKeys) {
+            if (!fkNames.add(fk.name())) {
+                throw new IllegalArgumentException("duplicate foreign key name: " + fk.name());
+            }
+            for (String col : fk.columns()) {
+                if (!seen.contains(col)) {
+                    throw new IllegalArgumentException(
+                            "foreign key " + fk.name() + " names unknown column: " + col);
+                }
+            }
+        }
+    }
+
+    /**
+     * Creates a table definition without foreign keys.
+     *
+     * @param table the table name
+     * @param columns the columns in declaration order
+     */
+    public TableSchema(String table, List<Column> columns) {
+        this(table, columns, List.of());
     }
 
     /**
