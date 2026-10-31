@@ -1,9 +1,6 @@
 package org.rafendb.common.error;
 
-/**
- * Axis A: which supergroup component raised the error.
- * Fixed per component base class via {@link RafenDBError#component()}.
- */
+/** The component that raised an error; prefixes the exception message. */
 public enum Component {
     /**Query Processor */
     QP("QP", "Query Processor"),
@@ -26,10 +23,20 @@ public enum Component {
         this.displayName = displayName;
     }
 
+    /**
+     * Returns the abbreviation, for example {@code "SM"}.
+     *
+     * @return the short name
+     */
     public String shortName() {
         return shortName;
     }
 
+    /**
+     * Returns the full name, for example {@code "Storage Manager"}.
+     *
+     * @return the display name
+     */
     public String displayName() {
         return displayName;
     }

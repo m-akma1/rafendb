@@ -1,12 +1,14 @@
 /**
- * Exception hierarchy. Consist of
- * {@link org.rafendb.common.error.RafenDBInternalException}
- * for internal checked exception and
+ * Exception hierarchy. Each component extends both roots once, passing its {@link
+ * org.rafendb.common.error.Component}.
  *
- * {@link org.rafendb.common.error.RafenDBRuntimeException}
- * for runtime uncheked exception.
+ * <ul>
+ *   <li>{@link org.rafendb.common.error.RafenDBRuntimeException} (unchecked): the client caused
+ *       it. Shown to the user.
+ *   <li>{@link org.rafendb.common.error.RafenDBInternalException} (checked): the client did not
+ *       cause it. Handled by the receiving component, never shown to the user.
+ * </ul>
  *
- * <p>
- * Owner: Supergroup.
+ * <p>Owner: Supergroup.
  */
 package org.rafendb.common.error;
