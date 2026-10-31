@@ -1,7 +1,8 @@
-package org.rafendb.optimizer.binder;
+package org.rafendb.mock.optimizer.binder;
 
 import java.util.Objects;
 import org.rafendb.common.query.ParsedQuery;
+import org.rafendb.optimizer.binder.Binder;
 
 /** Pass-through placeholder until AST and catalog contracts are available. */
 public final class MockBinder implements Binder {

@@ -1,4 +1,4 @@
-package org.rafendb.optimizer.cost;
+package org.rafendb.mock.optimizer.binder;
 
 import java.util.Objects;
 import org.rafendb.common.error.CostEstimationException;
@@ -6,6 +6,8 @@ import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
 import org.rafendb.common.plan.SelectionPlanNode;
+import org.rafendb.optimizer.cost.Cost;
+import org.rafendb.optimizer.cost.CostModel;
 
 /** Deterministic placeholder estimates; does not use storage statistics. */
 public final class MockCostModel implements CostModel {

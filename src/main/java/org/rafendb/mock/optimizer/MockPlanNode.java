@@ -7,10 +7,10 @@ import org.rafendb.common.plan.PlanNode;
  * Minimal leaf {@link PlanNode} with a fixed description and no children.
  * Replace with real plan nodes (table scan, selection, join, ...).
  */
-public final class PlaceholderPlanNode implements PlanNode {
+public final class MockPlanNode implements PlanNode {
     private final String description;
 
-    PlaceholderPlanNode(String description) {
+    MockPlanNode(String description) {
         this.description = description;
     }
 
