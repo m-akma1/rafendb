@@ -9,11 +9,13 @@ import org.rafendb.common.txn.TxId;
  * Thread-safe FRM contract consumed by CCM (CC-03 to CC-05). Arguments are non-null; null throws
  * NullPointerException. CCM serializes calls per transaction; recover runs exclusively at startup.
  * Successful log calls below are synchronous/durable; QP applies changes only after acknowledgment.
+ * FRM implementations must conform to these shared types: preserve long transaction IDs and
+ * complete row identities without narrowing. LSNs come from one global increasing sequence.
  */
 public interface RecoveryService {
 
     /**
-     * Persists BEGIN before the transaction is exposed to callers.
+     * Persists BEGIN with its ID and logical begin timestamp before exposing the transaction.
      *
      * @param tx the new transaction ID
      * @param timestamp its positive begin timestamp
@@ -28,7 +30,7 @@ public interface RecoveryService {
      *
      * @param tx the transaction owning the change
      * @param change the physical change, forwarded unchanged by CCM
-     * @return the change record's persistent LSN for the subsequent SM write
+     * @return this change record's actual persistent LSN for the SM write, not a success flag
      * @throws IllegalArgumentException if the change has invalid row identity or images
      * @throws IOException if logging fails; CCM must stop the write and enter its abort path
      */
@@ -54,7 +56,8 @@ public interface RecoveryService {
     void rollback(TxId tx) throws IOException;
 
     /**
-     * Completes startup recovery before any transaction is admitted.
+     * Completes startup recovery before any transaction is admitted. Returns recorded ID and
+     * logical timestamp high-water marks so CCM can safely reseed both generators.
      *
      * @return recovered ID/timestamp high-water marks, never null
      * @throws IOException if recovery fails; admission must remain closed

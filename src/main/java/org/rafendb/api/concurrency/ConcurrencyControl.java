@@ -38,7 +38,8 @@ public interface ConcurrencyControl {
      * @param type the kind of access, not null
      * @param resource the data to access, not null
      * @return ALLOWED, WAITING, or ABORTED; ABORTED is also returned to every later request of a
-     *     transaction that is failed or aborted
+     *     transaction that is failed or aborted. It rejects further access but does not confirm
+     *     rollback completion; FAILED transactions retain protection until rollback succeeds
      * @throws NullPointerException if an argument is null
      * @throws IllegalArgumentException if {@code tx} is unknown
      * @throws IllegalStateException if {@code tx} is already committing or committed
