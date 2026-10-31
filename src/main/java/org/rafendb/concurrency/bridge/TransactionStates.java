@@ -36,10 +36,10 @@ interface TransactionStates {
 
     /**
      * Forgets every transaction and makes later transaction ids and timestamps greater than
-     * maxTxId. Call only after recovery, with no transaction running.
+     * highWater. Call only after recovery, with no transaction running.
      *
-     * @param maxTxId the highest transaction id in the whole log, or 0 if it has none
-     * @throws IllegalArgumentException if maxTxId is negative
+     * @param highWater the larger of RecoveryInfo's maxTransactionId and maxTimestamp, nonnegative
+     * @throws IllegalArgumentException if highWater is negative
      */
-    void resetAbove(long maxTxId);
+    void resetAbove(long highWater);
 }
