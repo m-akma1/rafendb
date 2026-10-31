@@ -1,8 +1,12 @@
 /**
- * Exception types shared by all components. {@link org.rafendb.common.error.StorageException} is
- * the single unchecked exception the Storage Manager throws to its callers; QP catches it and
- * reports the error to the user.
+ * Exception hierarchy. Consist of
+ * {@link org.rafendb.common.error.RafenDBInternalException}
+ * for internal checked exception and
  *
- * <p>Owner: Supergroup.
+ * {@link org.rafendb.common.error.RafenDBRuntimeException}
+ * for runtime uncheked exception.
+ *
+ * <p>
+ * Owner: Supergroup.
  */
 package org.rafendb.common.error;
