@@ -5,10 +5,12 @@ import java.util.List;
 public class IndexScanNode implements PlanNode {
     private String alias;
     private String table;
+    private IndexScanDescriptor descriptor;
 
-    public IndexScanNode(String alias, String table) {
+    public IndexScanNode(String alias, String table, IndexScanDescriptor descriptor) {
         this.alias = alias;
         this.table = table;
+        this.descriptor = descriptor;
     }
 
     public String getAlias() {
@@ -17,6 +19,10 @@ public class IndexScanNode implements PlanNode {
 
     public String getTable() {
         return table;
+    }
+
+    public IndexScanDescriptor getDescriptor() {
+        return descriptor;
     }
 
     @Override
