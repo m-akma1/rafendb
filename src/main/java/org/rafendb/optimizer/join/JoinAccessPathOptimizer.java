@@ -1,6 +1,5 @@
 package org.rafendb.optimizer.join;
 
-import java.util.Objects;
 import org.rafendb.common.plan.QueryPlan;
 
 /**

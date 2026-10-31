@@ -2,7 +2,7 @@ package org.rafendb.common.type;
 
 import java.util.Objects;
 
-public final class Value implements Comparable<Value>{
+public final class Value implements Comparable<Value> {
     private final DataType type;
     private final Object data;
 
@@ -60,35 +60,26 @@ public final class Value implements Comparable<Value>{
             return 1;
         }
 
-        boolean thisNumeric =
-                type == DataType.INT || type == DataType.FLOAT;
-        boolean otherNumeric =
-                other.type == DataType.INT || other.type == DataType.FLOAT;
+        boolean thisNumeric = type == DataType.INT || type == DataType.FLOAT;
+        boolean otherNumeric = other.type == DataType.INT || other.type == DataType.FLOAT;
 
         if (thisNumeric && otherNumeric) {
-            double a = type == DataType.INT
-                    ? asInt()
-                    : asFloat();
+            double a = type == DataType.INT ? asInt() : asFloat();
 
-            double b = other.type == DataType.INT
-                    ? other.asInt()
-                    : other.asFloat();
+            double b = other.type == DataType.INT ? other.asInt() : other.asFloat();
 
             return Double.compare(a, b);
         }
 
-        boolean thisText =
-                type == DataType.CHAR || type == DataType.VARCHAR;
-        boolean otherText =
-                other.type == DataType.CHAR || other.type == DataType.VARCHAR;
+        boolean thisText = type == DataType.CHAR || type == DataType.VARCHAR;
+        boolean otherText = other.type == DataType.CHAR || other.type == DataType.VARCHAR;
 
         if (thisText && otherText) {
             return asText().compareTo(other.asText());
         }
 
         throw new IllegalArgumentException(
-                "Cannot compare different type families: "
-                        + type + " and " + other.type);
+                "Cannot compare different type families: " + type + " and " + other.type);
     }
 
     @Override

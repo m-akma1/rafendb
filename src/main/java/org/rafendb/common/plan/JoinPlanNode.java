@@ -1,7 +1,6 @@
 package org.rafendb.common.plan;
 
 import java.util.List;
-import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
 /** condition null untuk natural join. */
