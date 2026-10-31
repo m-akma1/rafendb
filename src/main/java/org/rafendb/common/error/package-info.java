@@ -1,5 +1,5 @@
 /**
- * Exception hierarchy. Each component extends both roots once, passing its {@link
+ * Exception hierarchy. A component extends each root it needs once, passing its {@link
  * org.rafendb.common.error.Component}.
  *
  * <ul>

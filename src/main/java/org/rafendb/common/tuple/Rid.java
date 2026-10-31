@@ -4,7 +4,8 @@ package org.rafendb.common.tuple;
  * Address of a record slot in a table's heap file. A Rid only has meaning together with its table
  * name, which every Storage Manager call passes alongside it. It does not change when the record's
  * byte offset inside the page changes; a move that would change it must be done as a logged DELETE
- * plus INSERT. Together with the table name it identifies a record for CCM locking.
+ * plus INSERT. Together with the table name it identifies a row in CCM change records; CCM locks
+ * whole tables.
  *
  * <p>Immutable and thread-safe.
  *

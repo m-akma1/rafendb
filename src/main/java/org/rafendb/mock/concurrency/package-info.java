@@ -1,5 +1,6 @@
 /**
- * Mocks of api.concurrency. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Mock of {@code api.concurrency}: {@link MockConcurrencyControl} allows every access and does no
+ * logging or recovery.
  *
  * <p>Owner: G2 Concurrency Control Manager.
  */
