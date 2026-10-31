@@ -2,10 +2,10 @@ package org.rafendb.common.plan;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.common.expr.Predicate;
+import org.rafendb.common.expr.Expr;
 
 /** Local placeholder payload; only the node name and PlanNode boundary were supplied by QO. */
-public record SelectionPlanNode(PlanNode input, Predicate condition) implements PlanNode {
+public record SelectionPlanNode(PlanNode input, Expr condition) implements PlanNode {
     public SelectionPlanNode {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(condition, "condition");

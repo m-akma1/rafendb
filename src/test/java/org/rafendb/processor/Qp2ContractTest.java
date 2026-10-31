@@ -8,10 +8,12 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.processor.ExecutionPlan;
 import org.rafendb.common.expr.ColumnRef;
-import org.rafendb.common.expr.Expression;
-import org.rafendb.common.expr.Predicate;
+import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
+import org.rafendb.common.schema.ColumnSchema;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
+import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.processor.MockExpressionEvaluator;
 import org.rafendb.mock.processor.MockPlanTranslator;
@@ -34,10 +36,11 @@ class Qp2ContractTest {
     }
 
     private final ColumnRef salary = new ColumnRef("pegawai", "salary");
-    private final Expression value = new Expression.Literal(new Value.IntegerValue(5000));
-    private final Predicate condition =
-            new Predicate.Comparison(
-                    new Expression.Column(salary), Predicate.ComparisonOp.GT, value);
+    private final ColumnSchema salarySchema =
+            new ColumnSchema(new Expr.ColumnRef("pegawai", "salary"), DataType.INTEGER);
+    private final Expr value = new Expr.Literal(Value.ofInt(5000));
+    private final Expr condition =
+            new Expr.Binary(Expr.Op.GT, new Expr.ColumnRef("pegawai", "salary"), value);
 
     @Test
     void qoFixtureCanCrossBoundaryAndPreserveEmptyHeaders() {
@@ -45,11 +48,11 @@ class Qp2ContractTest {
                 new ProjectionPlanNode(
                         new SelectionPlanNode(new TableScanNode("pegawai"), condition),
                         List.of(salary));
-        var translator = new MockPlanTranslator(List.of(salary));
+        var translator = new MockPlanTranslator(List.of(salarySchema));
         var result =
                 assertInstanceOf(
                         ExecutionPlan.Rows.class, translator.translate(new QueryPlan(plan, 12.5)));
-        assertEquals(List.of(salary), result.columns());
+        assertEquals(List.of(salarySchema), result.columns());
         var cursor = result.operator();
         assertThrows(IllegalStateException.class, cursor::next);
         cursor.open();
@@ -57,7 +60,7 @@ class Qp2ContractTest {
         assertNull(cursor.next());
         cursor.open();
         assertNull(cursor.next());
-        assertEquals(List.of(salary), cursor.schema());
+        assertEquals(List.of(salarySchema), cursor.schema());
         cursor.close();
         cursor.close();
         assertThrows(IllegalStateException.class, cursor::next);
@@ -74,7 +77,7 @@ class Qp2ContractTest {
     void everyCommandReturnsExplicitDummyOutcomeOnce() {
         var plans =
                 List.<PlanNode>of(
-                        new InsertPlanNode("pegawai", List.of(new Value.IntegerValue(1))),
+                        new InsertPlanNode("pegawai", List.of(Value.ofInt(1))),
                         new UpdatePlanNode("pegawai", salary, value, Optional.of(condition)),
                         new DeletePlanNode("pegawai", Optional.empty()),
                         new CreateIndexPlanNode(
@@ -98,12 +101,14 @@ class Qp2ContractTest {
 
     @Test
     void fixtureOwnershipAndRowShapeAreProtected() {
-        var columns = new ArrayList<>(List.of(salary));
-        var row = new Row(columns, List.of(new Value.IntegerValue(6000)));
-        columns.clear();
-        assertEquals(List.of(salary), row.columns());
-        assertThrows(UnsupportedOperationException.class, () -> row.columns().clear());
-        assertThrows(IllegalArgumentException.class, () -> new Row(List.of(salary), List.of()));
+        var values = new ArrayList<Value>(List.of(Value.ofInt(6000)));
+        var rid = new Rid(1, 2);
+        var row = new Row(values, rid);
+        values.clear();
+        assertEquals(List.of(Value.ofInt(6000)), row.values());
+        assertEquals(rid, row.rid());
+        assertThrows(UnsupportedOperationException.class, () -> row.values().clear());
+        assertThrows(NullPointerException.class, () -> new Row(null, null));
         assertThrows(
                 NullPointerException.class,
                 () -> new SelectionPlanNode(new TableScanNode("pegawai"), null));
@@ -114,12 +119,19 @@ class Qp2ContractTest {
 
     @Test
     void evaluatorIsClearlyConfiguredDummyRatherThanSqlEvaluation() {
-        var dummy = new Value.IntegerValue(42);
+        var dummy = Value.ofInt(42);
         var evaluator = new MockExpressionEvaluator(dummy, false);
-        var row = new Row(List.of(salary), List.of(new Value.IntegerValue(6000)));
-        assertEquals(dummy, evaluator.evaluate(value, row));
-        assertFalse(evaluator.test(condition, row));
-        assertThrows(NullPointerException.class, () -> evaluator.evaluate(null, row));
-        assertThrows(NullPointerException.class, () -> evaluator.test(condition, null));
+        var row = new Row(List.of(), null);
+        List<ColumnSchema> schema = List.of();
+        Expr literal = new Expr.Literal(Value.ofInt(5000));
+        Expr comparison = new Expr.Binary(Expr.Op.GT, literal, new Expr.Literal(Value.ofInt(0)));
+        assertEquals(dummy, evaluator.evaluate(literal, row, schema));
+        assertFalse(evaluator.test(comparison, row, schema));
+        assertThrows(NullPointerException.class, () -> evaluator.evaluate(null, row, schema));
+        assertThrows(NullPointerException.class, () -> evaluator.evaluate(literal, null, schema));
+        assertThrows(NullPointerException.class, () -> evaluator.evaluate(literal, row, null));
+        assertThrows(NullPointerException.class, () -> evaluator.test(null, row, schema));
+        assertThrows(NullPointerException.class, () -> evaluator.test(comparison, null, schema));
+        assertThrows(NullPointerException.class, () -> evaluator.test(comparison, row, null));
     }
 }

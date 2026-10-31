@@ -1,39 +1,46 @@
 package org.rafendb.api.processor;
 
-import org.rafendb.common.expr.Expression;
-import org.rafendb.common.expr.Predicate;
+import java.util.List;
+import org.rafendb.common.expr.Expr;
+import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 
-/** Proposed thread-safe evaluator; separate expression API and TruthValue await QO2 agreement. */
+/**
+ * Mengevaluasi expression dan kondisi berdasarkan row dan schema.
+ * Urutan schema harus sesuai dengan posisi nilai pada row,
+ * dan jumlah kolom schema harus sama dengan jumlah nilai row.
+ * Pada milestone 1, implementasi mock mengembalikan hasil konfigurasi;
+ * perhitungan SQL dan validasi semantik pada kontrak ini belum diimplementasikan.
+ */
 public interface ExpressionEvaluator {
     /**
-     * Evaluates a non-null expression against a non-null row (empty is valid for literals).
-     * @return non-null scalar value
-     * @throws NullPointerException for null input
-     * @throws IllegalArgumentException for invalid expressions, columns, or operand types
-     * @throws ArithmeticException for division by zero
+     * Menghitung nilai expression dari row berdasarkan schema
+     * @return nilai skalar tidak null
+     * @throws NullPointerException jika inputnya null
+     * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
+     * @throws ArithmeticException jika dibagi dengan 0
      */
-    Value evaluate(Expression expression, Row row);
+    Value evaluate(Expr expression, Row row, List<ColumnSchema> schema);
 
     /**
-     * Evaluates a non-null predicate against a non-null row.
-     * @return whether the row satisfies the predicate
-     * @throws NullPointerException for null input
-     * @throws IllegalArgumentException for invalid conditions, columns, or operand types
-     * @throws ArithmeticException for division by zero
+     * Menentukan apakah baris lolos
+     * @return true jika evaluate TRUE, selain itu hasilnya false
+     * @throws NullPointerException jika inputnya null
+     * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
+     * @throws ArithmeticException jika dibagi dengan 0
      */
-    default boolean test(Predicate predicate, Row row) {
-        return evaluateCondition(predicate, row).isTrue();
+    default boolean test(Expr condition, Row row, List<ColumnSchema> schema) {
+        return evaluateCondition(condition, row, schema).isTrue();
     }
 
     /**
-     * Evaluates a non-null predicate and row to non-null TRUE, FALSE, or UNKNOWN.
-     * SQL NULL in comparisons yields UNKNOWN in the real evaluator; mocks return configured truth.
-     * @throws NullPointerException for Java null input
-     * @throws IllegalArgumentException for invalid conditions, columns, or operand types
-     * @throws ArithmeticException for division by zero
+     * Membandingkan kondisi dari query SQL
+     * @return TRUE jika kondisi benar, FALSE untuk kondisi salah, UNKNOWN jika kebenarannya tidak dapat ditentukan seperti pada perbandingan dengan SQL NULL
+     * @throws NullPointerException jika inputnya null
+     * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
+     * @throws ArithmeticException jika dibagi dengan 0
      */
-    TruthValue evaluateCondition(Predicate predicate, Row row);
+    TruthValue evaluateCondition(Expr condition, Row row, List<ColumnSchema> schema);
 }

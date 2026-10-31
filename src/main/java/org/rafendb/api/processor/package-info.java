@@ -1,6 +1,6 @@
 /**
- * Interfaces QP provides to other components. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
- *
- * <p>Owner: G1 Query Processor.
+ * Kontrak translator, evaluator, dan operator QP untuk milestone 1.
+ * Implementasi dummy tersedia di org.rafendb.mock.processor.
+ * Bentuk entry point orkestrasi SQL serta integrasi worker belum final.
  */
 package org.rafendb.api.processor;

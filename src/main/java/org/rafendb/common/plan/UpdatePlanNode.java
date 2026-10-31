@@ -3,12 +3,11 @@ package org.rafendb.common.plan;
 import java.util.List;
 import java.util.Objects;
 import org.rafendb.common.expr.ColumnRef;
-import org.rafendb.common.expr.Expression;
-import org.rafendb.common.expr.Predicate;
+import org.rafendb.common.expr.Expr;
 
 /** Local placeholder payload; only the node name and PlanNode boundary were supplied by QO. */
 public record UpdatePlanNode(
-        String table, ColumnRef column, Expression value, java.util.Optional<Predicate> condition)
+        String table, ColumnRef column, Expr value, java.util.Optional<Expr> condition)
         implements PlanNode {
     public UpdatePlanNode {
         Objects.requireNonNull(table, "table");

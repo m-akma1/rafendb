@@ -1,35 +1,35 @@
 package org.rafendb.api.processor;
 
 import java.util.List;
-import org.rafendb.common.expr.ColumnRef;
+import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.tuple.Row;
 
 /**
- * Proposed row cursor. Each instance belongs to one execution and is not thread-safe.
- * Inputs/services are supplied when constructed; no SQL mutation is implied by this API.
+ * Kontrak pembacaan baris. Setiap objek dipakai untuk satu eksekusi dan tidak aman dipakai bersamaan.
+ * Input dan layanan diberikan saat objek dibuat; API ini tidak menjanjikan perubahan data SQL.
  */
 public interface Operator extends AutoCloseable {
     /**
-     * Starts or resets reading to the beginning, even while open, exhausted, or closed.
-     * Reinitializes children as needed and releases previous reading resources before replacement.
-     * After a failure, close must remain safe for cleanup. No arguments or result.
+     * Memulai atau mengulang pembacaan dari awal, termasuk saat masih terbuka, habis, atau ditutup.
+     * Menginisialisasi ulang operator anak sesuai kebutuhan dan melepas resource lama sebelum diganti.
+     * Jika terjadi kegagalan, close tetap harus aman dipanggil untuk membersihkan resource.
      */
     void open();
 
     /**
-     * Returns non-null immutable ordered column identities, available before open and after close,
-     * including empty results. Row positions correspond to this order. Join concatenates outer
-     * then inner; types and a complete shared Schema class remain pending team agreement.
+     * Mengembalikan daftar identitas kolom yang tidak null dan tidak dapat diubah, sesuai urutan nilai row.
+     * Tersedia sebelum open dan setelah close, termasuk saat hasil kosong. Urutan join adalah outer
+     * lalu inner. Setiap kolom menyimpan identitas dan tipe datanya.
      */
-    List<ColumnRef> schema();
+    List<ColumnSchema> schema();
 
     /**
-     * Returns a non-null row or null at exhaustion; exhaustion remains stable.
-     * @throws IllegalStateException if not open or already closed
+     * Mengembalikan baris berikutnya, atau null jika habis; panggilan berikutnya tetap null sampai di-reset.
+     * @throws IllegalStateException jika belum dibuka atau sudah ditutup
      */
     Row next();
 
-    /** Releases resources, including before open; repeated calls are harmless. No result. */
+    /** Melepas resource; aman dipanggil sebelum open maupun berulang kali. */
     @Override
     void close();
 }

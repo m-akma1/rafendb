@@ -4,22 +4,22 @@ import java.util.List;
 import java.util.Objects;
 import org.rafendb.api.processor.ExecutionPlan;
 import org.rafendb.api.processor.PlanTranslator;
-import org.rafendb.common.expr.ColumnRef;
 import org.rafendb.common.plan.*;
+import org.rafendb.common.schema.ColumnSchema;
 
 /**
- * Thread-safe dummy translator. Row plans return configured headers and no rows;
- * write plans return zero affected rows and an explicit MOCK status. No plan is executed.
+ * Translator mock yang aman dipakai bersamaan. Hasil baris memakai kolom konfigurasi tanpa data.
+ * Perintah menghasilkan nol baris terdampak dan status MOCK tanpa menjalankan plan.
  */
 public final class MockPlanTranslator implements PlanTranslator {
-    private final List<ColumnRef> columns;
+    private final List<ColumnSchema> columns;
 
-    /** Copies ordered, non-null dummy headers. Caller supplies the intended result headers. */
-    public MockPlanTranslator(List<ColumnRef> columns) {
+    /** Menyalin urutan kolom hasil dari pemanggil. Daftar dan setiap kolom tidak boleh null. */
+    public MockPlanTranslator(List<ColumnSchema> columns) {
         this.columns = List.copyOf(columns);
     }
 
-    /** {@inheritDoc} This mock checks null, but does not validate plan semantics. */
+    /** {@inheritDoc} Mock hanya menolak plan null dan memilih bentuk hasil berdasarkan jenis root. */
     @Override
     public ExecutionPlan translate(QueryPlan plan) {
         Objects.requireNonNull(plan, "plan");

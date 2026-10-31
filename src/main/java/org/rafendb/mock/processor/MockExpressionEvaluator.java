@@ -1,42 +1,44 @@
 package org.rafendb.mock.processor;
 
+import java.util.List;
 import java.util.Objects;
 import org.rafendb.api.processor.ExpressionEvaluator;
-import org.rafendb.common.expr.Expression;
-import org.rafendb.common.expr.Predicate;
+import org.rafendb.common.expr.Expr;
+import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 
-/** Thread-safe dummy: returns configured constants without evaluating the expression. */
 public final class MockExpressionEvaluator implements ExpressionEvaluator {
     private final Value value;
     private final TruthValue truth;
 
-    /** Configures non-null dummy value and dummy condition result. */
+    /** Mengatur nilai hasil mock dan mengubah matches menjadi TRUE atau FALSE. */
     public MockExpressionEvaluator(Value value, boolean matches) {
         this(value, matches ? TruthValue.TRUE : TruthValue.FALSE);
     }
 
-    /** Configures a non-null scalar and three-valued result; no expression is evaluated. */
+    /** Mengatur nilai hasil mock serta TRUE, FALSE, atau UNKNOWN, keduanya tidak boleh Java null. */
     public MockExpressionEvaluator(Value value, TruthValue truth) {
         this.value = Objects.requireNonNull(value, "value");
         this.truth = Objects.requireNonNull(truth, "truth");
     }
 
-    /** {@inheritDoc} Only input null checks are performed by this mock. */
+    /** {@inheritDoc} Mock ini hanya menolak input Java null dan mengembalikan hasil konfigurasi. */
     @Override
-    public Value evaluate(Expression expression, Row row) {
+    public Value evaluate(Expr expression, Row row, List<ColumnSchema> schema) {
         Objects.requireNonNull(expression, "expression");
         Objects.requireNonNull(row, "row");
+        Objects.requireNonNull(schema, "schema");
         return value;
     }
 
-    /** {@inheritDoc} Only input null checks are performed by this mock. */
+    /** {@inheritDoc} Mock ini hanya menolak input Java null dan mengembalikan hasil konfigurasi. */
     @Override
-    public TruthValue evaluateCondition(Predicate predicate, Row row) {
-        Objects.requireNonNull(predicate, "predicate");
-        Objects.requireNonNull(row, "row");
+    public TruthValue evaluateCondition(Expr condition, Row row, List<ColumnSchema> schema) {
+        Objects.requireNonNull(condition);
+        Objects.requireNonNull(row);
+        Objects.requireNonNull(schema);
         return truth;
     }
 }

@@ -2,12 +2,12 @@ package org.rafendb.api.processor;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.common.expr.ColumnRef;
+import org.rafendb.common.schema.ColumnSchema;
 
-/** Proposed translated result; a command is not misrepresented as a row cursor. */
+/** Hasil persiapan translator berupa pembacaan baris atau perintah yang siap dijalankan. */
 public sealed interface ExecutionPlan {
-    /** Ordered headers survive an empty result. Full typed schema remains a shared decision. */
-    record Rows(List<ColumnRef> columns, Operator operator) implements ExecutionPlan {
+    /** Schema bertipe tetap tersedia saat hasil kosong dan urutannya sesuai nilai row. */
+    record Rows(List<ColumnSchema> columns, Operator operator) implements ExecutionPlan {
         public Rows {
             columns = List.copyOf(columns);
             Objects.requireNonNull(operator, "operator");
@@ -16,23 +16,23 @@ public sealed interface ExecutionPlan {
         }
     }
 
-    /** Prepared command, with execution deferred until explicitly requested. */
+    /** Menyimpan perintah yang baru dijalankan saat execute dipanggil. */
     record Command(CommandAction action) implements ExecutionPlan {
         public Command {
             Objects.requireNonNull(action, "action");
         }
     }
 
-    /** One execution's action; not thread-safe and must not be invoked twice. */
+    /** Aksi untuk satu eksekusi yang tidak aman dipakai bersamaan dan tidak boleh dijalankan dua kali. */
     interface CommandAction {
         /**
-         * Executes once and returns a non-null outcome.
-         * @throws IllegalStateException on repeated invocation
+         * Menjalankan perintah sekali dan mengembalikan hasil yang tidak null.
+         * @throws IllegalStateException jika dipanggil lebih dari sekali
          */
         CommandResult execute();
     }
 
-    /** Non-null status and non-negative affected-row count; zero for index creation. */
+    /** Status tidak boleh null dan jumlah baris terdampak tidak boleh negatif. Pembuatan index menghasilkan nol. */
     record CommandResult(long affectedRows, String status) {
         public CommandResult {
             if (affectedRows < 0) throw new IllegalArgumentException("Negative affected row count");

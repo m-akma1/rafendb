@@ -4,7 +4,9 @@ import org.rafendb.common.plan.QueryPlan;
 
 /**
  * Proposed translator boundary. Implementations must permit concurrent calls, returning
- * independent executions. Real execution context injection is pending QP1/QP5 agreement.
+ * independent executions. Milestone 1 supplies this contract and a dummy implementation;
+ * it does not require SQL execution or wiring real worker operators.
+ * Real execution context injection is pending QP1/QP5 agreement.
  */
 public interface PlanTranslator {
     /**
