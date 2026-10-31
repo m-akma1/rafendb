@@ -1,9 +1,7 @@
 /**
- * Pembatalan transaksi (FR-04) dan pemulihan basis data ke titik waktu tertentu (FR-05).
+ * Transaction rollback and compensation logging (FR-04).
  *
- * <p>{@link org.rafendb.recovery.rollback.RollbackManager} membaca record transaksi dari logger
- * FR2 ({@link org.rafendb.recovery.rollback.RollbackLog}), menulis record kompensasi untuk setiap
- * perubahan, lalu mengembalikan isi lama lewat {@link org.rafendb.recovery.rollback.UndoStorage}.
+ * <p>Reverses uncommitted transaction modifications and records compensation log records.
  *
  * <p>Owner: G5 Failure Recovery Manager (FR3).
  */

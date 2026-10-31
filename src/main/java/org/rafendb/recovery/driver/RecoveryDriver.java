@@ -12,6 +12,7 @@ public final class RecoveryDriver {
 
     public static void main(String[] args) {
         System.out.println(Version.banner("Failure Recovery Manager Driver"));
-        System.out.println("Not implemented yet.");
+        FRManagerDriver driver = new FRManagerDriver();
+        driver.runAllTests();
     }
 }

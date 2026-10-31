@@ -101,12 +101,30 @@ public final class WALRecord {
     }
 
     /**
+     * Alias untuk {@link #getBeforeValue()} sesuai penamaan atribut di diagram kelas FRM.
+     *
+     * @return nilai sebelum
+     */
+    public String getBeforeVal() {
+        return beforeVal;
+    }
+
+    /**
      * Mengembalikan isi record sesudah perubahan. Belum ada di class diagram; dibutuhkan untuk
      * redo.
      *
      * @return nilai sesudah, atau {@code null} untuk DELETE dan record non-data
      */
     public String getAfterValue() {
+        return afterVal;
+    }
+
+    /**
+     * Alias untuk {@link #getAfterValue()} sesuai penamaan atribut di diagram kelas FRM.
+     *
+     * @return nilai sesudah
+     */
+    public String getAfterVal() {
         return afterVal;
     }
 
