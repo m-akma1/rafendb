@@ -21,30 +21,26 @@ public final class JoinAccessPathOptimizer {
      * @throws NullPointerException if {@code plan} is {@code null}
      */
     public QueryPlan optimize(QueryPlan plan) {
-        QueryPlan currentPlan = Objects.requireNonNull(plan, "plan");
-        currentPlan = convertCartesianProductsToJoins(currentPlan);
-        currentPlan = reorderJoins(currentPlan);
-        currentPlan = selectIndexScans(currentPlan);
-        return selectCheapestPlan(currentPlan);
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /** QO-11: Cartesian-to-join transformation placeholder; returns the input unchanged. */
     private QueryPlan convertCartesianProductsToJoins(QueryPlan plan) {
-        return plan;
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /** QO-12: Join reordering and regrouping placeholder; returns the input unchanged. */
     private QueryPlan reorderJoins(QueryPlan plan) {
-        return plan;
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /** QO-13: IndexScan selection placeholder; returns the input unchanged. */
     private QueryPlan selectIndexScans(QueryPlan plan) {
-        return plan;
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /** QO-14: Cheapest-plan selection placeholder; returns the input without comparing costs. */
     private QueryPlan selectCheapestPlan(QueryPlan plan) {
-        return plan;
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 }

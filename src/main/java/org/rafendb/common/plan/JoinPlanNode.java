@@ -19,60 +19,28 @@ public final class JoinPlanNode implements PlanNode {
     }
 
     public JoinAlgorithm algorithm() {
-        return algorithm;
+        return null;
     }
 
     public Expr condition() {
-        return condition;
+        return null;
     }
 
     public PlanNode left() {
-        return left;
+        return null;
     }
 
     public PlanNode right() {
-        return right;
+        return null;
     }
 
     @Override
     public List<PlanNode> children() {
-        return List.of(left, right);
+        return null;
     }
 
     @Override
     public String describe() {
-        return "";
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof JoinPlanNode that)) {
-            return false;
-        }
-        return algorithm == that.algorithm
-                && Objects.equals(condition, that.condition)
-                && Objects.equals(left, that.left)
-                && Objects.equals(right, that.right);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(algorithm, condition, left, right);
-    }
-
-    @Override
-    public String toString() {
-        return "JoinPlanNode[algorithm="
-                + algorithm
-                + ", condition="
-                + condition
-                + ", left="
-                + left
-                + ", right="
-                + right
-                + "]";
+        return null;
     }
 }
