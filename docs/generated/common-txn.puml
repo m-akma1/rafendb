@@ -1,0 +1,79 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.txn.AccessResult {
+	{method}  {static} +aborted ( message : String ) : AccessResult
+	{method}  {static} +allowed () : AccessResult
+	{method} +message () : String
+	{method} +status () : Status
+	{method}  {static} +waiting () : AccessResult
+}
+
+
+enum org.rafendb.common.txn.AccessResult$Status {
+	{field} +ABORTED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+enum org.rafendb.common.txn.AccessType {
+	{field} +READ
+	{field} +WRITE
+}
+
+
+class org.rafendb.common.txn.ChangeRecord {
+	{method} +afterImage () : Optional
+	{method} +beforeImage () : Optional
+	{method} +resource () : ResourceId
+}
+
+
+class org.rafendb.common.txn.RecoveryInfo {
+	{method} +maxTimestamp () : long
+	{method} +maxTransactionId () : long
+}
+
+
+class org.rafendb.common.txn.ResourceId {
+	{method}  {static} +ofRow ( table : String , rid : Rid ) : ResourceId
+	{method}  {static} +ofTable ( table : String ) : ResourceId
+	{method} +rid () : Rid
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.txn.TxId {
+	{method} +compareTo ( other : TxId ) : int
+	{method} +value () : long
+}
+
+
+class org.rafendb.common.txn.TxResult {
+	{method} +message () : String
+	{method} +status () : TxStatus
+}
+
+
+enum org.rafendb.common.txn.TxStatus {
+	{field} +ABORTED
+	{field} +ACTIVE
+	{field} +COMMITTED
+	{field} +FAILED
+	{field} +PARTIALLY_COMMITTED
+}
+
+
+
+
+org.rafendb.common.txn.AccessResult *--  org.rafendb.common.txn.AccessResult$Status : status
+org.rafendb.common.txn.ChangeRecord *--  org.rafendb.common.txn.ResourceId : resource
+org.rafendb.common.txn.TxResult *--  org.rafendb.common.txn.TxStatus : status
+
+
+@enduml

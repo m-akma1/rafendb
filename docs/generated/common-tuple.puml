@@ -1,0 +1,34 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.tuple.Rid {
+	{method} +block () : long
+	{method} +compareTo ( other : Rid ) : int
+	{method} +slot () : int
+}
+
+
+class org.rafendb.common.tuple.Row {
+	{method} +get ( index : int ) : Value
+	{method} +size () : int
+	{method} +values () : List
+}
+
+
+class org.rafendb.common.tuple.StoredRow {
+	{method} +rid () : Rid
+	{method} +row () : Row
+}
+
+
+
+
+org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Rid : rid
+org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Row : row
+
+
+@enduml
