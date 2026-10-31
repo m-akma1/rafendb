@@ -4,7 +4,6 @@ import java.util.Objects;
 import java.util.Optional;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.recovery.log.LogType;
 
 /**
  * Immutable payload representing a WAL log entry to be written.

@@ -1,7 +1,7 @@
-package org.rafendb.recovery.log;
+package org.rafendb.api.recovery;
 
 /**
- * Jenis sebuah {@link WALRecord}, sesuai class diagram FRM.
+ * Jenis record pada Write-Ahead Log (WAL) sesuai diagram kelas FRM.
  *
  * <p>Immutable dan thread-safe.
  */
@@ -12,11 +12,11 @@ public enum LogType {
     COMMIT,
     /** Rollback transaksi selesai; ditulis setelah semua perubahan dibatalkan. */
     ABORT,
-    /** Record ditambahkan; {@code before_val} bernilai {@code null}. */
+    /** Record ditambahkan; beforeImage bernilai empty/null. */
     INSERT,
-    /** Record diubah; nilai sebelum dan sesudah sama-sama terisi. */
+    /** Record diubah; nilai sebelum dan sesudah terisi. */
     UPDATE,
-    /** Record dihapus; {@code after_val} bernilai {@code null}. */
+    /** Record dihapus; afterImage bernilai empty/null. */
     DELETE,
     /** Checkpoint dimulai. */
     CHECKPOINT_BEGIN,
@@ -24,12 +24,30 @@ public enum LogType {
     CHECKPOINT_END;
 
     /**
-     * Mengecek apakah record bertipe ini mengubah data tabel sehingga bisa dibatalkan (undo).
+     * Mengecek apakah record bertipe ini mengubah data tabel sehingga bisa dibatalkan (undo) atau diulang (redo).
      *
      * @return {@code true} untuk {@link #INSERT}, {@link #UPDATE}, dan {@link #DELETE}
      */
     public boolean isDataChange() {
         return this == INSERT || this == UPDATE || this == DELETE;
+    }
+
+    /**
+     * Mengecek apakah record bertipe ini merupakan peristiwa transaksi siklus hidup.
+     *
+     * @return {@code true} untuk {@link #BEGIN}, {@link #COMMIT}, dan {@link #ABORT}
+     */
+    public boolean isTransactionEvent() {
+        return this == BEGIN || this == COMMIT || this == ABORT;
+    }
+
+    /**
+     * Mengecek apakah record bertipe ini merupakan penanda checkpoint.
+     *
+     * @return {@code true} untuk {@link #CHECKPOINT_BEGIN} dan {@link #CHECKPOINT_END}
+     */
+    public boolean isCheckpoint() {
+        return this == CHECKPOINT_BEGIN || this == CHECKPOINT_END;
     }
 
     /**
