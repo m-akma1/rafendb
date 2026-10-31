@@ -22,24 +22,4 @@ public final class JoinAccessPathOptimizer {
     public QueryPlan optimize(QueryPlan plan) {
         throw new UnsupportedOperationException("Not implemented yet");
     }
-
-    /** QO-11: Cartesian-to-join transformation placeholder; returns the input unchanged. */
-    private QueryPlan convertCartesianProductsToJoins(QueryPlan plan) {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
-
-    /** QO-12: Join reordering and regrouping placeholder; returns the input unchanged. */
-    private QueryPlan reorderJoins(QueryPlan plan) {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
-
-    /** QO-13: IndexScan selection placeholder; returns the input unchanged. */
-    private QueryPlan selectIndexScans(QueryPlan plan) {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
-
-    /** QO-14: Cheapest-plan selection placeholder; returns the input without comparing costs. */
-    private QueryPlan selectCheapestPlan(QueryPlan plan) {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
 }
