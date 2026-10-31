@@ -4,5 +4,6 @@ public enum DataType {
     INT,
     FLOAT,
     CHAR,
-    VARCHAR
+    VARCHAR,
+    NULL
 }
