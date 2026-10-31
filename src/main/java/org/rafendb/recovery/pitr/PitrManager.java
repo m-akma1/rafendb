@@ -19,11 +19,11 @@ public final class PitrManager {
     private Map<String, Map<Integer, String>> snapshotRows = Map.of();
     private Map<String, Map<Integer, String>> currentRows = Map.of();
     private long snapshotTimestamp;
-    private int snapshotLsn;
+    private long snapshotLsn;
     private boolean snapshotAvailable;
     private int transactionsReplayed;
     private int changesReplayed;
-    private int lastReplayLsn;
+    private long lastReplayLsn;
     private int recoveredHighestTransactionId;
     private long recoveredHighestTimestamp;
 
@@ -58,7 +58,7 @@ public final class PitrManager {
         if (targetTimestamp > latestCommitTimestamp && targetTimestamp != snapshotTimestamp) {
             return false;
         }
-        int boundaryLsn = 0;
+        long boundaryLsn = 0;
         for (WALRecord record : wal) {
             if (record.getLogType() == LogType.COMMIT && record.getTimestamp() <= targetTimestamp) {
                 boundaryLsn = Math.max(boundaryLsn, record.getLSN());
@@ -103,7 +103,7 @@ public final class PitrManager {
     }
 
     private boolean runRecovery(
-            List<WALRecord> wal, long timestampBoundary, int lsnBoundary, Integer targetTx) {
+            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
         if (!stopClientAdmission()) return false;
         if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
         if (!reloadStorageAfterRestore()) return false;
@@ -120,7 +120,7 @@ public final class PitrManager {
     }
 
     /** SM integration seam; a real implementation restores a validated snapshot atomically. */
-    private boolean restoreStorageSnapshot(long targetTimestamp, int targetLsn) {
+    private boolean restoreStorageSnapshot(long targetTimestamp, long targetLsn) {
         return true;
     }
 
@@ -145,11 +145,11 @@ public final class PitrManager {
     }
 
     private boolean restore(
-            List<WALRecord> wal, long timestampBoundary, int lsnBoundary, Integer targetTx) {
+            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
         Set<Integer> begun = new HashSet<>();
         Set<Integer> aborted = new HashSet<>();
         Map<Integer, WALRecord> commits = new HashMap<>();
-        int previousLsn = 0;
+        long previousLsn = 0;
         int highTransactionId = 0;
         long highTimestamp = 0;
         for (WALRecord record : wal) {
@@ -182,7 +182,7 @@ public final class PitrManager {
         Map<String, Map<Integer, String>> restored = copyRows(snapshotRows);
         Set<Integer> replayedTransactions = new HashSet<>();
         int replayed = 0;
-        int lastLsn = 0;
+        long lastLsn = 0;
         for (WALRecord record : wal) {
             if (!record.getLogType().isDataChange()
                     || record.getLSN() <= snapshotLsn
@@ -267,7 +267,7 @@ public final class PitrManager {
         return changesReplayed;
     }
 
-    public synchronized int getLastReplayLsn() {
+    public synchronized long getLastReplayLsn() {
         return lastReplayLsn;
     }
 
@@ -284,7 +284,7 @@ public final class PitrManager {
         return snapshotTimestamp;
     }
 
-    public synchronized int getSnapshotLsn() {
+    public synchronized long getSnapshotLsn() {
         return snapshotLsn;
     }
 

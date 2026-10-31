@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import org.rafendb.api.recovery.LogPayload;
 import org.rafendb.api.recovery.LoggerErrorException;
 import org.rafendb.api.recovery.RecoveryManager;
@@ -20,17 +21,19 @@ public class MockRecoveryManager implements RecoveryManager {
 
     private final List<LogPayload> writtenLogs = Collections.synchronizedList(new ArrayList<>());
     private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
+    private final AtomicLong mockLsnCounter = new AtomicLong(0);
     private volatile long lastFlushedLsn = 0;
     private volatile boolean redoExecuted = false;
     private volatile boolean undoExecuted = false;
 
     @Override
-    public boolean writeLog(LogPayload payload) throws LoggerErrorException {
+    public long writeLog(LogPayload payload) throws LoggerErrorException {
         if (payload == null) {
-            return false;
+            return -1;
         }
+        long lsn = mockLsnCounter.incrementAndGet();
         writtenLogs.add(payload);
-        return true;
+        return lsn;
     }
 
     @Override
@@ -122,6 +125,7 @@ public class MockRecoveryManager implements RecoveryManager {
     public void clear() {
         writtenLogs.clear();
         txStatuses.clear();
+        mockLsnCounter.set(0);
         lastFlushedLsn = 0;
         redoExecuted = false;
         undoExecuted = false;

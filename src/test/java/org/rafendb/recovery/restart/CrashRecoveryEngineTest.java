@@ -20,7 +20,7 @@ class CrashRecoveryEngineTest {
         final Map<String, String> data = new HashMap<>();
 
         @Override
-        public void applyUndo(String tableName, int idRecord, String image, int lsn) {
+        public void applyUndo(String tableName, int idRecord, String image, long lsn) {
             String key = tableName + "#" + idRecord;
             if (image == null) {
                 data.remove(key);

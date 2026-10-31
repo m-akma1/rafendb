@@ -19,7 +19,7 @@ import java.util.Objects;
  * Bagikan record ke thread lain hanya setelah record selesai dibuat.
  */
 public final class WALRecord {
-    private final int lsn;
+    private final long lsn;
     private final int idTransaction;
     private LogType logType;
     private final long timestamp;
@@ -42,7 +42,7 @@ public final class WALRecord {
      * @throws NullPointerException jika {@code logType} null
      */
     public WALRecord(
-            int lsn,
+            long lsn,
             int idTransaction,
             LogType logType,
             long timestamp,
@@ -61,7 +61,16 @@ public final class WALRecord {
     }
 
     /** @return nomor urut log (LSN) */
-    public int getLSN() {
+    public long getLSN() {
+        return lsn;
+    }
+
+    /**
+     * Alias getter LSN sesuai konvensi camelCase.
+     *
+     * @return nomor urut log (LSN)
+     */
+    public long getLsn() {
         return lsn;
     }
 
@@ -160,7 +169,7 @@ public final class WALRecord {
     public byte[] serialize() {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(bytes)) {
-            out.writeInt(lsn);
+            out.writeLong(lsn);
             out.writeInt(idTransaction);
             out.writeUTF(logType.name());
             out.writeLong(timestamp);
@@ -184,7 +193,7 @@ public final class WALRecord {
     public static WALRecord deserialize(byte[] data) {
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(data))) {
             return new WALRecord(
-                    in.readInt(),
+                    in.readLong(),
                     in.readInt(),
                     LogType.valueOf(in.readUTF()),
                     in.readLong(),

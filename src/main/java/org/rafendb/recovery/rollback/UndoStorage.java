@@ -19,5 +19,5 @@ public interface UndoStorage {
      * @param lsn LSN record kompensasi yang ditulis untuk undo ini
      * @throws RuntimeException jika isi record gagal diterapkan; tidak ada data yang berubah
      */
-    void applyUndo(String tableName, int idRecord, String image, int lsn);
+    void applyUndo(String tableName, int idRecord, String image, long lsn);
 }

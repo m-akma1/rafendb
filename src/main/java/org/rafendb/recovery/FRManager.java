@@ -98,21 +98,22 @@ public class FRManager implements RecoveryManager {
     /**
      * Menuliskan record ke log WAL sesuai payload yang diberikan.
      *
-     * <p>Meneruskan pencatatan ke {@link Logger}. Mengembalikan {@code false} atau melempar
-     * {@link LoggerErrorException} jika penulisan gagal, sehingga komponen pemanggil (CCM/QP)
-     * membatalkan operasi sesuai aturan WAL.
+     * <p>Meneruskan pencatatan ke {@link Logger}. Mengembalikan nomor urut LSN yang dialokasikan,
+     * atau melempar {@link LoggerErrorException} jika penulisan gagal, sehingga komponen pemanggil
+     * (CCM/QP) dapat menempelkan LSN ke dirty page dan membatalkan operasi sesuai aturan WAL.
      *
      * @param payload payload data perubahan atau peristiwa transaksi
-     * @return {@code true} jika log berhasil dicatat; {@code false} jika gagal
+     * @return nomor LSN yang dialokasikan (positif), atau -1 jika payload null
      * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
      */
-    public boolean writeLog(LogPayload payload) throws LoggerErrorException {
+    @Override
+    public long writeLog(LogPayload payload) throws LoggerErrorException {
         if (payload == null) {
-            return false;
+            return -1;
         }
         try {
             if (payload.opType().isDataChange()) {
-                logger.logDataChange(
+                return logger.logDataChange(
                         payload.idTransaction(),
                         payload.opType(),
                         payload.timestamp(),
@@ -122,12 +123,12 @@ public class FRManager implements RecoveryManager {
                         payload.afterVal());
             } else {
                 logger.logTransactionEvent(payload.idTransaction(), payload.opType());
+                return logger.getCurrentLSN();
             }
-            return true;
         } catch (LoggerErrorException e) {
             throw e;
         } catch (Exception e) {
-            return false;
+            throw new LoggerErrorException("Failed to write log record", e);
         }
     }
 

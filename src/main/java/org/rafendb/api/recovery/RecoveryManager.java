@@ -16,10 +16,10 @@ public interface RecoveryManager extends WalSync, AutoCloseable {
      * Appends a log entry to the write-ahead log under WAL rules.
      *
      * @param payload the record payload to log
-     * @return true if successfully recorded; false otherwise
+     * @return the allocated Log Sequence Number (LSN) for this record
      * @throws LoggerErrorException if logging fails
      */
-    boolean writeLog(LogPayload payload) throws LoggerErrorException;
+    long writeLog(LogPayload payload) throws LoggerErrorException;
 
     /**
      * Records the start of a transaction (BEGIN).

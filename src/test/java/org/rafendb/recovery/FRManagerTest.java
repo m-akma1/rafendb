@@ -30,7 +30,7 @@ class FRManagerTest {
         final Map<String, String> data = new HashMap<>();
 
         @Override
-        public void applyUndo(String tableName, int idRecord, String image, int lsn) {
+        public void applyUndo(String tableName, int idRecord, String image, long lsn) {
             String key = tableName + "#" + idRecord;
             if (image == null) {
                 data.remove(key);
@@ -61,7 +61,8 @@ class FRManagerTest {
 
         LogPayload payload =
                 LogPayload.ofDataChange(1, LogType.INSERT, "customers", 10, null, "Bob");
-        assertTrue(frm.writeLog(payload));
+        long lsn = frm.writeLog(payload);
+        assertTrue(lsn > 0);
 
         assertTrue(frm.commitTransaction(1));
     }
@@ -74,7 +75,8 @@ class FRManagerTest {
         LogPayload payload =
                 LogPayload.ofDataChange(
                         5, LogType.INSERT, "accounts", rid, Optional.empty(), Optional.empty());
-        assertTrue(frm.writeLog(payload));
+        long lsn = frm.writeLog(payload);
+        assertTrue(lsn > 0);
         assertTrue(frm.commitTransaction(5));
     }
 
@@ -86,7 +88,8 @@ class FRManagerTest {
         LogPayload payload =
                 LogPayload.ofDataChange(
                         2, LogType.UPDATE, "customers", 20, "Charlie-Old", "Charlie-New");
-        assertTrue(frm.writeLog(payload));
+        long lsn = frm.writeLog(payload);
+        assertTrue(lsn > 0);
         storage.data.put("customers#20", "Charlie-New");
 
         assertTrue(frm.rollbackTransaction(2));
@@ -168,9 +171,10 @@ class FRManagerTest {
                         new Rid(2, 5),
                         Optional.empty(),
                         Optional.empty());
-        assertTrue(frm.writeLog(payload));
+        long lsn = frm.writeLog(payload);
+        assertTrue(lsn > 0);
 
-        assertDoesNotThrow(() -> frm.forceThrough(2));
+        assertDoesNotThrow(() -> frm.forceThrough(lsn));
     }
 
     @Test

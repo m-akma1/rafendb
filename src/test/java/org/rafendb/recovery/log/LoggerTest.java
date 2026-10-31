@@ -22,7 +22,7 @@ class LoggerTest {
     @Test
     void testMockLoggerDefaults() throws Exception {
         try (Logger logger = new Logger(logPath)) {
-            assertEquals(0, logger.getLastCommittedLSN());
+            assertEquals(0L, logger.getLastCommittedLSN());
             assertEquals(0, logger.getHighestTransactionId());
             assertTrue(logger.getLogsSorted().isEmpty());
             assertTrue(logger.getLogsByTransaction(1).isEmpty());
@@ -31,7 +31,7 @@ class LoggerTest {
 
         try (Logger defaultLogger = new Logger()) {
             assertEquals("", defaultLogger.getLogFilePath());
-            assertEquals(0, defaultLogger.getLastCommittedLSN());
+            assertEquals(0L, defaultLogger.getLastCommittedLSN());
         }
 
         try (Logger strLogger = new Logger("test.log")) {
@@ -43,11 +43,12 @@ class LoggerTest {
     void testMockLoggerLoggingAndRetrieval() throws Exception {
         try (Logger logger = new Logger(logPath)) {
             logger.logTransactionEvent(1, LogType.BEGIN);
-            int lsn = logger.logDataChange(1, LogType.INSERT, 1000L, "tbl", 1, null, "val");
-            assertEquals(2, lsn);
+            long lsn = logger.logDataChange(1, LogType.INSERT, 1000L, "tbl", 1, null, "val");
+            assertEquals(2L, lsn);
             logger.logTransactionEvent(1, LogType.COMMIT);
 
-            assertEquals(3, logger.getLastCommittedLSN());
+            assertEquals(3L, logger.getLastCommittedLSN());
+            assertEquals(3L, logger.getCurrentLSN());
             assertEquals(1, logger.getHighestTransactionId());
 
             List<WALRecord> logs = logger.getLogsSorted();
@@ -57,11 +58,11 @@ class LoggerTest {
 
             assertDoesNotThrow(() -> logger.flush());
             assertDoesNotThrow(() -> logger.flushAll());
-            assertDoesNotThrow(() -> logger.flushLogUntil(10));
-            assertDoesNotThrow(() -> logger.forceThrough(10));
+            assertDoesNotThrow(() -> logger.flushLogUntil(10L));
+            assertDoesNotThrow(() -> logger.forceThrough(10L));
 
-            assertDoesNotThrow(() -> logger.setLastCommittedLSN(5));
-            assertEquals(5, logger.getLastCommittedLSN());
+            assertDoesNotThrow(() -> logger.setLastCommittedLSN(5L));
+            assertEquals(5L, logger.getLastCommittedLSN());
             assertDoesNotThrow(() -> logger.setLastCommittedLSN());
             assertDoesNotThrow(() -> logger.displayLogs());
             assertDoesNotThrow(() -> logger.displayLogsByTransaction(1));

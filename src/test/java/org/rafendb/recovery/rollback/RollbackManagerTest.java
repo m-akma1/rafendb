@@ -38,9 +38,9 @@ class RollbackManagerTest {
         }
 
         @Override
-        public synchronized int logDataChange(
+        public synchronized long logDataChange(
                 int tx, LogType type, long ts, String table, int id, String before, String after) {
-            int lsn = records.size() + 1;
+            long lsn = records.size() + 1L;
             records.add(new WALRecord(lsn, tx, type, ts, table, id, before, after));
             return lsn;
         }
@@ -71,7 +71,7 @@ class RollbackManagerTest {
         }
 
         @Override
-        public void applyUndo(String table, int id, String image, int lsn) {
+        public void applyUndo(String table, int id, String image, long lsn) {
             put(table, id, image);
         }
     }

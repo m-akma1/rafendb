@@ -28,7 +28,8 @@ class MockRecoveryManagerTest {
 
         LogPayload payload1 =
                 LogPayload.ofDataChange(1, LogType.INSERT, "users", 10, null, "Alice");
-        assertTrue(mockFrm.writeLog(payload1));
+        long lsn1 = mockFrm.writeLog(payload1);
+        assertTrue(lsn1 > 0);
         assertEquals(1, mockFrm.getWrittenLogs().size());
 
         assertTrue(mockFrm.commitTransaction(1));
@@ -41,7 +42,7 @@ class MockRecoveryManagerTest {
 
     @Test
     void testWriteLogWithRidAndNullCheck() {
-        assertFalse(mockFrm.writeLog(null));
+        assertEquals(-1, mockFrm.writeLog(null));
 
         LogPayload payload =
                 LogPayload.ofDataChange(
@@ -51,7 +52,8 @@ class MockRecoveryManagerTest {
                         new Rid(1, 2),
                         Optional.empty(),
                         Optional.empty());
-        assertTrue(mockFrm.writeLog(payload));
+        long lsn = mockFrm.writeLog(payload);
+        assertTrue(lsn > 0);
         assertEquals(1, mockFrm.getWrittenLogs().size());
     }
 

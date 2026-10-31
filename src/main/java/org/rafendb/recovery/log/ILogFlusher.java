@@ -15,5 +15,5 @@ public interface ILogFlusher extends org.rafendb.api.recovery.ILogFlusher {
      * @throws LoggerErrorException jika terjadi kegagalan I/O saat melakukan flush
      */
     @Override
-    void flushLogUntil(int lsn) throws LoggerErrorException;
+    void flushLogUntil(long lsn) throws LoggerErrorException;
 }

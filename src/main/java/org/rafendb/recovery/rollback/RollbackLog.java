@@ -49,7 +49,7 @@ public interface RollbackLog {
      * @return LSN record yang baru
      * @throws LoggerErrorException jika record gagal ditambahkan
      */
-    int logDataChange(
+    long logDataChange(
             int idTransaction,
             LogType logType,
             long timestamp,

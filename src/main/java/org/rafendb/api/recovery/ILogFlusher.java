@@ -13,5 +13,5 @@ public interface ILogFlusher {
      * @param lsn the log sequence number boundary
      * @throws LoggerErrorException if flushing fails
      */
-    void flushLogUntil(int lsn) throws LoggerErrorException;
+    void flushLogUntil(long lsn) throws LoggerErrorException;
 }

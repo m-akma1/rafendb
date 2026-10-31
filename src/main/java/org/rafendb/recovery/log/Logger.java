@@ -5,7 +5,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.rafendb.api.storage.WalSync;
 import org.rafendb.recovery.rollback.RollbackLog;
 
@@ -18,8 +18,8 @@ import org.rafendb.recovery.rollback.RollbackLog;
 public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable {
 
     private final List<WALRecord> records = Collections.synchronizedList(new ArrayList<>());
-    private final AtomicInteger currentLSN = new AtomicInteger(0);
-    private volatile int lastCommittedLSN = 0;
+    private final AtomicLong currentLSN = new AtomicLong(0);
+    private volatile long lastCommittedLSN = 0;
     private final String logFilePath;
 
     /**
@@ -52,7 +52,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      *
      * @return LSN commit terakhir
      */
-    public int getLastCommittedLSN() {
+    public long getLastCommittedLSN() {
         return lastCommittedLSN;
     }
 
@@ -61,7 +61,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      *
      * @param lsn nomor LSN commit
      */
-    public void setLastCommittedLSN(int lsn) {
+    public void setLastCommittedLSN(long lsn) {
         this.lastCommittedLSN = lsn;
     }
 
@@ -73,6 +73,15 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     /**
+     * Mengembalikan nomor LSN tertinggi yang saat ini telah dialokasikan.
+     *
+     * @return nomor LSN saat ini
+     */
+    public long getCurrentLSN() {
+        return currentLSN.get();
+    }
+
+    /**
      * Mock flush log buffer ke stable storage.
      */
     public void flush() {}
@@ -81,7 +90,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     public void flushAll() {}
 
     @Override
-    public void flushLogUntil(int lsn) {}
+    public void flushLogUntil(long lsn) {}
 
     @Override
     public void forceThrough(long lsn) {}
@@ -102,7 +111,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
 
     @Override
     public void logTransactionEvent(int idTransaction, LogType logType) {
-        int lsn = currentLSN.incrementAndGet();
+        long lsn = currentLSN.incrementAndGet();
         long now = System.currentTimeMillis();
         records.add(new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null));
         if (logType == LogType.COMMIT) {
@@ -111,7 +120,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     @Override
-    public int logDataChange(
+    public long logDataChange(
             int idTransaction,
             LogType logType,
             long timestamp,
@@ -119,7 +128,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             int idRecord,
             String beforeVal,
             String afterVal) {
-        int lsn = currentLSN.incrementAndGet();
+        long lsn = currentLSN.incrementAndGet();
         records.add(
                 new WALRecord(
                         lsn,
