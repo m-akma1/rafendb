@@ -15,7 +15,7 @@ public sealed interface Expr {
      * @param table the table name or alias, or {@code null} if written without a prefix
      * @param column the column name, never {@code null}
      */
-    record ColumnRef(String table, String column) implements Expr {}
+    record ColumnRef(String table, String column, int offset) implements Expr {}
 
     /**
      * A typed constant, including SQL NULL.
