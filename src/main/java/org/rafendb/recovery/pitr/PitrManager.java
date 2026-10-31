@@ -64,7 +64,7 @@ public final class PitrManager {
                 boundaryLsn = Math.max(boundaryLsn, record.getLSN());
             }
         }
-        return restore(wal, targetTimestamp, boundaryLsn, null);
+        return runRecovery(wal, targetTimestamp, boundaryLsn, null);
     }
 
     /**
@@ -83,7 +83,7 @@ public final class PitrManager {
             }
         }
         if (targetCommit == null || targetCommit.getTimestamp() < snapshotTimestamp) return false;
-        return restore(wal, targetCommit.getTimestamp(), targetCommit.getLSN(), transactionId);
+        return runRecovery(wal, targetCommit.getTimestamp(), targetCommit.getLSN(), transactionId);
     }
 
     /** Restores through the latest durable COMMIT, or to the snapshot if there are no commits. */
@@ -98,8 +98,50 @@ public final class PitrManager {
                 latest = record;
             }
         }
-        if (latest == null) return restore(wal, snapshotTimestamp, 0, null);
-        return restore(wal, latest.getTimestamp(), latest.getLSN(), null);
+        if (latest == null) return runRecovery(wal, snapshotTimestamp, 0, null);
+        return runRecovery(wal, latest.getTimestamp(), latest.getLSN(), null);
+    }
+
+    private boolean runRecovery(
+            List<WALRecord> wal, long timestampBoundary, int lsnBoundary, Integer targetTx) {
+        if (!stopClientAdmission()) return false;
+        if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
+        if (!reloadStorageAfterRestore()) return false;
+        if (!restore(wal, timestampBoundary, lsnBoundary, targetTx)) return false;
+        if (!rebuildIndexesAndStatistics()) return false;
+        if (!resetConcurrencyState(recoveredHighestTransactionId, recoveredHighestTimestamp))
+            return false;
+        return resumeClientAdmission();
+    }
+
+    /** QP integration seam; server admission is not wired in this mock yet. */
+    private boolean stopClientAdmission() {
+        return true;
+    }
+
+    /** SM integration seam; a real implementation restores a validated snapshot atomically. */
+    private boolean restoreStorageSnapshot(long targetTimestamp, int targetLsn) {
+        return true;
+    }
+
+    /** SM integration seam; a real implementation invalidates buffers and reloads the catalog. */
+    private boolean reloadStorageAfterRestore() {
+        return true;
+    }
+
+    /** SM5 integration seam; a real implementation restores or rebuilds snapshot indexes. */
+    private boolean rebuildIndexesAndStatistics() {
+        return true;
+    }
+
+    /** CCM integration seam; a real implementation clears state and advances both generators. */
+    private boolean resetConcurrencyState(int highestTransactionId, long highestTimestamp) {
+        return true;
+    }
+
+    /** QP integration seam; admission reopens only after every recovery phase succeeds. */
+    private boolean resumeClientAdmission() {
+        return true;
     }
 
     private boolean restore(
