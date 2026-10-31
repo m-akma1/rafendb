@@ -1,5 +1,7 @@
 /**
- * Transaction undo (FR-04). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Transaction rollback and compensation logging (FR-04).
+ *
+ * <p>Reverses uncommitted transaction modifications and records compensation log records.
  *
  * <p>Owner: G5 Failure Recovery Manager (FR3).
  */
