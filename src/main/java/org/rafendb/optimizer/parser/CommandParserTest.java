@@ -49,7 +49,8 @@ class CommandParserTest {
         String hash = "CREATE INDEX idx ON emp(id) USING HASH";
         assertEquals(new CreateIndexQuery(hash, "idx", "emp", "id", IndexType.HASH), parse(hash));
         String btree = "create index idx on emp(id) using btree;";
-        assertEquals(new CreateIndexQuery(btree, "idx", "emp", "id", IndexType.BTREE), parse(btree));
+        assertEquals(
+                new CreateIndexQuery(btree, "idx", "emp", "id", IndexType.BTREE), parse(btree));
     }
 
     @Test

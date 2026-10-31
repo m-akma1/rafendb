@@ -62,8 +62,7 @@ final class TokenCursor {
      */
     boolean acceptWord(String word) {
         Token t = peek();
-        boolean wordLike =
-                t.getType() == TokenType.KEYWORD || t.getType() == TokenType.IDENTIFIER;
+        boolean wordLike = t.getType() == TokenType.KEYWORD || t.getType() == TokenType.IDENTIFIER;
         if (!wordLike || !t.getText().equalsIgnoreCase(word)) {
             return false;
         }
