@@ -136,9 +136,13 @@ public interface StorageManager extends AutoCloseable {
      * Validates the row and reserves an invisible slot for it. INSERT order: this, the caller logs,
      * then {@link #insert}; on abandon, {@link #cancelReservation}.
      *
+     * <p>The returned Rid (block, slot) is never one that was allocated before by this method or
+     * by {@link #applyRecovery}, even if its record was deleted or its reservation cancelled. The
+     * space may be reused, but the slot number is not.
+     *
      * @param table the table name
      * @param row the row to insert
-     * @return the reserved address
+     * @return the reserved address, never a previously allocated one
      * @throws StorageException if the table does not exist or the row does not match the schema
      */
     Rid reserveRid(String table, Row row);
@@ -146,6 +150,9 @@ public interface StorageManager extends AutoCloseable {
     /**
      * Releases a pending reservation. Idempotent; does nothing if {@code rid} is not a pending
      * reservation, and never deletes a live record.
+     *
+     * <p>The cancelled Rid is not handed out again by {@link #reserveRid}. The space may be
+     * reused, but the slot number is not.
      *
      * @param table the table name
      * @param rid the reserved address
@@ -182,6 +189,9 @@ public interface StorageManager extends AutoCloseable {
 
     /**
      * Deletes the live record at {@code rid} and its index entries.
+     *
+     * <p>The Rid is not handed out again by {@link #reserveRid} afterwards. The space may be
+     * reused, but the slot number is not.
      *
      * @param table the table name
      * @param rid the address
@@ -263,6 +273,11 @@ public interface StorageManager extends AutoCloseable {
      * Applies an image for FRM undo and redo, without logging. With an image, the record at exactly
      * {@code rid} becomes it (created or overwritten); with empty, no record is there afterwards.
      * Allocates pages as needed, updates indexes and statistics. Idempotent.
+     *
+     * <p>Relies on {@link #reserveRid} never allocating a Rid again, even after its record was
+     * deleted or its reservation cancelled. An undo can therefore restore a deleted record at its
+     * original Rid even when other inserts happened in between. A Rid allocated here is likewise
+     * never returned by {@link #reserveRid}.
      *
      * @param table the table name
      * @param rid the exact address
