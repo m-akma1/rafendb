@@ -26,6 +26,7 @@ class JoinAccessPathOptimizerTest {
     /** Checks the documented rejection of a null input plan. */
     @Test
     void rejectsNullPlan() {
-        assertThrows(NullPointerException.class, () -> new JoinAccessPathOptimizer().optimize(null));
+        assertThrows(
+                NullPointerException.class, () -> new JoinAccessPathOptimizer().optimize(null));
     }
 }
