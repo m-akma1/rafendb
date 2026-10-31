@@ -1,6 +1,12 @@
 /**
- * Exception hierarchy with error codes for QP to show readable errors (QP-01). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Exception hierarchy. Consist of
+ * {@link org.rafendb.common.error.RafenDBInternalException}
+ * for internal checked exception and
  *
- * <p>Owner: Supergroup.
+ * {@link org.rafendb.common.error.RafenDBRuntimeException}
+ * for runtime uncheked exception.
+ *
+ * <p>
+ * Owner: Supergroup.
  */
 package org.rafendb.common.error;
