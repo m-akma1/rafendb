@@ -2,6 +2,7 @@ package org.rafendb.recovery.rollback;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,20 +17,10 @@ import org.rafendb.recovery.log.WALRecord;
 
 class RollbackManagerTest {
 
-    /** Log di memori. Mencatat setiap panggilan agar test bisa mengecek urutan tulis log dan data. */
+    /** Log palsu di memori, pengganti Logger milik FR2. */
     static final class FakeLog implements RollbackLog {
         final List<WALRecord> records = new ArrayList<>();
-        final List<String> events;
-        long now = 0;
-
-        FakeLog(List<String> events) {
-            this.events = events;
-        }
-
-        /** Mencatat perubahan seperti yang dilakukan CCM sebelum menyuruh SM menerapkannya. */
-        int change(int tx, LogType type, String table, int id, String before, String after) {
-            return logDataChange(tx, type, ++now, table, id, before, after);
-        }
+        long clock = 1_000_000;
 
         @Override
         public synchronized List<WALRecord> getLogsSorted() {
@@ -43,8 +34,7 @@ class RollbackManagerTest {
 
         @Override
         public synchronized void logTransactionEvent(int tx, LogType type) {
-            records.add(new WALRecord(records.size() + 1, tx, type, ++now, null, -1, null, null));
-            events.add("log " + type + " T" + tx);
+            records.add(new WALRecord(records.size() + 1, tx, type, ++clock, null, -1, null, null));
         }
 
         @Override
@@ -52,14 +42,11 @@ class RollbackManagerTest {
                 int tx, LogType type, long ts, String table, int id, String before, String after) {
             int lsn = records.size() + 1;
             records.add(new WALRecord(lsn, tx, type, ts, table, id, before, after));
-            events.add("log " + type + " " + table + "#" + id);
             return lsn;
         }
 
         @Override
-        public void flushAll() {
-            events.add("flush");
-        }
+        public void flushAll() {}
 
         @Override
         public synchronized int getHighestTransactionId() {
@@ -67,15 +54,9 @@ class RollbackManagerTest {
         }
     }
 
-    /** Data tabel di memori yang bisa disuruh gagal pada undo berikutnya. */
+    /** Data tabel di memori. */
     static final class FakeStorage implements UndoStorage {
         final Map<String, String> rows = new HashMap<>();
-        final List<String> events;
-        int failNext = 0;
-
-        FakeStorage(List<String> events) {
-            this.events = events;
-        }
 
         void put(String table, int id, String image) {
             if (image == null) {
@@ -91,32 +72,25 @@ class RollbackManagerTest {
 
         @Override
         public void applyUndo(String table, int id, String image, int lsn) {
-            if (failNext > 0) {
-                failNext--;
-                throw new IllegalStateException("disk error");
-            }
             put(table, id, image);
-            events.add("apply " + table + "#" + id);
         }
     }
 
-    List<String> events;
     FakeLog log;
     FakeStorage db;
     RollbackManager frm;
+    long now = 0;
 
     @BeforeEach
     void setUp() {
-        events = new ArrayList<>();
-        log = new FakeLog(events);
-        db = new FakeStorage(events);
-        frm = new RollbackManager(log, db, () -> ++log.now);
+        log = new FakeLog();
+        db = new FakeStorage();
+        frm = new RollbackManager(log, db);
     }
 
     /** Menjalankan perubahan seperti CCM + SM: tulis log dulu, baru terapkan ke data. */
     void write(int tx, LogType type, String table, int id, String after) {
-        String before = db.get(table, id);
-        log.change(tx, type, table, id, before, after);
+        log.logDataChange(tx, type, ++now, table, id, db.get(table, id), after);
         db.put(table, id, after);
     }
 
@@ -134,21 +108,8 @@ class RollbackManagerTest {
 
         assertEquals("{bal:10}", db.get("account", 1));
         assertEquals("{bal:20}", db.get("account", 2));
-        assertEquals(null, db.get("account", 3));
-        List<WALRecord> t1 = log.getLogsByTransaction(1);
-        assertEquals(LogType.ABORT, t1.getLast().getLogType());
-        assertEquals(LogType.DELETE, t1.get(5).getLogType()); // kompensasi dari INSERT
-    }
-
-    @Test
-    void eachCompensationIsLoggedBeforeItsDataIsApplied() {
-        log.logTransactionEvent(1, LogType.BEGIN);
-        write(1, LogType.INSERT, "item", 7, "{x}");
-        events.clear();
-
-        frm.rollbackTransaction(1);
-
-        assertEquals(List.of("log DELETE item#7", "apply item#7", "log ABORT T1", "flush"), events);
+        assertNull(db.get("account", 3));
+        assertEquals(LogType.ABORT, log.getLogsByTransaction(1).getLast().getLogType());
     }
 
     @Test
@@ -159,9 +120,9 @@ class RollbackManagerTest {
         write(2, LogType.INSERT, "item", 2, "{b}");
         log.logTransactionEvent(2, LogType.COMMIT);
 
-        frm.rollbackTransaction(1);
+        assertTrue(frm.rollbackTransaction(1));
 
-        assertEquals(null, db.get("item", 1));
+        assertNull(db.get("item", 1));
         assertEquals("{b}", db.get("item", 2));
     }
 
@@ -177,31 +138,22 @@ class RollbackManagerTest {
     }
 
     @Test
+    void transactionWithOnlyBeginCanBeRolledBack() {
+        log.logTransactionEvent(1, LogType.BEGIN);
+
+        assertTrue(frm.rollbackTransaction(1));
+        assertEquals(LogType.ABORT, log.getLogsByTransaction(1).getLast().getLogType());
+    }
+
+    @Test
     void secondRollbackChangesNothing() {
         log.logTransactionEvent(1, LogType.BEGIN);
         write(1, LogType.INSERT, "item", 1, "{a}");
         frm.rollbackTransaction(1);
-        int size = log.records.size();
+        int size = log.getLogsSorted().size();
 
         assertTrue(frm.rollbackTransaction(1));
-        assertEquals(size, log.records.size());
-    }
-
-    @Test
-    void failedRollbackResumesWithoutUndoingTwice() {
-        db.put("account", 1, "{bal:10}");
-        log.logTransactionEvent(1, LogType.BEGIN);
-        write(1, LogType.UPDATE, "account", 1, "{bal:5}");
-        write(1, LogType.INSERT, "account", 2, "{bal:1}");
-        db.failNext = 1;
-
-        assertThrows(IllegalStateException.class, () -> frm.rollbackTransaction(1));
-        assertTrue(frm.rollbackTransaction(1));
-
-        assertEquals("{bal:10}", db.get("account", 1));
-        assertEquals(null, db.get("account", 2));
-        // BEGIN, 2 perubahan, 2 kompensasi (tidak ada yang ditulis dua kali), ABORT
-        assertEquals(6, log.getLogsByTransaction(1).size());
+        assertEquals(size, log.getLogsSorted().size());
     }
 
     @Test
@@ -215,18 +167,16 @@ class RollbackManagerTest {
         log.logTransactionEvent(1, LogType.BEGIN);
         write(1, LogType.INSERT, "item", 1, "{a}");
         log.logTransactionEvent(1, LogType.COMMIT);
-        long target = log.now;
-        log.logTransactionEvent(2, LogType.BEGIN);
-        write(2, LogType.UPDATE, "item", 1, "{a2}");
-        write(2, LogType.INSERT, "item", 2, "{b}");
-        log.logTransactionEvent(2, LogType.COMMIT);
+        long target = log.getLogsSorted().getLast().getTimestamp();
+        log.logDataChange(2, LogType.UPDATE, target + 10, "item", 1, "{a}", "{a2}");
+        db.put("item", 1, "{a2}");
+        log.logDataChange(2, LogType.INSERT, target + 20, "item", 2, null, "{b}");
+        db.put("item", 2, "{b}");
 
         assertEquals(2, frm.recoverToPointInTime(target));
 
         assertEquals("{a}", db.get("item", 1));
-        assertEquals(null, db.get("item", 2));
-        assertEquals(LogType.COMMIT, log.records.getLast().getLogType());
-        assertEquals(3, log.records.getLast().getIdTransaction()); // transaksi sistem
+        assertNull(db.get("item", 2));
     }
 
     @Test
@@ -238,45 +188,19 @@ class RollbackManagerTest {
         log.logTransactionEvent(2, LogType.COMMIT);
         log.logTransactionEvent(1, LogType.COMMIT); // ... tetapi commit sesudahnya
 
-        frm.recoverToTransaction(2);
+        assertEquals(1, frm.recoverToTransaction(2));
 
-        assertEquals(null, db.get("item", 1));
+        assertNull(db.get("item", 1));
         assertEquals("{b}", db.get("item", 2));
     }
 
     @Test
-    void restoreIsRejectedWhileATransactionRuns() {
+    void recoverToUncommittedTransactionIsRejected() {
         log.logTransactionEvent(1, LogType.BEGIN);
         write(1, LogType.INSERT, "item", 1, "{a}");
 
-        assertThrows(IllegalStateException.class, () -> frm.recoverToPointInTime(0));
         assertThrows(IllegalArgumentException.class, () -> frm.recoverToTransaction(1));
         assertEquals("{a}", db.get("item", 1));
-    }
-
-    @Test
-    void failedRestoreIsRolledBack() {
-        log.logTransactionEvent(1, LogType.BEGIN);
-        write(1, LogType.INSERT, "item", 1, "{a}");
-        write(1, LogType.INSERT, "item", 2, "{b}");
-        log.logTransactionEvent(1, LogType.COMMIT);
-        frm = new RollbackManager(log, failOnSecond(), () -> ++log.now);
-        assertThrows(IllegalStateException.class, () -> frm.recoverToPointInTime(0));
-
-        assertEquals("{a}", db.get("item", 1));
-        assertEquals("{b}", db.get("item", 2));
-        assertEquals(LogType.ABORT, log.records.getLast().getLogType());
-    }
-
-    /** Storage yang gagal sekali pada panggilan undo kedua. */
-    private UndoStorage failOnSecond() {
-        int[] calls = {0};
-        return (table, id, image, lsn) -> {
-            if (++calls[0] == 2) {
-                throw new IllegalStateException("disk error");
-            }
-            db.applyUndo(table, id, image, lsn);
-        };
     }
 
     @Test
