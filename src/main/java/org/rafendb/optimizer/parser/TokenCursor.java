@@ -56,6 +56,21 @@ final class TokenCursor {
         return true;
     }
 
+    /**
+     * Consumes the current token if it is a keyword or identifier spelled {@code word} (ignoring
+     * case); returns whether it did. Used for words the Tokenizer may classify either way.
+     */
+    boolean acceptWord(String word) {
+        Token t = peek();
+        boolean wordLike =
+                t.getType() == TokenType.KEYWORD || t.getType() == TokenType.IDENTIFIER;
+        if (!wordLike || !t.getText().equalsIgnoreCase(word)) {
+            return false;
+        }
+        pos++;
+        return true;
+    }
+
     /** Consumes the given keyword or throws {@link SyntaxException}. */
     void expectKeyword(String keyword) {
         if (!acceptKeyword(keyword)) {

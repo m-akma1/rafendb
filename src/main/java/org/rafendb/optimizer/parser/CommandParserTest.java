@@ -10,6 +10,7 @@ import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.TransactionQuery;
 import org.rafendb.common.query.TransactionQuery.Kind;
+import org.rafendb.common.schema.IndexType;
 
 class CommandParserTest {
     private static ParsedQuery parse(String sql) {
@@ -36,9 +37,25 @@ class CommandParserTest {
     }
 
     @Test
-    void createIndexKeepsNameTableAndColumn() {
+    void createIndexDefaultsToBtree() {
         String sql = "CREATE INDEX idx_salary ON emp(salary)";
-        assertEquals(new CreateIndexQuery(sql, "idx_salary", "emp", "salary"), parse(sql));
+        assertEquals(
+                new CreateIndexQuery(sql, "idx_salary", "emp", "salary", IndexType.BTREE),
+                parse(sql));
+    }
+
+    @Test
+    void createIndexUsingHashOrBtree() {
+        String hash = "CREATE INDEX idx ON emp(id) USING HASH";
+        assertEquals(new CreateIndexQuery(hash, "idx", "emp", "id", IndexType.HASH), parse(hash));
+        String btree = "create index idx on emp(id) using btree;";
+        assertEquals(new CreateIndexQuery(btree, "idx", "emp", "id", IndexType.BTREE), parse(btree));
+    }
+
+    @Test
+    void createIndexWithUnknownTypeIsRejected() {
+        assertSyntaxError("CREATE INDEX idx ON emp(id) USING GIST", "BTREE or HASH");
+        assertSyntaxError("CREATE INDEX idx ON emp(id) USING", "BTREE or HASH");
     }
 
     @Test

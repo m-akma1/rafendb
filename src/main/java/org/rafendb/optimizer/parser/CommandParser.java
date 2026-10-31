@@ -6,11 +6,12 @@ import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.TransactionQuery;
 import org.rafendb.common.query.TransactionQuery.Kind;
+import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.token.Token;
 
 /**
  * Parses commands that need no optimization: BEGIN [TRANSACTION], COMMIT, ABORT, and CREATE INDEX
- * (QO-06). Syntax only; no catalog access.
+ * with an optional {@code USING BTREE | HASH} clause (QO-06). Syntax only; no catalog access.
  */
 final class CommandParser {
     private CommandParser() {}
@@ -51,6 +52,19 @@ final class CommandParser {
         in.expectPunct("(");
         String column = in.expectIdentifier("column name");
         in.expectPunct(")");
-        return new CreateIndexQuery(sql, name, table, column);
+        return new CreateIndexQuery(sql, name, table, column, indexType(in));
+    }
+
+    // USING is matched by text because the Tokenizer may class it as a keyword or an identifier.
+    private static IndexType indexType(TokenCursor in) {
+        if (!in.acceptWord("USING")) {
+            return IndexType.BTREE;
+        }
+        for (IndexType type : IndexType.values()) {
+            if (in.acceptWord(type.name())) {
+                return type;
+            }
+        }
+        throw in.error(in.peek(), "BTREE or HASH");
     }
 }
