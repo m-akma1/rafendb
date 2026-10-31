@@ -1,0 +1,614 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.concurrency.ConcurrencyControl {
+	{method}  {abstract} +abort ( tx : TxId ) : TxResult
+	{method}  {abstract} +activeProtocol () : ProtocolType
+	{method}  {abstract} +awaitNoActive ( timeout : Duration ) : boolean
+	{method}  {abstract} +begin () : TxId
+	{method}  {abstract} +commit ( tx : TxId ) : TxResult
+	{method}  {abstract} +pauseNewTransactions () : void
+	{method}  {abstract} +requestAccess ( tx : TxId , type : AccessType , resource : ResourceId ) : AccessResult
+	{method}  {abstract} +resumeNewTransactions () : void
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyLogging {
+	{method}  {abstract} +logChange ( tx : TxId , change : ChangeRecord ) : long
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyMaintenance {
+	{method}  {abstract} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void
+}
+
+
+enum org.rafendb.api.concurrency.ProtocolType {
+	{field} +LOCK_BASED
+	{field} +TIMESTAMP_BASED
+}
+
+
+interface org.rafendb.api.optimizer.QueryOptimizer {
+	{method}  {abstract} +bindAndValidate ( parsed : ParsedQuery ) : void
+	{method}  {abstract} +explain ( plan : QueryPlan ) : String
+	{method}  {abstract} +optimize ( parsed : ParsedQuery ) : QueryPlan
+	{method}  {abstract} +parse ( sql : String ) : ParsedQuery
+}
+
+
+interface org.rafendb.api.processor.QueryProcessor {
+	{method}  {abstract} +openSession () : Session
+}
+
+
+interface org.rafendb.api.processor.Session {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +execute ( sql : String ) : QueryResult
+}
+
+
+interface org.rafendb.api.recovery.RecoveryManager {
+	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
+	{method} +close () : void
+	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
+	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
+	{method}  {abstract} +recoverFromCrash () : boolean
+	{method}  {abstract} +recoverToPointInTime () : boolean
+	{method}  {abstract} +recoverToPointInTime ( targetTimestamp : long ) : boolean
+	{method} +redo () : boolean
+	{method}  {abstract} +rollbackTransaction ( tx : TxId ) : boolean
+	{method} +undo () : boolean
+	{method}  {abstract} +writeLog ( payload : LogPayload ) : long
+}
+
+
+interface org.rafendb.api.storage.RecordCursor {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +next () : StoredRow
+}
+
+
+interface org.rafendb.api.storage.StorageManager {
+	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
+	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
+	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
+	{method}  {abstract} +flush () : void
+	{method}  {abstract} +getSchema ( table : String ) : TableSchema
+	{method}  {abstract} +getStats ( table : String ) : TableStats
+	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
+	{method}  {abstract} +listIndexes ( table : String ) : List
+	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
+	{method}  {abstract} +listTables () : List
+	{method}  {abstract} +loadSampleDatabase () : void
+	{method}  {abstract} +lookupIndex ( index : String , key : Value ) : List
+	{method}  {abstract} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+	{method}  {abstract} +reloadAfterRestore () : void
+	{method}  {abstract} +reserveRid ( table : String , row : Row ) : Rid
+	{method}  {abstract} +scan ( table : String ) : RecordCursor
+	{method}  {abstract} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void
+}
+
+
+interface org.rafendb.api.storage.WalSync {
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+}
+
+
+enum org.rafendb.common.error.Component {
+	{field} +CCM
+	{field} +FRM
+	{field} +GENERAL
+	{field} +QO
+	{field} +QP
+	{field} +SM
+}
+
+
+class org.rafendb.common.error.ConcurrencyInternalException {
+}
+
+
+class org.rafendb.common.error.RafenDBInternalException {
+	{method} +getMessage () : String
+}
+
+
+class org.rafendb.common.error.RafenDBRuntimeException {
+	{method} +getMessage () : String
+}
+
+
+class org.rafendb.common.error.RecoveryInternalException {
+}
+
+
+class org.rafendb.common.error.StorageInternalException {
+}
+
+
+class org.rafendb.common.error.StorageRuntimeException {
+}
+
+
+class org.rafendb.common.error.SyntaxException {
+}
+
+
+class org.rafendb.common.error.ValidationException {
+}
+
+
+interface org.rafendb.common.expr.Expr {
+}
+
+
+class org.rafendb.common.expr.Expr$Binary {
+	{method} +left () : Expr
+	{method} +op () : Op
+	{method} +right () : Expr
+}
+
+
+class org.rafendb.common.expr.Expr$ColumnRef {
+	{method} +column () : String
+	{method} +offset () : int
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.expr.Expr$Literal {
+	{method} +value () : Value
+}
+
+
+class org.rafendb.common.expr.Expr$Null {
+}
+
+
+enum org.rafendb.common.expr.Expr$Op {
+	{field} +ADD
+	{field} +AND
+	{field} +DIV
+	{field} +EQ
+	{field} +GE
+	{field} +GT
+	{field} +LE
+	{field} +LT
+	{field} +MOD
+	{field} +MUL
+	{field} +NE
+	{field} +SUB
+}
+
+
+class org.rafendb.common.log.LogPayload {
+	{method} +change () : Optional
+	{method}  {static} +ofChange ( tx : TxId , type : LogType , change : ChangeRecord ) : LogPayload
+	{method}  {static} +ofEvent ( tx : TxId , type : LogType ) : LogPayload
+	{method} +timestamp () : long
+	{method} +tx () : TxId
+	{method} +type () : LogType
+}
+
+
+enum org.rafendb.common.log.LogType {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +CHECKPOINT_BEGIN
+	{field} +CHECKPOINT_END
+	{field} +COMMIT
+	{field} +DELETE
+	{field} +INSERT
+	{field} +UPDATE
+}
+
+
+class org.rafendb.common.plan.IndexScanDescriptor {
+	{method} +column () : String
+	{method} +condition () : Expr
+	{method} +describe () : String
+	{method} +indexName () : String
+}
+
+
+class org.rafendb.common.plan.IndexScanNode {
+	{method} +alias () : String
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +descriptor () : IndexScanDescriptor
+	{method} +table () : String
+}
+
+
+enum org.rafendb.common.plan.JoinAlgorithm {
+	{field} +BLOCK_NESTED_LOOP
+	{field} +HASH_JOIN
+	{field} +NESTED_LOOP
+	{field} +SORT_MERGE
+}
+
+
+class org.rafendb.common.plan.JoinPlanNode {
+	{method} +algorithm () : JoinAlgorithm
+	{method} +children () : List
+	{method} +condition () : Expr
+	{method} +describe () : String
+	{method} +left () : PlanNode
+	{method} +right () : PlanNode
+}
+
+
+interface org.rafendb.common.plan.PlanNode {
+	{method}  {abstract} +children () : List
+	{method}  {abstract} +describe () : String
+}
+
+
+class org.rafendb.common.plan.ProjectionPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +columns () : List
+	{method} +describe () : String
+}
+
+
+class org.rafendb.common.plan.QueryPlan {
+	{method} +root () : PlanNode
+	{method} +totalCost () : double
+}
+
+
+class org.rafendb.common.plan.SelectionPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +condition () : Expr
+	{method} +describe () : String
+}
+
+
+class org.rafendb.common.plan.TableScanNode {
+	{method} +alias () : String
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.query.CreateIndexQuery {
+	{method} +column () : String
+	{method} +indexName () : String
+	{method} +indexType () : IndexType
+	{method} +originalSql () : String
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.query.DeleteQuery {
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +where () : Expr
+}
+
+
+class org.rafendb.common.query.InsertQuery {
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +values () : List
+}
+
+
+interface org.rafendb.common.query.ParsedQuery {
+	{method}  {abstract} +originalSql () : String
+}
+
+
+interface org.rafendb.common.query.QueryResult {
+}
+
+
+class org.rafendb.common.query.QueryResult$Affected {
+	{method} +count () : long
+}
+
+
+class org.rafendb.common.query.QueryResult$Rows {
+	{method} +columns () : List
+	{method} +rows () : List
+}
+
+
+class org.rafendb.common.query.QueryResult$Status {
+	{method} +message () : String
+}
+
+
+class org.rafendb.common.query.SelectQuery {
+	{method} +joinCondition () : Expr
+	{method} +originalSql () : String
+	{method} +projection () : List
+	{method} +sourceTables () : List
+	{method} +whereCondition () : Expr
+}
+
+
+class org.rafendb.common.query.TransactionQuery {
+	{method} +kind () : Kind
+	{method} +originalSql () : String
+}
+
+
+enum org.rafendb.common.query.TransactionQuery$Kind {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +COMMIT
+}
+
+
+class org.rafendb.common.query.UpdateQuery {
+	{method} +column () : String
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +value () : Expr
+	{method} +where () : Expr
+}
+
+
+class org.rafendb.common.schema.Column {
+	{field} {static} +MAX_TEXT_LENGTH : int
+	{method} +accepts ( v : Value ) : boolean
+	{method} +length () : int
+	{method} +name () : String
+	{method} +nullable () : boolean
+	{method} +primaryKey () : boolean
+	{method} +type () : DataType
+}
+
+
+class org.rafendb.common.schema.ForeignKey {
+	{method} +columns () : List
+	{method} +name () : String
+	{method} +onDelete () : ReferentialAction
+	{method} +referencedColumns () : List
+	{method} +referencedTable () : String
+}
+
+
+class org.rafendb.common.schema.IndexInfo {
+	{method} +column () : String
+	{method} +name () : String
+	{method} +table () : String
+	{method} +type () : IndexType
+}
+
+
+enum org.rafendb.common.schema.IndexType {
+	{field} +B_PLUS_TREE
+	{field} +HASH
+}
+
+
+class org.rafendb.common.schema.ReferencingForeignKey {
+	{method} +foreignKey () : ForeignKey
+	{method} +referencingTable () : String
+}
+
+
+enum org.rafendb.common.schema.ReferentialAction {
+	{field} +CASCADE
+	{field} +RESTRICT
+}
+
+
+class org.rafendb.common.schema.TableSchema {
+	{method} +column ( name : String ) : Optional
+	{method} +columnIndex ( name : String ) : int
+	{method} +columns () : List
+	{method} +foreignKeys () : List
+	{method} +primaryKeyColumns () : List
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.schema.TableStats {
+	{method} +averageRecordSize () : double
+	{method} +blockCount () : long
+	{method} +blockingFactor () : double
+	{method} +distinctValues () : Map
+	{method} +distinctValues ( column : String ) : long
+	{method} +recordCount () : long
+}
+
+
+class org.rafendb.common.tuple.Rid {
+	{method} +block () : long
+	{method} +compareTo ( other : Rid ) : int
+	{method} +slot () : int
+}
+
+
+class org.rafendb.common.tuple.Row {
+	{method} +get ( index : int ) : Value
+	{method} +size () : int
+	{method} +values () : List
+}
+
+
+class org.rafendb.common.tuple.StoredRow {
+	{method} +rid () : Rid
+	{method} +row () : Row
+}
+
+
+class org.rafendb.common.txn.AccessResult {
+	{method}  {static} +aborted ( message : String ) : AccessResult
+	{method}  {static} +allowed () : AccessResult
+	{method} +message () : String
+	{method} +status () : Status
+	{method}  {static} +waiting () : AccessResult
+}
+
+
+enum org.rafendb.common.txn.AccessResult$Status {
+	{field} +ABORTED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+enum org.rafendb.common.txn.AccessType {
+	{field} +READ
+	{field} +WRITE
+}
+
+
+class org.rafendb.common.txn.ChangeRecord {
+	{method} +afterImage () : Optional
+	{method} +beforeImage () : Optional
+	{method} +resource () : ResourceId
+}
+
+
+class org.rafendb.common.txn.RecoveryInfo {
+	{method} +maxTimestamp () : long
+	{method} +maxTransactionId () : long
+}
+
+
+class org.rafendb.common.txn.ResourceId {
+	{method}  {static} +ofRow ( table : String , rid : Rid ) : ResourceId
+	{method}  {static} +ofTable ( table : String ) : ResourceId
+	{method} +rid () : Rid
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.txn.TxId {
+	{method} +compareTo ( other : TxId ) : int
+	{method} +value () : long
+}
+
+
+class org.rafendb.common.txn.TxResult {
+	{method} +message () : String
+	{method} +status () : TxStatus
+}
+
+
+enum org.rafendb.common.txn.TxStatus {
+	{field} +ABORTED
+	{field} +ACTIVE
+	{field} +COMMITTED
+	{field} +FAILED
+	{field} +PARTIALLY_COMMITTED
+}
+
+
+enum org.rafendb.common.type.DataType {
+	{field} +CHAR
+	{field} +FLOAT
+	{field} +INTEGER
+	{field} +VARCHAR
+}
+
+
+class org.rafendb.common.type.Value {
+	{method} +asFloat () : float
+	{method} +asInt () : int
+	{method} +asText () : String
+	{method} +compareTo ( other : Value ) : int
+	{method} +isNull () : boolean
+	{method}  {static} +nullOf ( type : DataType ) : Value
+	{method}  {static} +ofFloat ( v : float ) : Value
+	{method}  {static} +ofInt ( v : int ) : Value
+	{method}  {static} +ofText ( type : DataType , s : String ) : Value
+	{method} +type () : DataType
+	{method} +value () : Object
+}
+
+
+
+
+org.rafendb.api.recovery.RecoveryManager ..|>  org.rafendb.api.storage.WalSync
+org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.error.Component : component
+org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.error.Component : component
+org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.SyntaxException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.ValidationException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : left
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : right
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr$Op : op
+org.rafendb.common.expr.Expr$Binary ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$ColumnRef ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$Literal *--  org.rafendb.common.type.Value : value
+org.rafendb.common.expr.Expr$Literal ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$Null ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.log.LogPayload *--  org.rafendb.common.log.LogType : type
+org.rafendb.common.log.LogPayload *--  org.rafendb.common.txn.TxId : tx
+org.rafendb.common.plan.IndexScanDescriptor *--  org.rafendb.common.expr.Expr : condition
+org.rafendb.common.plan.IndexScanNode *--  org.rafendb.common.plan.IndexScanDescriptor : descriptor
+org.rafendb.common.plan.IndexScanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.expr.Expr : condition
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.JoinAlgorithm : algorithm
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.PlanNode : left
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.PlanNode : right
+org.rafendb.common.plan.JoinPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.ProjectionPlanNode "1" o-- "0..*"  org.rafendb.common.expr.Expr : columns
+org.rafendb.common.plan.ProjectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.ProjectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.QueryPlan *--  org.rafendb.common.plan.PlanNode : root
+org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.expr.Expr : condition
+org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.SelectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.TableScanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.query.CreateIndexQuery *--  org.rafendb.common.schema.IndexType : indexType
+org.rafendb.common.query.CreateIndexQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.DeleteQuery *--  org.rafendb.common.expr.Expr : where
+org.rafendb.common.query.DeleteQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.InsertQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : values
+org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.QueryResult$Affected ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.QueryResult$Rows "1" o-- "0..*"  org.rafendb.common.tuple.Row : rows
+org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : projection
+org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : joinCondition
+org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : whereCondition
+org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.TransactionQuery *--  org.rafendb.common.query.TransactionQuery$Kind : kind
+org.rafendb.common.query.TransactionQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.UpdateQuery *--  org.rafendb.common.expr.Expr : value
+org.rafendb.common.query.UpdateQuery *--  org.rafendb.common.expr.Expr : where
+org.rafendb.common.query.UpdateQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.schema.Column *--  org.rafendb.common.type.DataType : type
+org.rafendb.common.schema.ForeignKey *--  org.rafendb.common.schema.ReferentialAction : onDelete
+org.rafendb.common.schema.IndexInfo *--  org.rafendb.common.schema.IndexType : type
+org.rafendb.common.schema.ReferencingForeignKey *--  org.rafendb.common.schema.ForeignKey : foreignKey
+org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.Column : columns
+org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.ForeignKey : foreignKeys
+org.rafendb.common.tuple.Row "1" o-- "0..*"  org.rafendb.common.type.Value : values
+org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Rid : rid
+org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Row : row
+org.rafendb.common.txn.AccessResult *--  org.rafendb.common.txn.AccessResult$Status : status
+org.rafendb.common.txn.ChangeRecord *--  org.rafendb.common.txn.ResourceId : resource
+org.rafendb.common.txn.ResourceId *--  org.rafendb.common.tuple.Rid : rid
+org.rafendb.common.txn.TxResult *--  org.rafendb.common.txn.TxStatus : status
+org.rafendb.common.type.Value *--  org.rafendb.common.type.DataType : type
+
+
+@enduml

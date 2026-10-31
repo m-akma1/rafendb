@@ -1,0 +1,29 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.recovery.RecoveryManager {
+	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
+	{method} +close () : void
+	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
+	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
+	{method}  {abstract} +recoverFromCrash () : boolean
+	{method}  {abstract} +recoverToPointInTime () : boolean
+	{method}  {abstract} +recoverToPointInTime ( targetTimestamp : long ) : boolean
+	{method} +redo () : boolean
+	{method}  {abstract} +rollbackTransaction ( tx : TxId ) : boolean
+	{method} +undo () : boolean
+	{method}  {abstract} +writeLog ( payload : LogPayload ) : long
+}
+
+
+
+
+
+
+@enduml
