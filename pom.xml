@@ -39,6 +39,12 @@
     <maven-site-plugin.version>3.22.0</maven-site-plugin.version>
     <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
     <maven-wrapper-plugin.version>3.3.4</maven-wrapper-plugin.version>
+    <plantuml-generator-maven-plugin.version>3.0.1</plantuml-generator-maven-plugin.version>
+    <!-- Bundles PlantUML 1.2025.0. Don't override it: newer PlantUML breaks this plugin without any error. -->
+    <plantuml-maven-plugin.version>0.2.13</plantuml-maven-plugin.version>
+
+    <!-- Where -Pdiagrams writes the class diagrams (.puml, .svg, .png). -->
+    <diagrams.outputDirectory>${project.basedir}/docs/generated</diagrams.outputDirectory>
   </properties>
 
   <dependencyManagement>
@@ -85,6 +91,8 @@
           <version>${maven-compiler-plugin.version}</version>
           <configuration>
             <showWarnings>true</showWarnings>
+            <!-- Keep parameter names in bytecode, so generated diagrams show real names. -->
+            <parameters>true</parameters>
             <compilerArgs>
               <!-- All lint warnings visible, none fatal. -->
               <arg>-Xlint:all</arg>
@@ -140,6 +148,16 @@
           <groupId>com.diffplug.spotless</groupId>
           <artifactId>spotless-maven-plugin</artifactId>
           <version>${spotless.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>de.elnarion.maven</groupId>
+          <artifactId>plantuml-generator-maven-plugin</artifactId>
+          <version>${plantuml-generator-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>com.github.davidmoten</groupId>
+          <artifactId>plantuml-maven-plugin</artifactId>
+          <version>${plantuml-maven-plugin.version}</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -217,4 +235,178 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      Class diagrams of the module contracts (api.*) and shared types (common).
+      Run: ./mvnw -Pdiagrams process-classes
+      Writes .puml, .svg and .png per diagram to docs/generated. Rendering needs Graphviz (dot) on PATH.
+    -->
+    <profile>
+      <id>diagrams</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>de.elnarion.maven</groupId>
+            <artifactId>plantuml-generator-maven-plugin</artifactId>
+            <configuration>
+              <outputDirectory>${diagrams.outputDirectory}</outputDirectory>
+              <!-- Public contract only: drops private helpers, serialVersionUID and record backing fields. -->
+              <maxVisibilityFields>PUBLIC</maxVisibilityFields>
+              <maxVisibilityMethods>PUBLIC</maxVisibilityMethods>
+              <!-- Boilerplate every record has. Record components still show as accessors. -->
+              <methodBlacklistRegexp>equals|hashCode|toString</methodBlacklistRegexp>
+              <!-- Package boxes keep full names; members use short type names. -->
+              <useShortClassNamesInFieldsAndMethods>true</useShortClassNamesInFieldsAndMethods>
+              <additionalPlantUmlConfigs>
+                <additionalPlantUmlConfig>set namespaceSeparator .</additionalPlantUmlConfig>
+                <additionalPlantUmlConfig>hide empty members</additionalPlantUmlConfig>
+                <additionalPlantUmlConfig>skinparam linetype ortho</additionalPlantUmlConfig>
+              </additionalPlantUmlConfigs>
+            </configuration>
+            <executions>
+              <!-- Classes must be compiled first, so every execution runs at process-classes. -->
+              <!-- Cross-component view: every api.* contract in one diagram. -->
+              <execution>
+                <id>api</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <!-- Same, plus the shared types the contracts exchange. -->
+              <execution>
+                <id>api-with-common</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-with-common.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api</scanPackage>
+                    <scanPackage>org.rafendb.common</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <!-- Per-component views. -->
+              <execution>
+                <id>api-storage</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-storage.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api.storage</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>api-concurrency</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-concurrency.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api.concurrency</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>api-optimizer</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-optimizer.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api.optimizer</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>api-processor</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-processor.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api.processor</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>api-recovery</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>api-recovery.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.api.recovery</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>common</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputFilename>common.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.common</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Renders the .puml files above to images. Same phase, declared after, so it runs after them. -->
+          <plugin>
+            <groupId>com.github.davidmoten</groupId>
+            <artifactId>plantuml-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>render-diagrams</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <sources>
+                    <directory>${diagrams.outputDirectory}</directory>
+                    <includes>
+                      <include>*.puml</include>
+                    </includes>
+                  </sources>
+                  <outputDirectory>${diagrams.outputDirectory}</outputDirectory>
+                  <formats>
+                    <format>svg</format>
+                    <format>png</format>
+                  </formats>
+                  <!-- No embedded source/version metadata, so images only change when the diagram does. -->
+                  <metadata>false</metadata>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
