@@ -1,0 +1,13 @@
+-- QO-06: transaction commands and CREATE INDEX. No optimization; each line should parse.
+BEGIN;
+BEGIN TRANSACTION;
+COMMIT;
+ABORT;
+CREATE INDEX idx_salary ON employee(salary);
+CREATE INDEX idx_id ON employee(id) USING HASH;
+CREATE INDEX idx_age ON employee(age) USING BTREE;
+-- Expected syntax errors below
+CREATE INDEX idx employee(salary);
+CREATE INDEX idx ON employee();
+CREATE INDEX idx ON employee(id) USING GIST;
+COMMIT now;
