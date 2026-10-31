@@ -6,9 +6,10 @@ import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 
 /**
- * Thread-safe strict timestamp ordering (CC-08), without Thomas' Write Rule. The coordinator
- * assigns unique increasing begin timestamps; restart uses a new transaction and timestamp.
- * Use consistent granularity and separate predicate protection for row-level access.
+ * Thread-safe table-level strict timestamp ordering (CC-08), without Thomas' Write Rule.
+ * The coordinator maps row requests to normalized table keys and assigns unique increasing begin
+ * timestamps; restart uses a new transaction and timestamp. R-TS/W-TS and writer ownership are
+ * tracked per table, including accesses from scans and inserts.
  */
 public interface TimestampProtocol {
 
@@ -30,10 +31,10 @@ public interface TimestampProtocol {
      * @param tx the ACTIVE transaction, not null
      * @param timestamp its fixed, positive begin timestamp
      * @param type READ or WRITE, not null
-     * @param resource the protected resource, not null
+     * @param resource the protected table-level resource, not null
      * @return the access decision, never null
      * @throws NullPointerException if an object argument is null
-     * @throws IllegalArgumentException if timestamp is not positive
+     * @throws IllegalArgumentException if timestamp is not positive or resource is not table-level
      */
     Decision requestAccess(TxId tx, long timestamp, AccessType type, ResourceId resource);
 

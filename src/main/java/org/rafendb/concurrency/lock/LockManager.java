@@ -7,11 +7,9 @@ import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 
 /**
- * Thread-safe rigorous 2PL (CC-06) for table and row resources: READ takes S, WRITE takes X.
- * Multiple S holders may coexist; X excludes conflicting holders. Table locks cover their rows;
- * implementations must coordinate both levels, for example using internal intention locks.
- * Table names must be normalized consistently. Row locks alone do not protect predicate scans;
- * callers must request table-level protection for scans unless equivalent protection is provided.
+ * Thread-safe table-level rigorous 2PL (CC-06): READ takes S, WRITE takes X. Multiple S holders
+ * may coexist; X excludes other holders on the table. The CCM maps row requests to their table
+ * before calling this manager; all accesses and scans use the same normalized table key.
  *
  * <p>The CCM coordinator admits only ACTIVE transactions and serializes each transaction's
  * requests with commit/abort. Locks remain held until durable commit or successful rollback.
@@ -20,8 +18,8 @@ import org.rafendb.common.txn.TxId;
 public interface LockManager {
 
     /**
-     * Attempts acquisition without blocking. Unsatisfied requests queue FIFO per resource; only the
-     * head may acquire on retry. Conflicting requests across table/row levels also respect FIFO.
+     * Attempts acquisition without blocking. Unsatisfied requests queue FIFO per table; only the
+     * head may acquire on retry.
      * Consecutive readers may hold S together after acquiring in order.
      * Retry the same request before another access; polling never duplicates locks or queue entries.
      *
@@ -30,15 +28,16 @@ public interface LockManager {
      *
      * @param tx an ACTIVE transaction admitted by the coordinator, not null
      * @param type READ for S or WRITE for X, not null
-     * @param resource a table or row resource with an already normalized table name, not null
+     * @param resource a table-level resource with an already normalized table name, not null
      * @return true if the requested protection is held; false if queued and access must not execute
      * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if resource is not table-level
      */
     boolean tryAcquire(TxId tx, AccessType type, ResourceId resource);
 
     /**
      * Returns a non-null, consistent, deeply unmodifiable wait-for snapshot for CC-07. Include
-     * holder and queue-order blockers across table/row levels and upgrades; exclude self-edges.
+     * holder and queue-order blockers, including upgrades; exclude self-edges.
      */
     Map<TxId, Set<TxId>> waitForGraph();
 

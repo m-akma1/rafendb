@@ -14,6 +14,9 @@ import org.rafendb.common.txn.TxResult;
  * yet, {@link #requestAccess} returns WAITING and the caller asks again with the same arguments
  * until it gets ALLOWED or ABORTED. Repeating a request never creates a second lock.
  *
+ * <p>Both protocols protect whole tables. CCM maps row resources to their normalized table key;
+ * row identity is retained separately in change records for logging and Storage Manager writes.
+ *
  * <p>Thread-safety: all methods may be called concurrently. Calls for one transaction come from one
  * session thread at a time.
  */
@@ -85,7 +88,9 @@ public interface ConcurrencyControl {
     void resumeNewTransactions();
 
     /**
-     * Returns the protocol in use. It is chosen by configuration at startup and never changes.
+     * Returns the protocol selected by startup configuration: LOCK_BASED by default, or
+     * TIMESTAMP_BASED when configured. Display the choice at startup. Configuration changes take
+     * effect on the next startup; live switching is unsupported, including while work is in flight.
      *
      * @return the active protocol
      */
