@@ -12,9 +12,17 @@ public class Token {
         this.position = position;
     }
 
-    public TokenType getType(){ return type; }
-    public String getText(){ return text; }
-    public SourcePosition getPosition(){ return position; }
+    public TokenType getType() {
+        return type;
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    public SourcePosition getPosition() {
+        return position;
+    }
 
     public boolean isKeyword(String keyword) {
         return type == TokenType.KEYWORD && text.equalsIgnoreCase(keyword);
