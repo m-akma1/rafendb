@@ -1,5 +1,6 @@
 package org.rafendb.client;
 
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
@@ -28,6 +29,7 @@ public final class ClientMain {
             System.out.println("Connection established, welcome to RafenDB!");
 
             DataOutputStream output = new DataOutputStream(publisher.getOutputStream());
+            DataInputStream reply = new DataInputStream(publisher.getInputStream());
 
             System.out.print("RafenDB # ");
 
@@ -36,6 +38,12 @@ public final class ClientMain {
 
             while (input != null && !quit(input)) {
                 Protocol.writeFrame(output, input);
+                String result = Protocol.readFrame(reply);
+                if (result == null) {
+                    System.out.println("Server closed the connection.");
+                    break;
+                }
+                System.out.println(result);
                 System.out.print("RafenDB # ");
                 input = stdin.nextLine();
             }

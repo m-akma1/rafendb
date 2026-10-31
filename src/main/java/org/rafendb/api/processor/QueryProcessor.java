@@ -1,26 +1,16 @@
 package org.rafendb.api.processor;
 
-import org.rafendb.common.QueryResult;
-
+/**
+ * Entry point of the Query Processor (QP). Hands out one {@link Session} per connected client
+ * (QP-02); all SQL runs through a session.
+ */
 public interface QueryProcessor {
 
     /**
-     * Start a new session with a client
-     * @return sessionId
+     * Opens a new session for one client. Thread-safe: connection threads may call it
+     * concurrently.
+     *
+     * @return a new open session, never {@code null}
      */
-    int openSession();
-
-    /**
-     * Execute a raw query from client with identified sessionId
-     * @param sql the raw sql string
-     * @param sessionId client's sessionId
-     * @return {@link QueryResult}
-     */
-    QueryResult execute(String sql, int sessionId);
-
-    /**
-     * Close a session with the specified sessionId
-     * @param sessionId
-     */
-    void closeSession(int sessionId);
+    Session openSession();
 }

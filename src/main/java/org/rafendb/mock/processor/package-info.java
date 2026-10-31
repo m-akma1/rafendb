@@ -1,5 +1,6 @@
 /**
- * Mocks of api.processor. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Mocks of api.processor: {@link org.rafendb.mock.processor.MockQueryProcessor} returns canned
+ * results so the server, client and driver can run without the real QP.
  *
  * <p>Owner: G1 Query Processor.
  */

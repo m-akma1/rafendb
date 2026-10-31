@@ -1,32 +1,36 @@
 package org.rafendb.engine;
 
+import java.util.Objects;
+import org.rafendb.api.processor.QueryProcessor;
+import org.rafendb.mock.processor.MockQueryProcessor;
+
 /**
- *
- * Engine. Main entry setiap execution.
- * TODO: Deskripsi
- *
+ * Composition root: builds the components, wires them together and hands the {@link
+ * QueryProcessor} to the server. For now only the mock QP is wired; real components and {@code
+ * --mock} flags are added here once they exist.
  */
 public final class Engine {
-    private static Engine instance = null;
+    private final QueryProcessor processor;
 
-    private Engine() {}
-
-    public static synchronized Engine getEngine() {
-        if (instance == null) instance = new Engine();
-        return instance;
+    private Engine(QueryProcessor processor) {
+        this.processor = Objects.requireNonNull(processor, "processor");
     }
 
-    public synchronized void execute(String sql) {
-        System.out.print("Executing \"" + sql + "\" ");
+    /**
+     * Builds an engine backed by {@link MockQueryProcessor}.
+     *
+     * @return the engine
+     */
+    public static Engine withMocks() {
+        return new Engine(new MockQueryProcessor());
+    }
 
-        for (int i = 0; i < 3; i++) {
-            try {
-                Thread.sleep(500);
-                System.out.print(".");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        System.out.println(" Line executed!");
+    /**
+     * Returns the query processor clients talk to.
+     *
+     * @return the query processor, never {@code null}
+     */
+    public QueryProcessor processor() {
+        return processor;
     }
 }
