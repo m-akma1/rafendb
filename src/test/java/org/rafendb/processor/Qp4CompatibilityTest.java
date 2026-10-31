@@ -8,7 +8,7 @@ import org.rafendb.api.processor.ExecutionPlan;
 import org.rafendb.common.expr.*;
 import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.tuple.Rid;
-import org.rafendb.common.tuple.Row;
+import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.*;
 import org.rafendb.mock.processor.*;
 
@@ -20,9 +20,9 @@ class Qp4CompatibilityTest {
 
     @Test
     void concatenationPreservesPositionsAndIdentities() {
-        var outer = new Row(List.of(Value.ofInt(1)), new Rid(0, 0));
-        var inner = new Row(List.of(Value.nullOf(DataType.INTEGER)), new Rid(1, 0));
-        var joined = Row.concat(outer, inner);
+        var outer = new ResultRow(List.of(Value.ofInt(1)), new Rid(0, 0));
+        var inner = new ResultRow(List.of(Value.nullOf(DataType.INTEGER)), new Rid(1, 0));
+        var joined = ResultRow.concat(outer, inner);
         assertNull(joined.rid());
         assertEquals(new Rid(0, 0), outer.rid());
         assertEquals(new Rid(1, 0), inner.rid());
@@ -37,8 +37,8 @@ class Qp4CompatibilityTest {
 
     @Test
     void cursorResetsMidReadAfterExhaustionAndAfterClose() {
-        var first = new Row(List.of(Value.ofInt(1)), null);
-        var second = new Row(List.of(Value.ofInt(2)), null);
+        var first = new ResultRow(List.of(Value.ofInt(1)), null);
+        var second = new ResultRow(List.of(Value.ofInt(2)), null);
         var cursor = new MockOperator(List.of(b), List.of(first, second));
         assertEquals(List.of(b), cursor.schema());
         assertThrows(IllegalStateException.class, cursor::next);
@@ -71,7 +71,7 @@ class Qp4CompatibilityTest {
         assertThrows(UnsupportedOperationException.class, () -> cursor.schema().clear());
         assertThrows(
                 IllegalArgumentException.class, () -> new ExecutionPlan.Rows(List.of(b), cursor));
-        var wrong = new Row(List.of(), null);
+        var wrong = new ResultRow(List.of(), null);
         assertThrows(
                 IllegalArgumentException.class, () -> new MockOperator(List.of(a), List.of(wrong)));
         cursor.close();
@@ -82,7 +82,7 @@ class Qp4CompatibilityTest {
         Expr literal = new Expr.Literal(Value.ofInt(1));
         Expr predicate = new Expr.Binary(Expr.Op.EQ, literal, literal);
         List<ColumnSchema> schema = List.of();
-        var row = new Row(List.of(), null);
+        var row = new ResultRow(List.of(), null);
         for (var truth : TruthValue.values()) {
             var mock = new MockExpressionEvaluator(Value.nullOf(DataType.INTEGER), truth);
             assertEquals(truth, mock.evaluateCondition(predicate, row, schema));

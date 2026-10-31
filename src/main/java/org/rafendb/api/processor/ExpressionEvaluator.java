@@ -3,7 +3,7 @@ package org.rafendb.api.processor;
 import java.util.List;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.Row;
+import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 
@@ -22,7 +22,7 @@ public interface ExpressionEvaluator {
      * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
      * @throws ArithmeticException jika dibagi dengan 0
      */
-    Value evaluate(Expr expression, Row row, List<ColumnSchema> schema);
+    Value evaluate(Expr expression, ResultRow row, List<ColumnSchema> schema);
 
     /**
      * Menentukan apakah baris lolos
@@ -31,7 +31,7 @@ public interface ExpressionEvaluator {
      * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
      * @throws ArithmeticException jika dibagi dengan 0
      */
-    default boolean test(Expr condition, Row row, List<ColumnSchema> schema) {
+    default boolean test(Expr condition, ResultRow row, List<ColumnSchema> schema) {
         return evaluateCondition(condition, row, schema).isTrue();
     }
 
@@ -42,5 +42,5 @@ public interface ExpressionEvaluator {
      * @throws IllegalArgumentException jika expressionnya atau kolom atau type operand invalid
      * @throws ArithmeticException jika dibagi dengan 0
      */
-    TruthValue evaluateCondition(Expr condition, Row row, List<ColumnSchema> schema);
+    TruthValue evaluateCondition(Expr condition, ResultRow row, List<ColumnSchema> schema);
 }

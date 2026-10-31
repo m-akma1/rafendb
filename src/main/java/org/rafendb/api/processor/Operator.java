@@ -2,7 +2,7 @@ package org.rafendb.api.processor;
 
 import java.util.List;
 import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.Row;
+import org.rafendb.common.tuple.ResultRow;
 
 /**
  * Kontrak pembacaan baris. Setiap objek dipakai untuk satu eksekusi dan tidak aman dipakai bersamaan.
@@ -27,7 +27,7 @@ public interface Operator extends AutoCloseable {
      * Mengembalikan baris berikutnya, atau null jika habis; panggilan berikutnya tetap null sampai di-reset.
      * @throws IllegalStateException jika belum dibuka atau sudah ditutup
      */
-    Row next();
+    ResultRow next();
 
     /** Melepas resource; aman dipanggil sebelum open maupun berulang kali. */
     @Override

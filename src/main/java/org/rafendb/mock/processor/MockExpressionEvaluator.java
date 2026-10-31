@@ -5,7 +5,7 @@ import java.util.Objects;
 import org.rafendb.api.processor.ExpressionEvaluator;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.Row;
+import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 
@@ -26,7 +26,7 @@ public final class MockExpressionEvaluator implements ExpressionEvaluator {
 
     /** {@inheritDoc} Mock ini hanya menolak input Java null dan mengembalikan hasil konfigurasi. */
     @Override
-    public Value evaluate(Expr expression, Row row, List<ColumnSchema> schema) {
+    public Value evaluate(Expr expression, ResultRow row, List<ColumnSchema> schema) {
         Objects.requireNonNull(expression, "expression");
         Objects.requireNonNull(row, "row");
         Objects.requireNonNull(schema, "schema");
@@ -35,7 +35,7 @@ public final class MockExpressionEvaluator implements ExpressionEvaluator {
 
     /** {@inheritDoc} Mock ini hanya menolak input Java null dan mengembalikan hasil konfigurasi. */
     @Override
-    public TruthValue evaluateCondition(Expr condition, Row row, List<ColumnSchema> schema) {
+    public TruthValue evaluateCondition(Expr condition, ResultRow row, List<ColumnSchema> schema) {
         Objects.requireNonNull(condition);
         Objects.requireNonNull(row);
         Objects.requireNonNull(schema);

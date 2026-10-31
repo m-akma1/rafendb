@@ -12,6 +12,7 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
@@ -103,12 +104,17 @@ class Qp2ContractTest {
     void fixtureOwnershipAndRowShapeAreProtected() {
         var values = new ArrayList<Value>(List.of(Value.ofInt(6000)));
         var rid = new Rid(1, 2);
-        var row = new Row(values, rid);
+        var row = new ResultRow(values, rid);
         values.clear();
         assertEquals(List.of(Value.ofInt(6000)), row.values());
         assertEquals(rid, row.rid());
+        var storageRow = new Row(row.values());
+        assertEquals(row.values(), storageRow.values());
+        assertEquals(row.get(0), storageRow.get(0));
+        assertEquals(row.size(), storageRow.size());
+        assertThrows(UnsupportedOperationException.class, () -> storageRow.values().clear());
         assertThrows(UnsupportedOperationException.class, () -> row.values().clear());
-        assertThrows(NullPointerException.class, () -> new Row(null, null));
+        assertThrows(NullPointerException.class, () -> new ResultRow(null, null));
         assertThrows(
                 NullPointerException.class,
                 () -> new SelectionPlanNode(new TableScanNode("pegawai"), null));
@@ -121,7 +127,7 @@ class Qp2ContractTest {
     void evaluatorIsClearlyConfiguredDummyRatherThanSqlEvaluation() {
         var dummy = Value.ofInt(42);
         var evaluator = new MockExpressionEvaluator(dummy, false);
-        var row = new Row(List.of(), null);
+        var row = new ResultRow(List.of(), null);
         List<ColumnSchema> schema = List.of();
         Expr literal = new Expr.Literal(Value.ofInt(5000));
         Expr comparison = new Expr.Binary(Expr.Op.GT, literal, new Expr.Literal(Value.ofInt(0)));
