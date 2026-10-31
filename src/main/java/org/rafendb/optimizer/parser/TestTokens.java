@@ -16,8 +16,22 @@ import org.rafendb.common.token.TokenType;
 final class TestTokens {
     private static final Set<String> KEYWORDS =
             Set.of(
-                    "AND", "UPDATE", "SET", "WHERE", "INSERT", "INTO", "VALUES", "DELETE", "FROM",
-                    "BEGIN", "TRANSACTION", "COMMIT", "ABORT", "CREATE", "INDEX", "ON");
+                    "AND",
+                    "UPDATE",
+                    "SET",
+                    "WHERE",
+                    "INSERT",
+                    "INTO",
+                    "VALUES",
+                    "DELETE",
+                    "FROM",
+                    "BEGIN",
+                    "TRANSACTION",
+                    "COMMIT",
+                    "ABORT",
+                    "CREATE",
+                    "INDEX",
+                    "ON");
     private static final Pattern TOKEN =
             Pattern.compile(
                     "\\s*(\\d+\\.\\d+|\\d+|'[^']*'|[A-Za-z_]\\w*|<=|>=|<>|!=|[=<>+\\-*/%]|[(),.;])");
