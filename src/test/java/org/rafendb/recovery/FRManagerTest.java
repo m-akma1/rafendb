@@ -122,6 +122,35 @@ class FRManagerTest {
     }
 
     @Test
+    void testPitrExcludesOldChangeFromTransactionCommittedAfterTarget()
+            throws InterruptedException {
+        frm.beginTransaction(1);
+        frm.writeLog(LogPayload.ofDataChange(1, LogType.INSERT, "users", 1, null, "Alice"));
+        storage.data.put("users#1", "Alice");
+        frm.commitTransaction(1);
+        long targetTimestamp =
+                logger.getLogsByTransaction(1).stream()
+                        .filter(record -> record.getLogType() == LogType.COMMIT)
+                        .findFirst()
+                        .orElseThrow()
+                        .getTimestamp();
+
+        // The change itself is timestamped before the target, but its transaction commits later.
+        while (System.currentTimeMillis() <= targetTimestamp) {
+            Thread.sleep(1);
+        }
+        frm.beginTransaction(2);
+        frm.writeLog(
+                new LogPayload(2, LogType.INSERT, targetTimestamp - 1, "users", 2, null, "Bob"));
+        storage.data.put("users#2", "Bob");
+        frm.commitTransaction(2);
+
+        assertTrue(frm.recoverToPointInTime(targetTimestamp));
+        assertEquals("Alice", storage.data.get("users#1"));
+        assertFalse(storage.data.containsKey("users#2"));
+    }
+
+    @Test
     void testCrashRecoveryAndMocks() {
         assertTrue(frm.recoverFromCrash());
         assertTrue(frm.redo());
