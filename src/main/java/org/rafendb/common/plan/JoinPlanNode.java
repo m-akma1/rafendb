@@ -18,28 +18,28 @@ public final class JoinPlanNode implements PlanNode {
     }
 
     public JoinAlgorithm algorithm() {
-        return null;
+        return algorithm;
     }
 
     public Expr condition() {
-        return null;
+        return condition;
     }
 
     public PlanNode left() {
-        return null;
+        return left;
     }
 
     public PlanNode right() {
-        return null;
+        return right;
     }
 
     @Override
     public List<PlanNode> children() {
-        return null;
+        return List.of(left, right);
     }
 
     @Override
     public String describe() {
-        return null;
+        return "";
     }
 }
