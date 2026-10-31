@@ -4,25 +4,25 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-import org.rafendb.api.recovery.ILogFlusher;
-import org.rafendb.api.recovery.LogPayload;
-import org.rafendb.api.recovery.LoggerErrorException;
 import org.rafendb.api.recovery.RecoveryManager;
+import org.rafendb.common.log.LogPayload;
+import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 
 /**
- * In-memory mock implementation of {@link RecoveryManager} and {@link ILogFlusher} for Milestone 1.
+ * In-memory mock implementation of {@link RecoveryManager} for Milestone 1.
  *
  * <p>Simulates all recovery facade operations in memory without touching disk storage, allowing
  * other components (CCM, QP, SM) to run drivers and tests independently.
  */
-public class MockRecoveryManager implements RecoveryManager, ILogFlusher {
+public class MockRecoveryManager implements RecoveryManager {
 
     private final List<LogPayload> writtenLogs = Collections.synchronizedList(new ArrayList<>());
-    private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
+    private final Map<TxId, TxStatus> txStatuses = new ConcurrentHashMap<>();
     private final AtomicLong mockLsnCounter = new AtomicLong(0);
     private volatile long lastFlushedLsn = 0;
     private volatile boolean checkpointCreated = false;
@@ -32,30 +32,28 @@ public class MockRecoveryManager implements RecoveryManager, ILogFlusher {
     private volatile boolean undoExecuted = false;
 
     @Override
-    public long writeLog(LogPayload payload) throws LoggerErrorException {
-        if (payload == null) {
-            return -1;
-        }
+    public long writeLog(LogPayload payload) {
+        Objects.requireNonNull(payload, "payload");
         long lsn = mockLsnCounter.incrementAndGet();
         writtenLogs.add(payload);
         return lsn;
     }
 
     @Override
-    public boolean beginTransaction(int idTransaction) {
-        txStatuses.put(idTransaction, TxStatus.ACTIVE);
+    public boolean beginTransaction(TxId tx) {
+        txStatuses.put(tx, TxStatus.ACTIVE);
         return true;
     }
 
     @Override
-    public boolean commitTransaction(int idTransaction) {
-        txStatuses.put(idTransaction, TxStatus.COMMITTED);
+    public boolean commitTransaction(TxId tx) {
+        txStatuses.put(tx, TxStatus.COMMITTED);
         return true;
     }
 
     @Override
-    public boolean rollbackTransaction(int idTransaction) {
-        txStatuses.put(idTransaction, TxStatus.ABORTED);
+    public boolean rollbackTransaction(TxId tx) {
+        txStatuses.put(tx, TxStatus.ABORTED);
         return true;
     }
 
@@ -97,18 +95,13 @@ public class MockRecoveryManager implements RecoveryManager, ILogFlusher {
     }
 
     @Override
-    public void flushLogUntil(long lsn) throws LoggerErrorException {
-        forceThrough(lsn);
-    }
-
-    @Override
     public void forceThrough(long lsn) {
         this.lastFlushedLsn = Math.max(lastFlushedLsn, lsn);
     }
 
     @Override
-    public TxStatus getTransactionStatus(int idTransaction) {
-        return txStatuses.get(idTransaction);
+    public TxStatus getTransactionStatus(TxId tx) {
+        return txStatuses.get(tx);
     }
 
     /**
@@ -165,13 +158,13 @@ public class MockRecoveryManager implements RecoveryManager, ILogFlusher {
     /**
      * Menyaring log berdasarkan ID transaksi untuk keperluan audit dan pengujian.
      *
-     * @param idTransaction id transaksi yang dicari
+     * @param tx transaksi yang dicari
      * @return list log payload milik transaksi tersebut
      */
-    public List<LogPayload> getLogsByTransaction(int idTransaction) {
+    public List<LogPayload> getLogsByTransaction(TxId tx) {
         synchronized (writtenLogs) {
             return writtenLogs.stream()
-                    .filter(log -> log.idTransaction() == idTransaction)
+                    .filter(log -> log.tx().equals(tx))
                     .collect(Collectors.toList());
         }
     }

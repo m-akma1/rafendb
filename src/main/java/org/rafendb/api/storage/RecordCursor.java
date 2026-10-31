@@ -1,6 +1,6 @@
 package org.rafendb.api.storage;
 
-import org.rafendb.common.error.StorageException;
+import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.StoredRow;
 
 /**
@@ -15,9 +15,9 @@ public interface RecordCursor extends AutoCloseable {
      *
      * @return the next record, or {@code null} at the end
      * @throws IllegalStateException if closed
-     * @throws StorageException on an I/O failure
+     * @throws StorageInternalException on a storage failure while reading the next page
      */
-    StoredRow next();
+    StoredRow next() throws StorageInternalException;
 
     /** Releases pinned pages. Idempotent. */
     @Override
