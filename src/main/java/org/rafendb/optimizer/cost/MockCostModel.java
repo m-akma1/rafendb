@@ -11,7 +11,9 @@ import org.rafendb.common.plan.SelectionPlanNode;
 public final class MockCostModel implements CostModel {
     private final long defaultRows;
 
-    public MockCostModel() { this(100); }
+    public MockCostModel() {
+        this(100);
+    }
 
     public MockCostModel(long defaultRows) {
         if (defaultRows < 0) throw new IllegalArgumentException("defaultRows must be nonnegative");

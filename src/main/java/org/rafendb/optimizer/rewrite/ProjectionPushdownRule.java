@@ -1,13 +1,13 @@
 package org.rafendb.optimizer.rewrite;
 
-import java.util.Set;
-import java.util.List;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.PlanNode;
-import org.rafendb.common.plan.TableScanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
+import org.rafendb.common.plan.TableScanNode;
 
 public class ProjectionPushdownRule implements RewriteRule {
 
