@@ -17,7 +17,8 @@ import static org.rafendb.storage.index.IndexFixtures.varcharCol;
 
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
-import org.rafendb.common.error.StorageException;
+import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.type.DataType;
 
@@ -25,7 +26,7 @@ import org.rafendb.common.type.DataType;
 class IndexKeysTest {
 
     @Test
-    void sameFamilyKeyPasses() {
+    void sameFamilyKeyPasses() throws StorageInternalException {
         assertEquals(Optional.of(i(5)), IndexKeys.normalize(i(5), intCol("a")));
         assertEquals(Optional.of(f(2.5f)), IndexKeys.normalize(f(2.5f), floatCol("x")));
         // CHAR and VARCHAR are one family.
@@ -35,26 +36,32 @@ class IndexKeysTest {
 
     @Test
     void otherFamilyRejected() {
-        assertThrows(StorageException.class, () -> IndexKeys.normalize(f(2.5f), intCol("a")));
+        assertThrows(
+                StorageInternalException.class, () -> IndexKeys.normalize(f(2.5f), intCol("a")));
         // No numeric promotion, even when the value is exact.
-        assertThrows(StorageException.class, () -> IndexKeys.normalize(i(3), floatCol("x")));
-        assertThrows(StorageException.class, () -> IndexKeys.normalize(s("1"), intCol("a")));
+        assertThrows(
+                StorageInternalException.class, () -> IndexKeys.normalize(i(3), floatCol("x")));
+        assertThrows(
+                StorageInternalException.class, () -> IndexKeys.normalize(s("1"), intCol("a")));
     }
 
     @Test
     void otherFamilyMessageMatchesMock() {
-        StorageException e =
+        StorageInternalException e =
                 assertThrows(
-                        StorageException.class, () -> IndexKeys.normalize(f(2.5f), intCol("a")));
-        assertEquals("key of type FLOAT does not match column a of type INTEGER", e.getMessage());
+                        StorageInternalException.class,
+                        () -> IndexKeys.normalize(f(2.5f), intCol("a")));
+        assertEquals(
+                "Internal error at Storage Manager: key of type FLOAT does not match column a of type INTEGER",
+                e.getMessage());
     }
 
     @Test
-    void nullKeyIsEmptyButFamilyIsCheckedFirst() {
+    void nullKeyIsEmptyButFamilyIsCheckedFirst() throws StorageInternalException {
         assertEquals(Optional.empty(), IndexKeys.normalize(nul(DataType.INTEGER), intCol("a")));
         assertEquals(Optional.empty(), IndexKeys.normalize(nul(DataType.CHAR), varcharCol("v", 3)));
         assertThrows(
-                StorageException.class,
+                StorageInternalException.class,
                 () -> IndexKeys.normalize(nul(DataType.VARCHAR), intCol("a")));
     }
 
@@ -76,13 +83,14 @@ class IndexKeysTest {
                 () ->
                         IndexKeys.requireIndexable(
                                 varcharCol("v", 1337), IndexType.B_PLUS_TREE, 4096));
-        StorageException e =
+        StorageRuntimeException e =
                 assertThrows(
-                        StorageException.class,
+                        StorageRuntimeException.class,
                         () ->
                                 IndexKeys.requireIndexable(
                                         varcharCol("v", 1338), IndexType.B_PLUS_TREE, 4096));
-        assertEquals("column v is too wide to index", e.getMessage());
+        assertEquals(
+                "Runtime error at Storage Manager: column v is too wide to index", e.getMessage());
     }
 
     @Test

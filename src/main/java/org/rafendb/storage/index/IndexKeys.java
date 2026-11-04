@@ -2,7 +2,8 @@ package org.rafendb.storage.index;
 
 import java.util.Objects;
 import java.util.Optional;
-import org.rafendb.common.error.StorageException;
+import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.type.DataType;
@@ -47,15 +48,16 @@ public final class IndexKeys {
      * @param column the indexed column
      * @return {@code key} itself, or empty if it is NULL
      * @throws NullPointerException if an argument is {@code null}
-     * @throws StorageException if {@code key} is of another type family than {@code column}
+     * @throws StorageInternalException if {@code key} is of another type family than {@code column}
      */
-    public static Optional<Value> normalize(Value key, Column column) {
+    public static Optional<Value> normalize(Value key, Column column)
+            throws StorageInternalException {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(column, "column");
         DataType keyType = key.type();
         DataType columnType = column.type();
         if (keyType != columnType && !(keyType.isText() && columnType.isText())) {
-            throw new StorageException(
+            throw new StorageInternalException(
                     "key of type "
                             + keyType
                             + " does not match column "
@@ -93,7 +95,7 @@ public final class IndexKeys {
      * @param type the index structure
      * @param pageSize the page size in bytes
      * @throws NullPointerException if {@code column} or {@code type} is {@code null}
-     * @throws StorageException if the column is too wide for {@code type}
+     * @throws StorageRuntimeException if the column is too wide for {@code type}
      */
     public static void requireIndexable(Column column, IndexType type, int pageSize) {
         Objects.requireNonNull(type, "type");
@@ -107,7 +109,7 @@ public final class IndexKeys {
                     case HASH -> BUCKET_HEADER_BYTES + maxEntry;
                 };
         if (needed > pageSize) {
-            throw new StorageException("column " + column.name() + " is too wide to index");
+            throw new StorageRuntimeException("column " + column.name() + " is too wide to index");
         }
     }
 }

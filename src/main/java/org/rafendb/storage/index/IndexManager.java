@@ -3,7 +3,8 @@ package org.rafendb.storage.index;
 import java.util.List;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
-import org.rafendb.common.error.StorageException;
+import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.tuple.Rid;
@@ -25,7 +26,8 @@ import org.rafendb.common.type.Value;
  *
  * <p>All arguments and results are non-null unless stated; null arguments throw {@link
  * NullPointerException}. Returned lists are unmodifiable. Invalid input throws {@link
- * StorageException} before any change.
+ * StorageRuntimeException} for invalid index definitions before any change; storage failures
+ * and invalid lookup/range calls throw {@link StorageInternalException}.
  *
  * <p>Writes take the LSN of the log record of the operation that caused them, and mark every
  * changed index page with it, so the WAL rule also holds for index pages.
@@ -48,11 +50,12 @@ public final class IndexManager {
      *
      * @param index the index definition
      * @param rows the table's live records, from a fresh scan
-     * @throws StorageException if the table or column does not exist, the name is used, the
+     * @throws StorageRuntimeException if the table or column does not exist, the name is used, the
      *     column is text too wide for the index structure (B_PLUS_TREE: over 1337 UTF-8 bytes with
-     *     4096-byte pages; HASH has no such limit), or reading {@code rows} fails
+     *     4096-byte pages; HASH has no such limit)
+     * @throws StorageInternalException if reading rows or building the index fails
      */
-    public void create(IndexInfo index, RecordCursor rows) {
+    public void create(IndexInfo index, RecordCursor rows) throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -63,10 +66,10 @@ public final class IndexManager {
      * @param index the index name
      * @param key the key, possibly NULL
      * @return the matching Rids, unordered; empty if none or {@code key} is NULL
-     * @throws StorageException if the index does not exist or {@code key} is of another type
+     * @throws StorageInternalException if the index does not exist or {@code key} is of another type
      *     family (checked before NULL)
      */
-    public List<Rid> lookup(String index, Value key) {
+    public List<Rid> lookup(String index, Value key) throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -81,11 +84,12 @@ public final class IndexManager {
      * @param includeUpper whether {@code upper} itself matches
      * @return the matching Rids ordered by key, then Rid; empty if none, a bound is NULL, or the
      *     range is empty
-     * @throws StorageException if the index does not exist, is not a B+ tree, or a bound is of
+     * @throws StorageInternalException if the index does not exist, is not a B+ tree, or a bound is of
      *     another type family (checked before NULL)
      */
     public List<Rid> range(
-            String index, Value lower, boolean includeLower, Value upper, boolean includeUpper) {
+            String index, Value lower, boolean includeLower, Value upper, boolean includeUpper)
+            throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -100,9 +104,9 @@ public final class IndexManager {
      * @param rid the record's address
      * @param row the stored row, matching the table's schema
      * @param lsn the LSN of the INSERT log record
-     * @throws StorageException on an I/O failure
+     * @throws StorageInternalException on an I/O failure
      */
-    public void onInsert(String table, Rid rid, Row row, long lsn) {
+    public void onInsert(String table, Rid rid, Row row, long lsn) throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -120,9 +124,10 @@ public final class IndexManager {
      * @param before the row as it was stored before the update
      * @param after the row as it is stored now
      * @param lsn the LSN of the UPDATE log record
-     * @throws StorageException on an I/O failure
+     * @throws StorageInternalException on an I/O failure
      */
-    public void onUpdate(String table, Rid rid, Row before, Row after, long lsn) {
+    public void onUpdate(String table, Rid rid, Row before, Row after, long lsn)
+            throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -138,9 +143,10 @@ public final class IndexManager {
      * @param rid the deleted record's address
      * @param before the row as it was stored before the delete
      * @param lsn the LSN of the DELETE log record
-     * @throws StorageException on an I/O failure
+     * @throws StorageInternalException on an I/O failure
      */
-    public void onDelete(String table, Rid rid, Row before, long lsn) {
+    public void onDelete(String table, Rid rid, Row before, long lsn)
+            throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -153,9 +159,9 @@ public final class IndexManager {
      *
      * @param table the table name
      * @param rows the table's live records, from a fresh scan
-     * @throws StorageException if reading {@code rows} fails or on an I/O failure
+     * @throws StorageInternalException if reading {@code rows} fails or on an I/O failure
      */
-    public void rebuild(String table, RecordCursor rows) {
+    public void rebuild(String table, RecordCursor rows) throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 
@@ -168,9 +174,9 @@ public final class IndexManager {
      * without indexes is a no-op.
      *
      * @param table the table name
-     * @throws StorageException on an I/O failure
+     * @throws StorageInternalException on an I/O failure
      */
-    public void dropIndexesOf(String table) {
+    public void dropIndexesOf(String table) throws StorageInternalException {
         throw new UnsupportedOperationException("SM5: not implemented");
     }
 }
