@@ -1,6 +1,6 @@
 package org.rafendb.common.error;
 
-import org.rafendb.common.token;
+import org.rafendb.common.token.Token;
 
 /**
  * Query Optimizer's {@link RafenDBRuntimeException} for a statement that is not valid SQL (QO-01):
@@ -19,6 +19,7 @@ public class SyntaxException extends RafenDBRuntimeException {
      */
     public SyntaxException(String message) {
         super(Component.QO, message, null);
+        this.offendingToken = null;
     }
 
     public SyntaxException(String message, Token offendingToken) {
@@ -34,6 +35,8 @@ public class SyntaxException extends RafenDBRuntimeException {
      */
     public SyntaxException(String message, Throwable cause) {
         super(Component.QO, message, cause);
+        this.offendingToken = null;
+    }
 
     public Token getOffendingToken() {
         return offendingToken;

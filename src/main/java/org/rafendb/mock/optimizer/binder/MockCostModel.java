@@ -1,7 +1,6 @@
 package org.rafendb.mock.optimizer.binder;
 
 import java.util.Objects;
-import org.rafendb.common.error.CostEstimationException;
 import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
@@ -42,6 +41,6 @@ public final class MockCostModel implements CostModel {
     }
 
     private static void requireNode(PlanNode node) {
-        if (Objects.isNull(node)) throw new CostEstimationException("Plan node must not be null");
+        if (Objects.isNull(node)) throw new IllegalArgumentException("Plan node must not be null");
     }
 }
