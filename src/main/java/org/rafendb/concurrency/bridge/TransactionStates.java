@@ -11,7 +11,7 @@ import org.rafendb.common.txn.TxStatus;
  * <p>The bridge drives PARTIALLY_COMMITTED, COMMITTED, FAILED and ABORTED in the order the commit
  * and abort flows require; this interface only rejects illegal transitions.
  */
-interface TransactionStates {
+public interface TransactionStates {
 
     /**
      * Returns the current status of a transaction.
