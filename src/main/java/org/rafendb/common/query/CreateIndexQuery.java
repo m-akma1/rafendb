@@ -10,11 +10,7 @@ import org.rafendb.common.schema.IndexType;
  * @param indexName the name of the index to create
  * @param table the indexed table
  * @param column the indexed column
- * <<<<<<< HEAD
- * @param indexType the index structure; {@link IndexType#BTREE} when USING is omitted
- * =======
  * @param indexType the index structure; {@link IndexType#B_PLUS_TREE} when USING is omitted
- * >>>>>>> main
  */
 public record CreateIndexQuery(
         String originalSql, String indexName, String table, String column, IndexType indexType)
