@@ -1,0 +1,95 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.plan.IndexScanDescriptor {
+	{method} +column () : String
+	{method} +condition () : Expr
+	{method} +describe () : String
+	{method} +indexName () : String
+}
+
+
+class org.rafendb.common.plan.IndexScanNode {
+	{method} +alias () : String
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +descriptor () : IndexScanDescriptor
+	{method} +table () : String
+}
+
+
+enum org.rafendb.common.plan.JoinAlgorithm {
+	{field} +BLOCK_NESTED_LOOP
+	{field} +HASH_JOIN
+	{field} +NESTED_LOOP
+	{field} +SORT_MERGE
+}
+
+
+class org.rafendb.common.plan.JoinPlanNode {
+	{method} +algorithm () : JoinAlgorithm
+	{method} +children () : List
+	{method} +condition () : Expr
+	{method} +describe () : String
+	{method} +left () : PlanNode
+	{method} +right () : PlanNode
+}
+
+
+interface org.rafendb.common.plan.PlanNode {
+	{method}  {abstract} +children () : List
+	{method}  {abstract} +describe () : String
+}
+
+
+class org.rafendb.common.plan.ProjectionPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +columns () : List
+	{method} +describe () : String
+}
+
+
+class org.rafendb.common.plan.QueryPlan {
+	{method} +root () : PlanNode
+	{method} +totalCost () : double
+}
+
+
+class org.rafendb.common.plan.SelectionPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +condition () : Expr
+	{method} +describe () : String
+}
+
+
+class org.rafendb.common.plan.TableScanNode {
+	{method} +alias () : String
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +table () : String
+}
+
+
+
+
+org.rafendb.common.plan.IndexScanNode *--  org.rafendb.common.plan.IndexScanDescriptor : descriptor
+org.rafendb.common.plan.IndexScanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.JoinAlgorithm : algorithm
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.PlanNode : left
+org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.PlanNode : right
+org.rafendb.common.plan.JoinPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.ProjectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.ProjectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.QueryPlan *--  org.rafendb.common.plan.PlanNode : root
+org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.SelectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.TableScanNode ..|>  org.rafendb.common.plan.PlanNode
+
+
+@enduml

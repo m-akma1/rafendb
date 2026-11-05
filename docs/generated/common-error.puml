@@ -1,0 +1,64 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+enum org.rafendb.common.error.Component {
+	{field} +CCM
+	{field} +FRM
+	{field} +GENERAL
+	{field} +QO
+	{field} +QP
+	{field} +SM
+}
+
+
+class org.rafendb.common.error.ConcurrencyInternalException {
+}
+
+
+class org.rafendb.common.error.RafenDBInternalException {
+	{method} +getMessage () : String
+}
+
+
+class org.rafendb.common.error.RafenDBRuntimeException {
+	{method} +getMessage () : String
+}
+
+
+class org.rafendb.common.error.RecoveryInternalException {
+}
+
+
+class org.rafendb.common.error.StorageInternalException {
+}
+
+
+class org.rafendb.common.error.StorageRuntimeException {
+}
+
+
+class org.rafendb.common.error.SyntaxException {
+}
+
+
+class org.rafendb.common.error.ValidationException {
+}
+
+
+
+
+org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.error.Component : component
+org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.error.Component : component
+org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.SyntaxException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.ValidationException --|>  org.rafendb.common.error.RafenDBRuntimeException
+
+
+@enduml

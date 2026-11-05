@@ -14,15 +14,32 @@ public sealed interface Expr {
      *
      * @param table the table name or alias, or {@code null} if written without a prefix
      * @param column the column name, never {@code null}
+     * @param offset the column's position in the input row, set by the binder; {@code -1} before
+     *     binding
      */
-    record ColumnRef(String table, String column, int offset) implements Expr {}
+    record ColumnRef(String table, String column, int offset) implements Expr {
+
+        /**
+         * Creates an unbound reference, with {@code offset} {@code -1}.
+         *
+         * @param table the table name or alias, or {@code null} if written without a prefix
+         * @param column the column name, never {@code null}
+         */
+        public ColumnRef(String table, String column) {
+            this(table, column, -1);
+        }
+    }
 
     /**
-     * A typed constant, including SQL NULL.
+     * A typed constant. A NULL written in SQL has no type yet and is a {@link Null} instead; a
+     * typed SQL NULL ({@link Value#nullOf}) may appear once the binder knows the type.
      *
      * @param value the typed constant
      */
     record Literal(Value value) implements Expr {}
+
+    /** An untyped SQL NULL literal, as written in the query. The binder gives it a type. */
+    record Null() implements Expr {}
 
     /**
      * A binary operation. {@code AND} chains are left-nested: {@code a AND b AND c} is {@code

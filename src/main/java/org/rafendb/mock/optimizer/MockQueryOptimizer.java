@@ -9,14 +9,26 @@ import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.query.ParsedQuery;
 
 /**
- * Component-level {@link QueryOptimizer} mock that returns deterministic dummy results.
+ * Mock {@link QueryOptimizer} for testing and integration without a real optimizer.
  *
- * <p>No SQL parsing, catalog access, rewriting, or cost estimation is performed.
- * Queries retain the original SQL, and plans contain a dummy leaf with a fixed cost.
- * Supporting mock query and node implementations are private to this class.
+ * <p>This implementation contains no parsing, validation, or optimization logic.
+ * It records calls and returns trivial, well-formed objects so that callers
+ * (Query Processor, driver program, tests) can be wired up and exercised before
+ * the real optimizer exists. Not thread-safe.</p>
  *
- * <p>Not thread-safe. Calls are recorded in order through {@link #getCalls()};
- * {@link #reset()} clears the log.
+ * <p>Behaviour:</p>
+ * <ul>
+ *   <li>{@link #parse(String)} returns a placeholder {@link ParsedQuery} that
+ *       echoes the SQL — no tokenization is performed.</li>
+ *   <li>{@link #bindAndValidate(ParsedQuery)} does nothing (no catalog access).</li>
+ *   <li>{@link #optimize(ParsedQuery)} returns a single-node plan whose cost is
+ *       a fixed constant.</li>
+ *   <li>{@link #explain(QueryPlan)} returns {@link PlanNode#describe()} of the
+ *       root prefixed with the total cost.</li>
+ * </ul>
+ *
+ * <p>Call recording is exposed via {@link #getCalls()} so tests can assert the
+ * pipeline was invoked in the expected order. Reset with {@link #reset()}.</p>
  */
 public class MockQueryOptimizer implements QueryOptimizer {
 
@@ -28,7 +40,6 @@ public class MockQueryOptimizer implements QueryOptimizer {
     /** Creates a mock optimizer with no recorded calls. */
     public MockQueryOptimizer() {}
 
-    /** {@inheritDoc} Returns a dummy query containing the original SQL without parsing it. */
     @Override
     public ParsedQuery parse(String sql) {
         Objects.requireNonNull(sql, "sql");
@@ -36,7 +47,6 @@ public class MockQueryOptimizer implements QueryOptimizer {
         return new MockParsedQuery(sql);
     }
 
-    /** {@inheritDoc} Succeeds without accessing schema metadata. */
     @Override
     public void bindAndValidate(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
@@ -44,7 +54,6 @@ public class MockQueryOptimizer implements QueryOptimizer {
         // Intentionally empty: no catalog access in the mock.
     }
 
-    /** {@inheritDoc} Returns a dummy leaf plan with the fixed {@link #DEFAULT_COST}. */
     @Override
     public QueryPlan optimize(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
@@ -53,12 +62,11 @@ public class MockQueryOptimizer implements QueryOptimizer {
         return new QueryPlan(root, DEFAULT_COST);
     }
 
-    /** {@inheritDoc} Describes only the supplied root and total cost. */
     @Override
     public String explain(QueryPlan plan) {
         Objects.requireNonNull(plan, "plan");
         calls.add("explain");
-        return plan.getRoot().describe() + " [cost=" + plan.getTotalCost() + "]";
+        return plan.root().describe() + " [cost=" + plan.totalCost() + "]";
     }
 
     /**
@@ -74,57 +82,5 @@ public class MockQueryOptimizer implements QueryOptimizer {
     /** Clears the recorded call list. */
     public void reset() {
         calls.clear();
-    }
-
-    /** Immutable dummy query that preserves the original SQL. */
-    private static final class MockParsedQuery implements ParsedQuery {
-        private final String sql;
-
-        /**
-         * Stores SQL supplied by the mock's parsing entry point.
-         *
-         * @param sql the original, non-null SQL
-         */
-        private MockParsedQuery(String sql) {
-            this.sql = sql;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public String originalSql() {
-            return sql;
-        }
-
-        /** @return the existing diagnostic representation of this dummy query */
-        @Override
-        public String toString() {
-            return "PlaceholderParsedQuery{" + sql + "}";
-        }
-    }
-
-    /** Immutable dummy leaf with a fixed description and no children. */
-    private static final class MockPlanNode implements PlanNode {
-        private final String description;
-
-        /**
-         * Stores the description supplied by the mock optimizer.
-         *
-         * @param description the non-null description
-         */
-        private MockPlanNode(String description) {
-            this.description = description;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public List<PlanNode> children() {
-            return List.of();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public String describe() {
-            return description;
-        }
     }
 }

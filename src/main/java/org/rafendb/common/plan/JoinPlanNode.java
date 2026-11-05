@@ -1,45 +1,42 @@
 package org.rafendb.common.plan;
 
 import java.util.List;
+import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
-/** condition null untuk natural join. */
-public final class JoinPlanNode implements PlanNode {
-    private final JoinAlgorithm algorithm;
-    private final Expr condition;
-    private final PlanNode left;
-    private final PlanNode right;
+/**
+ * Binary node that joins the rows of two children with a given algorithm.
+ *
+ * <p>Immutable and thread-safe.
+ *
+ * @param algorithm the join algorithm, not null
+ * @param condition the JOIN ... ON condition, or {@code null} for NATURAL JOIN
+ * @param left the left (outer) input, not null
+ * @param right the right (inner) input, not null
+ */
+public record JoinPlanNode(JoinAlgorithm algorithm, Expr condition, PlanNode left, PlanNode right)
+        implements PlanNode {
 
-    public JoinPlanNode(JoinAlgorithm algorithm, Expr condition, PlanNode left, PlanNode right) {
-        this.algorithm = algorithm;
-        this.condition = condition;
-        this.left = left;
-        this.right = right;
+    /**
+     * Checks the arguments.
+     *
+     * @throws NullPointerException if {@code algorithm}, {@code left} or {@code right} is null
+     */
+    public JoinPlanNode {
+        Objects.requireNonNull(algorithm, "algorithm");
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(right, "right");
     }
 
-    public JoinAlgorithm algorithm() {
-        return algorithm;
-    }
-
-    public Expr condition() {
-        return condition;
-    }
-
-    public PlanNode left() {
-        return left;
-    }
-
-    public PlanNode right() {
-        return right;
-    }
-
+    /** {@inheritDoc} Always {@code [left, right]}. */
     @Override
     public List<PlanNode> children() {
         return List.of(left, right);
     }
 
+    /** {@inheritDoc} For example {@code HASH_JOIN ON <condition>} or {@code HASH_JOIN NATURAL}. */
     @Override
     public String describe() {
-        return "";
+        return algorithm + (condition == null ? " NATURAL" : " ON " + condition);
     }
 }

@@ -3,62 +3,34 @@ package org.rafendb.common.plan;
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
-// butuh IndexType dan IndexConditionType tapi nanti aja
-public class IndexScanDescriptor {
-    private final String indexName;
-    private final String column;
-    private final Expr condition;
+/**
+ * How an {@link IndexScanNode} uses an index: which index, on which column, with which condition.
+ *
+ * <p>Immutable and thread-safe.
+ *
+ * @param indexName the index name, not null
+ * @param column the indexed column, not null
+ * @param condition the condition the index answers, not null
+ */
+public record IndexScanDescriptor(String indexName, String column, Expr condition) {
 
-    public IndexScanDescriptor(String indexName, String column, Expr condition) {
+    /**
+     * Checks the arguments.
+     *
+     * @throws NullPointerException if any argument is null
+     */
+    public IndexScanDescriptor {
         Objects.requireNonNull(indexName, "indexName");
         Objects.requireNonNull(column, "column");
         Objects.requireNonNull(condition, "condition");
-        this.indexName = indexName;
-        this.column = column;
-        this.condition = condition;
     }
 
-    public String indexName() {
-        return indexName;
-    }
-
-    public String column() {
-        return column;
-    }
-
-    public Expr condition() {
-        return condition;
-    }
-
+    /**
+     * Returns a short description for plan display, for example {@code idx_nim(nim)}.
+     *
+     * @return the description, never null
+     */
     public String describe() {
-        return "";
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof IndexScanDescriptor that)) {
-            return false;
-        }
-        return indexName.equals(that.indexName)
-                && column.equals(that.column)
-                && condition.equals(that.condition);
-    }
-
-    @Override
-    public String toString() {
-        return "IndexScanDescriptor[indexName="
-                + indexName
-                + ", column="
-                + column
-                // + ", indexType="
-                // + indexType
-                // + ", conditionType="
-                // + conditionType
-                + ", condition="
-                + condition
-                + "]";
+        return indexName + "(" + column + ")";
     }
 }

@@ -1,0 +1,83 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.schema.Column {
+	{field} {static} +MAX_TEXT_LENGTH : int
+	{method} +accepts ( v : Value ) : boolean
+	{method} +length () : int
+	{method} +name () : String
+	{method} +nullable () : boolean
+	{method} +primaryKey () : boolean
+	{method} +type () : DataType
+}
+
+
+class org.rafendb.common.schema.ForeignKey {
+	{method} +columns () : List
+	{method} +name () : String
+	{method} +onDelete () : ReferentialAction
+	{method} +referencedColumns () : List
+	{method} +referencedTable () : String
+}
+
+
+class org.rafendb.common.schema.IndexInfo {
+	{method} +column () : String
+	{method} +name () : String
+	{method} +table () : String
+	{method} +type () : IndexType
+}
+
+
+enum org.rafendb.common.schema.IndexType {
+	{field} +B_PLUS_TREE
+	{field} +HASH
+}
+
+
+class org.rafendb.common.schema.ReferencingForeignKey {
+	{method} +foreignKey () : ForeignKey
+	{method} +referencingTable () : String
+}
+
+
+enum org.rafendb.common.schema.ReferentialAction {
+	{field} +CASCADE
+	{field} +RESTRICT
+}
+
+
+class org.rafendb.common.schema.TableSchema {
+	{method} +column ( name : String ) : Optional
+	{method} +columnIndex ( name : String ) : int
+	{method} +columns () : List
+	{method} +foreignKeys () : List
+	{method} +primaryKeyColumns () : List
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.schema.TableStats {
+	{method} +averageRecordSize () : double
+	{method} +blockCount () : long
+	{method} +blockingFactor () : double
+	{method} +distinctValues () : Map
+	{method} +distinctValues ( column : String ) : long
+	{method} +recordCount () : long
+}
+
+
+
+
+org.rafendb.common.schema.ForeignKey *--  org.rafendb.common.schema.ReferentialAction : onDelete
+org.rafendb.common.schema.IndexInfo *--  org.rafendb.common.schema.IndexType : type
+org.rafendb.common.schema.ReferencingForeignKey *--  org.rafendb.common.schema.ForeignKey : foreignKey
+org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.Column : columns
+org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.ForeignKey : foreignKeys
+
+
+@enduml

@@ -8,8 +8,12 @@ import org.rafendb.common.query.ParsedQuery;
  *
  * <p>Pipeline: {@code parse → bindAndValidate → optimize}, optionally followed by
  * {@code explain}. Never crashes on malformed input; failures are reported via
+ * <<<<<<< HEAD
  * exceptions (typically {@code SyntaxException}, {@code ValidationException}, or
  * {@code OptimizerException}). Implementations are not required to be thread-safe.</p>
+ * =======
+ * exceptions ({@code SyntaxException} or {@code ValidationException}). Implementations are not required to be thread-safe.</p>
+ * >>>>>>> main
  *
  * @see ParsedQuery
  * @see QueryPlan
@@ -63,7 +67,10 @@ public interface QueryOptimizer {
      *
      * @param parsed a validated parsed query; must not be {@code null}
      * @return the cheapest executable plan
+     * <<<<<<< HEAD
      * @throws org.rafendb.common.error.OptimizerException if no valid plan can be produced
+     * =======
+     * >>>>>>> main
      */
     QueryPlan optimize(ParsedQuery parsed);
 

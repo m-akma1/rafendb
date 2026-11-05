@@ -1,9 +1,22 @@
 package org.rafendb.common.schema;
 
-/** The index structures the engine supports; the name of each constant is its SQL spelling. */
+/**
+ * Index structures.
+ *
+ * <p>Immutable and thread-safe.
+ */
 public enum IndexType {
-    /** B+ tree index; also the default when CREATE INDEX gives no USING clause. */
-    BTREE,
-    /** Hash index. */
-    HASH
+    /** Hash index; equality search only. */
+    HASH,
+    /** B+ tree index; equality and range search. */
+    B_PLUS_TREE;
+
+    /**
+     * Returns whether range search is supported.
+     *
+     * @return {@code true} only for {@link #B_PLUS_TREE}
+     */
+    public boolean supportsRange() {
+        return this == B_PLUS_TREE;
+    }
 }
