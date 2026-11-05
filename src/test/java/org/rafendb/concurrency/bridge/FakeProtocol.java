@@ -9,7 +9,7 @@ import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
 
-/** Protocol for bridge tests; records protection calls into a shared call list. */
+/** Test protocol that logs protection calls to a shared call list. */
 final class FakeProtocol implements Protocol {
     private final List<String> calls;
     boolean failReset;

@@ -7,7 +7,7 @@ import java.util.Objects;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 
-/** Transaction table for bridge tests; records every change into a shared call list. */
+/** Test transaction table that logs changes to a shared call list. */
 final class FakeTransactionStates implements TransactionStates {
     private final List<String> calls;
     private final Map<TxId, TxStatus> statuses = new HashMap<>();
