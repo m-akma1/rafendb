@@ -83,6 +83,100 @@ class FrmBridgeTest {
     }
 
     @Test
+    void beginIsRefusedWhileAdmissionIsClosed() {
+        assertThrows(IllegalStateException.class, () -> bridge.logBegin(T1));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
+    void beginIsLoggedAfterInitialization() {
+        bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
+        calls.clear();
+
+        bridge.logBegin(T1);
+
+        assertEquals(List.of("begin T1"), calls);
+    }
+
+    @Test
+    void failedBeginLogIsRejected() {
+        bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
+        frm.beginSucceeds = false;
+
+        assertThrows(IllegalStateException.class, () -> bridge.logBegin(T1));
+    }
+
+    @Test
+    void commitLogsCommitBeforeReleasingProtection() throws Exception {
+        states.put(T1, TxStatus.ACTIVE);
+
+        TxResult result = bridge.commit(T1);
+
+        assertEquals(TxStatus.COMMITTED, result.status());
+        assertEquals(
+                List.of(
+                        "T1 PARTIALLY_COMMITTED",
+                        "commit T1",
+                        "T1 COMMITTED",
+                        "release T1 COMMITTED"),
+                calls);
+    }
+
+    @Test
+    void failedCommitLogAbortsTransaction() {
+        states.put(T1, TxStatus.ACTIVE);
+        frm.commitSucceeds = false;
+
+        assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
+        assertEquals(TxStatus.ABORTED, states.status(T1));
+        assertEquals(
+                List.of(
+                        "T1 PARTIALLY_COMMITTED",
+                        "commit T1",
+                        "T1 FAILED",
+                        "cancelPending T1",
+                        "rollback T1",
+                        "T1 ABORTED",
+                        "release T1 ABORTED"),
+                calls);
+    }
+
+    @Test
+    void commitErrorIsKeptAsCause() {
+        states.put(T1, TxStatus.ACTIVE);
+        IllegalStateException fsyncFailed = new IllegalStateException("fsync failed");
+        frm.commitError = fsyncFailed;
+
+        ConcurrencyInternalException e =
+                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
+        assertSame(fsyncFailed, e.getCause());
+    }
+
+    @Test
+    void failedRollbackAfterFailedCommitKeepsTransactionFailed() {
+        states.put(T1, TxStatus.ACTIVE);
+        frm.commitSucceeds = false;
+        frm.rollbackSucceeds = false;
+
+        ConcurrencyInternalException e =
+                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
+        assertEquals(1, e.getSuppressed().length);
+        assertEquals(TxStatus.FAILED, states.status(T1));
+        assertFalse(calls.stream().anyMatch(call -> call.startsWith("release")));
+    }
+
+    @Test
+    void commitOnAbortedTransactionIsRejectedWithoutLogging() throws Exception {
+        states.put(T1, TxStatus.ABORTED);
+
+        TxResult result = bridge.commit(T1);
+
+        assertEquals(TxStatus.ABORTED, result.status());
+        assertFalse(result.message().isEmpty());
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
     void abortKeepsProtectionUntilRollbackFinishes() throws Exception {
         states.put(T1, TxStatus.ACTIVE);
 

@@ -10,10 +10,6 @@ import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
 
-/**
- * Thread-safe link from the CCM to the FRM (CC-03 to CC-05). Admission stays closed until
- * initializeAfterRecovery succeeds.
- */
 public final class FrmBridge implements ConcurrencyMaintenance {
     private final RecoveryManager frm;
     private final TransactionStates states;
@@ -21,8 +17,7 @@ public final class FrmBridge implements ConcurrencyMaintenance {
     private volatile boolean admitting;
 
     /**
-     * Creates a bridge with admission closed.
-     *
+     * Creates a bridge with admission closed
      * @throws NullPointerException if an argument is null
      */
     public FrmBridge(RecoveryManager frm, TransactionStates states, Protocol protocol) {
@@ -52,8 +47,67 @@ public final class FrmBridge implements ConcurrencyMaintenance {
     }
 
     /**
+     * Logs BEGIN for a new transaction (CC-03).
+     *
+     * @throws IllegalStateException if admission is closed or BEGIN cannot be logged
+     */
+    public void logBegin(TxId tx) {
+        Objects.requireNonNull(tx, "tx");
+        if (!admitting) {
+            throw new IllegalStateException("CCM is not accepting transactions before recovery");
+        }
+        boolean logged;
+        try {
+            logged = frm.beginTransaction(tx);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("BEGIN of " + tx + " could not be logged", e);
+        }
+        if (!logged) {
+            throw new IllegalStateException("BEGIN of " + tx + " could not be logged");
+        }
+    }
+
+    /**
+     * Commits durably (CC-03). COMMIT reaches the log before COMMITTED is set and protection is
+     * released. If COMMIT cannot be logged, the transaction is aborted.
+     *
+     * @return COMMITTED, or the current status with a reason if tx is not ACTIVE
+     * @throws IllegalArgumentException if tx is unknown
+     * @throws ConcurrencyInternalException if COMMIT cannot be logged
+     */
+    public TxResult commit(TxId tx) throws ConcurrencyInternalException {
+        Objects.requireNonNull(tx, "tx");
+        TxStatus status = states.status(tx);
+        if (status != TxStatus.ACTIVE) {
+            return new TxResult(status, tx + " is " + status + " and cannot commit");
+        }
+        states.setStatus(tx, TxStatus.PARTIALLY_COMMITTED);
+        boolean durable = false;
+        RuntimeException error = null;
+        try {
+            durable = frm.commitTransaction(tx);
+        } catch (RuntimeException e) {
+            error = e;
+        }
+        if (!durable) {
+            ConcurrencyInternalException failure =
+                    new ConcurrencyInternalException(
+                            "COMMIT of " + tx + " could not be logged", error);
+            try {
+                abort(tx);
+            } catch (ConcurrencyInternalException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            throw failure;
+        }
+        states.setStatus(tx, TxStatus.COMMITTED);
+        protocol.release(tx, TxStatus.COMMITTED);
+        return new TxResult(TxStatus.COMMITTED, "");
+    }
+
+    /**
      * Single abort flow for every reason (CC-04). Protection is kept until the FRM rollback
-     * succeeds; aborting an ABORTED transaction does nothing. Synchronized so one transaction is
+     * succeeds, aborting an ABORTED transaction does nothing. Synchronized so one transaction is
      * never rolled back twice at once.
      *
      * @return ABORTED, or COMMITTED with a reason if tx already committed
