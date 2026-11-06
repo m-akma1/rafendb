@@ -93,38 +93,59 @@ public final class BPlusTree implements Index {
         return add(new IndexEntry(key, rid), unlogged());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Nodes are never merged: a leaf may become empty and stays in the chain, which searches
+     * walk past. A rebuild compacts the tree.
+     */
     @Override
     public boolean delete(Value key, Rid rid, long lsn) throws StorageInternalException {
-        throw new UnsupportedOperationException("SM5: not implemented");
+        IndexEntry entry = new IndexEntry(key, rid);
+        long page = findLeaf(entry);
+        Node node = readNode(page);
+        int position = Collections.binarySearch(node.entries, entry);
+        if (position < 0) {
+            return false;
+        }
+        node.entries.remove(position);
+        byte[] image = encode(node);
+        store.write(page, lsn, b -> b.put(image));
+        return true;
     }
 
     /** {@inheritDoc} */
     @Override
     public List<Rid> lookup(Value key) throws StorageInternalException {
-        List<Rid> found = new ArrayList<>();
-        long page = findLeaf(IndexEntry.probe(key));
-        while (page != NO_PAGE) {
-            Node node = readNode(page);
-            for (IndexEntry entry : node.entries) {
-                int order = IndexKeys.compare(entry.key(), key);
-                if (order > 0) {
-                    return List.copyOf(found);
-                }
-                if (order == 0) {
-                    found.add(entry.rid());
-                }
-            }
-            page = node.next;
-        }
-        return List.copyOf(found);
+        return range(key, true, key, true);
     }
 
     /** {@inheritDoc} */
     @Override
     public List<Rid> range(Value lower, boolean includeLower, Value upper, boolean includeUpper)
             throws StorageInternalException {
-        throw new UnsupportedOperationException("SM5: not implemented");
+        List<Rid> found = new ArrayList<>();
+        long page = lower == null ? leftmostLeaf() : findLeaf(IndexEntry.probe(lower));
+        while (page != NO_PAGE) {
+            Node node = readNode(page);
+            for (IndexEntry entry : node.entries) {
+                if (lower != null) {
+                    int fromLower = IndexKeys.compare(entry.key(), lower);
+                    if (fromLower < 0 || (fromLower == 0 && !includeLower)) {
+                        continue;
+                    }
+                }
+                if (upper != null) {
+                    int fromUpper = IndexKeys.compare(entry.key(), upper);
+                    if (fromUpper > 0 || (fromUpper == 0 && !includeUpper)) {
+                        return List.copyOf(found);
+                    }
+                }
+                found.add(entry.rid());
+            }
+            page = node.next;
+        }
+        return List.copyOf(found);
     }
 
     /**
@@ -204,6 +225,22 @@ public final class BPlusTree implements Index {
         Node node = readNode(page);
         while (!node.isLeaf) {
             page = node.children.get(childIndex(node, entry));
+            node = readNode(page);
+        }
+        return page;
+    }
+
+    /**
+     * Finds the first leaf of the chain.
+     *
+     * @return the leaf's page number
+     * @throws StorageInternalException if the file is not a valid index or on an I/O failure
+     */
+    private long leftmostLeaf() throws StorageInternalException {
+        long page = readRoot();
+        Node node = readNode(page);
+        while (!node.isLeaf) {
+            page = node.children.get(0);
             node = readNode(page);
         }
         return page;
