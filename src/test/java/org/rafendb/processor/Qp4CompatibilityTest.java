@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.rafendb.api.processor.ExecutionPlan;
 import org.rafendb.common.expr.*;
 import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.type.*;
 import org.rafendb.mock.processor.*;
 
