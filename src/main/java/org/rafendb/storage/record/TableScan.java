@@ -1,34 +1,43 @@
 package org.rafendb.storage.record;
 
+import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.Optional;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.schema.TableSchema;
+import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.storage.buffer.BufferManager;
+import org.rafendb.storage.file.BlockId;
 import org.rafendb.storage.file.BlockManager;
 
 /**
- * SM1 lazy cursor skeleton. Each instance owns its position, not a pin between next calls.
- * Every next call copies/decodes its row and unpins in finally before returning or throwing.
- * Never call the facade while holding a page latch. A new instance is needed for rescan;
- * the schema stays available even for an empty table. Not thread-safe.
+ * Reads the live records of one table lazily, block by block, in Rid order. No page stays pinned
+ * between calls: each call pins one block, reads one record, and unpins it. Because the next
+ * record is always looked up as "the first live slot after the last one returned", deleting
+ * records while the scan is open does not disturb it. Owned by one thread.
  */
 public class TableScan implements RecordCursor {
-    protected final String fileName;
-    protected final TableSchema schema;
-    protected final BlockManager blocks;
-    protected final BufferManager buffers;
-    protected final RecordSerializer serializer;
+    private final String file;
+    private final TableSchema schema;
+    private final BlockManager blocks;
+    private final BufferManager buffers;
+    private final RecordSerializer serializer;
+    private long block;
+    private int lastSlot = -1;
+    private boolean done;
+    private boolean closed;
 
-    /** Wires a fresh scan without pinning pages or loading the table into memory. */
+    /** Creates a cursor positioned before the first record of the table file. */
     public TableScan(
-            String fileName,
+            String file,
             TableSchema schema,
             BlockManager blocks,
             BufferManager buffers,
             RecordSerializer serializer) {
-        this.fileName = Objects.requireNonNull(fileName, "fileName");
+        this.file = Objects.requireNonNull(file, "file");
         this.schema = Objects.requireNonNull(schema, "schema");
         this.blocks = Objects.requireNonNull(blocks, "blocks");
         this.buffers = Objects.requireNonNull(buffers, "buffers");
@@ -38,16 +47,54 @@ public class TableScan implements RecordCursor {
     /** {@inheritDoc} */
     @Override
     public StoredRow next() throws StorageInternalException {
-        // TODO SM1: Pin blok, baca liveSlots/read, dekode record, lalu sertakan Rid-nya.
-        // TODO SM1: Unpin di finally sebelum setiap return/error; simpan posisi, bukan pin.
-        // TODO SM1: Lewati reservasi/tombstone; kembalikan null setelah EOF.
-        throw new UnsupportedOperationException("SM1: TableScan.next");
+        if (closed) {
+            throw new IllegalStateException("cursor is closed");
+        }
+        while (!done) {
+            if (block >= blocks.size(file)) {
+                done = true;
+                return null;
+            }
+            StoredRow row = readNextInBlock();
+            if (row != null) {
+                return row;
+            }
+            block++;
+            lastSlot = -1;
+        }
+        return null;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc} Idempotent. No page is held between calls, so there is nothing to unpin. */
     @Override
     public void close() {
-        // TODO SM1: Tandai cursor tutup secara idempotent; tidak ada pin antar-panggilan next.
-        throw new UnsupportedOperationException("SM1: TableScan.close");
+        closed = true;
+    }
+
+    /** Returns the first live record after the last returned slot in this block, or null. */
+    private StoredRow readNextInBlock() throws StorageInternalException {
+        BlockId id = new BlockId(file, block);
+        ByteBuffer buffer = buffers.pin(id);
+        try {
+            SlottedPage page = new SlottedPage(buffer);
+            if (!page.isFormatted()) {
+                return null;
+            }
+            for (int slot : page.liveSlots()) {
+                if (slot <= lastSlot) {
+                    continue;
+                }
+                Optional<byte[]> bytes = page.read(slot);
+                if (bytes.isEmpty()) {
+                    continue;
+                }
+                lastSlot = slot;
+                Row row = serializer.deserialize(ByteBuffer.wrap(bytes.get()), schema);
+                return new StoredRow(new Rid(block, slot), row);
+            }
+            return null;
+        } finally {
+            buffers.unpin(id);
+        }
     }
 }
