@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.token.Token;
+
 /**
  * Query Optimizer's {@link RafenDBRuntimeException} for a statement that is not valid SQL (QO-01):
  * a misspelled keyword, an incomplete clause, wrong clause order, unbalanced parentheses or an
@@ -8,6 +10,8 @@ package org.rafendb.common.error;
 public class SyntaxException extends RafenDBRuntimeException {
     private static final long serialVersionUID = 1L;
 
+    private final Token offendingToken;
+
     /**
      * Creates an exception with a message.
      *
@@ -15,6 +19,12 @@ public class SyntaxException extends RafenDBRuntimeException {
      */
     public SyntaxException(String message) {
         super(Component.QO, message, null);
+        this.offendingToken = null;
+    }
+
+    public SyntaxException(String message, Token offendingToken) {
+        super(Component.QO, message, null);
+        this.offendingToken = offendingToken;
     }
 
     /**
@@ -25,5 +35,10 @@ public class SyntaxException extends RafenDBRuntimeException {
      */
     public SyntaxException(String message, Throwable cause) {
         super(Component.QO, message, cause);
+        this.offendingToken = null;
+    }
+
+    public Token getOffendingToken() {
+        return offendingToken;
     }
 }

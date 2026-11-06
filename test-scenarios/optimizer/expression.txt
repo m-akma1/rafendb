@@ -1,0 +1,15 @@
+-- QO-04: expression parsing through WHERE and SET (SELECT is parsed by QO-02/03).
+-- Precedence: expect (5 + (3 * 2)).
+UPDATE t SET x = 5 + 3 * 2;
+-- Left associative: expect ((5 - 3) - 2).
+UPDATE t SET x = 5 - 3 - 2;
+UPDATE t SET x = (a + b) * c;
+UPDATE t SET x = 5 - -3;
+DELETE FROM t WHERE salary * 1.05 > 5000;
+DELETE FROM t WHERE a.id = b.aid;
+DELETE FROM t WHERE a <> 1 AND b != 2 AND c <= 3;
+DELETE FROM t WHERE name = '+';
+-- Expected syntax errors below
+DELETE FROM t WHERE a >;
+DELETE FROM t WHERE a + * b > 1;
+DELETE FROM t WHERE (a + b > 1;
