@@ -30,23 +30,23 @@ public class SlottedPage {
             this.value = value;
         }
     }
- 
+
     private static final int SIGNATURE = 0x52464442;
- 
+
     private static final int OFF_SIGNATURE = 0;
     private static final int OFF_SLOT_COUNT = 4;
     private static final int OFF_DATA_START = 8;
     static final int HEADER_SIZE = 12;
- 
+
     // slot entry layout: offset, length, capacity, status (each an unsigned short)
     static final int SLOT_SIZE = 8;
     private static final int E_OFFSET = 0;
     private static final int E_LENGTH = 2;
     private static final int E_CAPACITY = 4;
     private static final int E_STATUS = 6;
- 
+
     private static final int MAX_PAGE_SIZE = 65536;
- 
+
     private final Object lock;
     private final ByteBuffer page;
     private final int pageSize;
@@ -82,7 +82,7 @@ public class SlottedPage {
 
     /**
      * Formats the header and directory only on a newly allocated empty page.
-     * 
+     *
      * @throws IllegalStateException if the page already has content (nothing is overwritten)
      */
     public void initialize() {
@@ -99,7 +99,7 @@ public class SlottedPage {
     /**
      * Returns the current status of a slot.
      * Slots that do not exist (negative or beyond the directory) are reported as FREE.
-     * 
+     *
      * @param slot the slot number to check the status of.
      * @return a SlotStatus enum (FREE/RESERVED/LIVE) that represents the status of the slot checked.
      */
@@ -133,13 +133,44 @@ public class SlottedPage {
         }
         synchronized (lock) {
             requireFormatted();
-            if (recordBytes > freeSpace()) { // freeSpace() already substract the free space with slot entry size
+            // freeSpace() already substract the free space with slot entry size
+            if (recordBytes > freeSpace()) {
                 return -1;
             }
             int slot = slotCount();
             int offset = allocate(slot, recordBytes);
             writeEntry(slot, offset, 0, recordBytes, SlotStatus.RESERVED.value);
             return slot;
+        }
+    }
+
+    /**
+     * Reserves a slot with the specified slot number.
+     * Any intermediate slots are initialized as FREE.
+     *
+     * @param recordBytes the required byte capacity for the record
+     * @param firstUnusedSlot the slot number to reserve
+     * @return the reserved slot number
+     */
+    public int reserve(int recordBytes, int firstUnusedSlot) {
+        if (recordBytes <= 0) {
+            throw new IllegalArgumentException("recordBytes must be positive: " + recordBytes);
+        }
+        if (firstUnusedSlot < 0 || firstUnusedSlot > maxSlotNumber()) {
+            throw new IllegalArgumentException("slot out of range: " + firstUnusedSlot);
+        }
+
+        synchronized (lock) {
+            requireFormatted();
+
+            if (firstUnusedSlot < slotCount()) {
+                throw new IllegalArgumentException(
+                        "slot has already been used: " + firstUnusedSlot);
+            }
+
+            int offset = allocate(firstUnusedSlot, recordBytes);
+            writeEntry(firstUnusedSlot, offset, 0, recordBytes, SlotStatus.RESERVED.value);
+            return firstUnusedSlot;
         }
     }
 
@@ -195,7 +226,7 @@ public class SlottedPage {
             dst.clear();
             dst.position(offset);
             dst.put(record);
- 
+
             int pos = entryPos(slot);
             setU16(pos + E_OFFSET, offset);
             setU16(pos + E_LENGTH, record.length);
@@ -312,9 +343,13 @@ public class SlottedPage {
         long available = pageSize - newDirEnd - sumCapacity(slot);
         if (needed > available) {
             throw new IllegalStateException(
-                    "page full: need " + needed + " bytes, only " + Math.max(0, available) + " available");
+                    "page full: need "
+                            + needed
+                            + " bytes, only "
+                            + Math.max(0, available)
+                            + " available");
         }
- 
+
         for (int s = count; s < newCount; s++) {
             writeEntry(s, 0, 0, 0, SlotStatus.FREE.value);
         }
@@ -325,7 +360,7 @@ public class SlottedPage {
             setU16(pos + E_CAPACITY, 0);
             setU16(pos + E_LENGTH, 0);
         }
- 
+
         if (page.getInt(OFF_DATA_START) - newDirEnd < needed) {
             compact();
         }
@@ -333,7 +368,7 @@ public class SlottedPage {
         page.putInt(OFF_DATA_START, offset);
         return offset;
     }
- 
+
     /**
      * Packs RESERVED/LIVE records against the end of the page. Capacity is reclaimed from FREE slots.
      */
@@ -343,7 +378,7 @@ public class SlottedPage {
         ByteBuffer copy = page.duplicate();
         copy.clear();
         copy.get(snapshot);
- 
+
         int cursor = pageSize;
         for (int s = 0; s < count; s++) {
             int pos = entryPos(s);
@@ -369,7 +404,7 @@ public class SlottedPage {
         }
         page.putInt(OFF_DATA_START, cursor);
     }
- 
+
     /** Sum of the capacity of RESERVED and LIVE slots, ignoring {@code exclude}. */
     private long sumCapacity(int exclude) {
         int count = slotCount();
@@ -385,36 +420,36 @@ public class SlottedPage {
         }
         return sum;
     }
- 
+
     private void requireFormatted() {
         if (page.getInt(OFF_SIGNATURE) != SIGNATURE) {
             throw new IllegalStateException("page is not initialized");
         }
     }
- 
+
     private int slotCount() {
         return page.getInt(OFF_SLOT_COUNT);
     }
- 
+
     private int maxSlotNumber() {
         return (pageSize - HEADER_SIZE) / SLOT_SIZE - 1;
     }
- 
+
     private static long directoryEnd(int count) {
         return HEADER_SIZE + (long) count * SLOT_SIZE;
     }
- 
+
     private static int entryPos(int slot) {
         return HEADER_SIZE + slot * SLOT_SIZE;
     }
- 
+
     private int rawStatus(int slot) {
         if (slot < 0 || slot >= slotCount()) {
             return SlotStatus.FREE.value;
         }
         return u16(entryPos(slot) + E_STATUS);
     }
- 
+
     private void writeEntry(int slot, int offset, int length, int capacity, int status) {
         int pos = entryPos(slot);
         setU16(pos + E_OFFSET, offset);
@@ -422,11 +457,11 @@ public class SlottedPage {
         setU16(pos + E_CAPACITY, capacity);
         setU16(pos + E_STATUS, status);
     }
- 
+
     private int u16(int index) {
         return page.getShort(index) & 0xFFFF;
     }
- 
+
     private void setU16(int index, int value) {
         page.putShort(index, (short) value);
     }
