@@ -22,6 +22,7 @@ import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
 import org.rafendb.storage.file.BlockManager;
 import org.rafendb.storage.index.btree.BPlusTree;
+import org.rafendb.storage.index.hash.HashIndex;
 
 /**
  * Builds, maintains and searches the Storage Manager's indexes (SM-10, SM-11): a B+ tree ({@link
@@ -55,8 +56,8 @@ import org.rafendb.storage.index.btree.BPlusTree;
  * from the damaged set. Index locks and page latches must not be held while re-entering the facade.
  * Isolation between transactions is CCM's job.
  *
- * <p>Not implemented yet: {@link IndexType#HASH} is rejected by {@link #create}, and {@link
- * #beginSession} and {@link #markClean} still throw {@link UnsupportedOperationException}.
+ * <p>Not implemented yet: {@link #beginSession} and {@link #markClean} still throw {@link
+ * UnsupportedOperationException}.
  */
 public class IndexManager {
     protected final CatalogManager catalog;
@@ -104,7 +105,7 @@ public class IndexManager {
      * @param rows the table's live records, from a fresh scan
      * @throws StorageRuntimeException if the table or column does not exist, the name is used, the
      *     column is text too wide for the index structure (B_PLUS_TREE: over 1337 UTF-8 bytes with
-     *     4096-byte pages; HASH has no such limit), or the type is not implemented yet (HASH)
+     *     4096-byte pages; HASH has no such limit)
      * @throws StorageInternalException if reading rows, building the index or saving the catalog
      *     fails
      */
@@ -119,9 +120,6 @@ public class IndexManager {
         }
         if (isRegistered(index.name())) {
             throw new StorageRuntimeException("index name already used: " + index.name());
-        }
-        if (index.type() != IndexType.B_PLUS_TREE) {
-            throw new StorageRuntimeException("index type not supported yet: " + index.type());
         }
         Column column = schema.columns().get(position);
         String file = catalog.indexFile(index.name());
@@ -497,9 +495,8 @@ public class IndexManager {
      * @param info the index
      * @param column the indexed column
      * @return the structure
-     * @throws StorageInternalException if the structure is not implemented
      */
-    private Index open(IndexInfo info, Column column) throws StorageInternalException {
+    private Index open(IndexInfo info, Column column) {
         return open(
                 info, new IndexPageStore(catalog.indexFile(info.name()), blocks, buffers), column);
     }
@@ -511,15 +508,11 @@ public class IndexManager {
      * @param store the index's pages
      * @param column the indexed column
      * @return the structure
-     * @throws StorageInternalException if the structure is not implemented
      */
-    private static Index open(IndexInfo info, IndexPageStore store, Column column)
-            throws StorageInternalException {
+    private static Index open(IndexInfo info, IndexPageStore store, Column column) {
         return switch (info.type()) {
             case B_PLUS_TREE -> new BPlusTree(store, column);
-            case HASH ->
-                    throw new StorageInternalException(
-                            "index type not supported yet: " + info.type());
+            case HASH -> new HashIndex(store, column);
         };
     }
 
