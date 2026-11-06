@@ -677,6 +677,80 @@ class IndexManagerTest {
         assertThrows(StorageInternalException.class, () -> manager.lookup("emp_name", s("n1")));
     }
 
+    // session marker
+
+    @Test
+    void firstSessionAsksForARebuild() throws StorageInternalException {
+        assertTrue(manager.beginSession());
+    }
+
+    @Test
+    void cleanShutdownNeedsNoRebuild() throws StorageInternalException {
+        manager.beginSession();
+        manager.markClean();
+        assertFalse(manager.beginSession());
+    }
+
+    @Test
+    void sessionWithoutCleanShutdownAsksForARebuild() throws StorageInternalException {
+        manager.beginSession();
+        manager.markClean();
+        manager.beginSession();
+        // No markClean: the process died. Beginning again must not read the old clean state.
+        assertTrue(manager.beginSession());
+    }
+
+    @Test
+    void beginningMarksNotCleanDurablyBeforeAnythingChanges() throws StorageInternalException {
+        manager.beginSession();
+        manager.markClean();
+        manager.beginSession();
+        try (BlockManager fresh = new BlockManager(dir, PAGE_SIZE)) {
+            assertFalse(new IndexSessionMarker(fresh).isClean());
+        }
+    }
+
+    @Test
+    void markCleanIsIdempotentAndWorksAfterTheBufferCloses() throws StorageInternalException {
+        manager.beginSession();
+        buffers.close();
+        manager.markClean();
+        manager.markClean();
+        assertFalse(manager.beginSession());
+    }
+
+    @Test
+    void damagedIndexKeepsTheMarkerNotCleanWithoutFailingTheShutdown()
+            throws StorageInternalException {
+        manager.beginSession();
+        createEmpIndexes();
+        buffers.failing.add(catalog.indexFile("emp_name"));
+        assertThrows(
+                StorageInternalException.class,
+                () -> manager.onInsert("emp", rid(500, 0), row(500, "new", 1f), 9));
+        buffers.failing.clear();
+
+        manager.markClean();
+
+        assertTrue(manager.beginSession());
+    }
+
+    @Test
+    void rebuildingTheDamagedIndexAllowsACleanShutdownAgain() throws StorageInternalException {
+        manager.beginSession();
+        createEmpIndexes();
+        buffers.failing.add(catalog.indexFile("emp_name"));
+        assertThrows(
+                StorageInternalException.class,
+                () -> manager.onInsert("emp", rid(500, 0), row(500, "new", 1f), 9));
+        buffers.failing.clear();
+        manager.rebuild("emp", cursor(emps(10)));
+
+        manager.markClean();
+
+        assertFalse(manager.beginSession());
+    }
+
     // rebuild, drop, invalidate
 
     @Test
