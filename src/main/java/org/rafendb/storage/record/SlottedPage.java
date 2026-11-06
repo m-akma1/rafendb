@@ -120,7 +120,7 @@ public class SlottedPage {
     /**
      * Reserves an invisible slot with the specified byte capacity.
      * A reservation always gets a brand-new slot number (slots are never reused) and is
-     * invisible to read() and liveSlots() until write() is called on it.
+     * invisible to read() and liveSlots() until insert() is called on it.
      * If the page is full, nothing is modified and -1 is returned.
      *
      * @param recordBytes the required byte capacity for the record
@@ -192,47 +192,45 @@ public class SlottedPage {
     }
 
     /**
-     * Writes bytes into a slot without altering its identity, after checking capacity.
+     * Stores the record of a new row into a slot obtained from reserve(). The slot becomes LIVE.
      *
-     * Valid on RESERVED (insert), LIVE (update) and FREE slots (recovery). If the record is bigger than
-     * the slot capacity, the record is moved inside this page when there is room (the slot
-     * number stays the same). Otherwise nothing is changed and an exception is thrown, and the
-     * caller has to fall back to DELETE + INSERT on another page.
-     *
-     * @param slot the target slot number
-     * @param record the byte array to write
+     * @param slot the RESERVED slot number
+     * @param record the byte array to store
      * @throws IllegalArgumentException if slot is negative/out of range or record is empty
-     * @throws IllegalStateException if the page has no room for the record
+     * @throws IllegalStateException if the slot is not RESERVED, or the page has no room for the
+     *         record (it is bigger than the reserved capacity and cannot be moved inside the page)
      */
-    public void write(int slot, byte[] record) {
-        Objects.requireNonNull(record, "record");
-        if (slot < 0 || slot > maxSlotNumber()) {
-            throw new IllegalArgumentException("slot out of range: " + slot);
-        }
-        if (record.length == 0) {
-            throw new IllegalArgumentException("record must not be empty");
-        }
-        synchronized (lock) {
-            requireFormatted();
-            int capacity = slot < slotCount() ? u16(entryPos(slot) + E_CAPACITY) : 0;
-            int offset;
-            if (record.length <= capacity) {
-                offset = u16(entryPos(slot) + E_OFFSET);
-            } else {
-                offset = allocate(slot, record.length);
-                capacity = record.length;
-            }
-            ByteBuffer dst = page.duplicate();
-            dst.clear();
-            dst.position(offset);
-            dst.put(record);
+    public void insert(int slot, byte[] record) {
+        writeIfStatus(slot, record, SlotStatus.RESERVED, "insert");
+    }
 
-            int pos = entryPos(slot);
-            setU16(pos + E_OFFSET, offset);
-            setU16(pos + E_LENGTH, record.length);
-            setU16(pos + E_CAPACITY, capacity);
-            setU16(pos + E_STATUS, SlotStatus.LIVE.value);
-        }
+    /**
+     * Replaces the record of a LIVE slot. The slot number stays the same. If the record is bigger
+     * than the slot capacity, it is moved inside this page when there is room. Otherwise nothing
+     * is changed and an exception is thrown, and the caller has to fall back to DELETE + INSERT
+     * on another page.
+     *
+     * @param slot the LIVE slot number
+     * @param record the new byte array
+     * @throws IllegalArgumentException if slot is negative/out of range or record is empty
+     * @throws IllegalStateException if the slot is not LIVE, or the page has no room for the record
+     */
+    public void update(int slot, byte[] record) {
+        writeIfStatus(slot, record, SlotStatus.LIVE, "update");
+    }
+
+    /**
+     * Recovery only: puts a record back on its original slot (redo of an INSERT, undo of a DELETE).
+     * The slot must be FREE, which includes a slot number beyond the current directory; the
+     * directory is then extended with FREE slots up to it. The slot becomes LIVE.
+     *
+     * @param slot the FREE slot number
+     * @param record the byte array to store
+     * @throws IllegalArgumentException if slot is negative/out of range or record is empty
+     * @throws IllegalStateException if the slot is not FREE, or the page has no room for the record
+     */
+    public void restore(int slot, byte[] record) {
+        writeIfStatus(slot, record, SlotStatus.FREE, "restore");
     }
 
     /**
@@ -324,6 +322,71 @@ public class SlottedPage {
      */
     public int maxRecordSize() {
         return pageSize - HEADER_SIZE - SLOT_SIZE;
+    }
+
+    /**
+     * Checks the arguments and that the slot is in the expected status, then writes the record,
+     * all under one lock so the status cannot change in between.
+     */
+    private void writeIfStatus(int slot, byte[] record, SlotStatus expected, String operation) {
+        Objects.requireNonNull(record, "record");
+        if (slot < 0 || slot > maxSlotNumber()) {
+            throw new IllegalArgumentException("slot out of range: " + slot);
+        }
+        if (record.length == 0) {
+            throw new IllegalArgumentException("record must not be empty");
+        }
+        synchronized (lock) {
+            requireFormatted();
+            SlotStatus actual = slotStatus(slot);
+            if (actual != expected) {
+                throw new IllegalStateException(
+                        operation + " needs slot " + slot + " to be " + expected + " but it is " + actual);
+            }
+            write(slot, record);
+        }
+    }
+
+    /**
+     * Writes bytes into a slot without altering its identity, after checking capacity, and marks
+     * it LIVE. Does not look at the slot status, the callers do that. If the record is bigger than
+     * the slot capacity, the record is moved inside this page when there is room (the slot
+     * number stays the same). Otherwise nothing is changed and an exception is thrown.
+     *
+     * @param slot the target slot number
+     * @param record the byte array to write
+     * @throws IllegalArgumentException if slot is negative/out of range or record is empty
+     * @throws IllegalStateException if the page has no room for the record
+     */
+    private void write(int slot, byte[] record) {
+        Objects.requireNonNull(record, "record");
+        if (slot < 0 || slot > maxSlotNumber()) {
+            throw new IllegalArgumentException("slot out of range: " + slot);
+        }
+        if (record.length == 0) {
+            throw new IllegalArgumentException("record must not be empty");
+        }
+        synchronized (lock) {
+            requireFormatted();
+            int capacity = slot < slotCount() ? u16(entryPos(slot) + E_CAPACITY) : 0;
+            int offset;
+            if (record.length <= capacity) {
+                offset = u16(entryPos(slot) + E_OFFSET);
+            } else {
+                offset = allocate(slot, record.length);
+                capacity = record.length;
+            }
+            ByteBuffer dst = page.duplicate();
+            dst.clear();
+            dst.position(offset);
+            dst.put(record);
+
+            int pos = entryPos(slot);
+            setU16(pos + E_OFFSET, offset);
+            setU16(pos + E_LENGTH, record.length);
+            setU16(pos + E_CAPACITY, capacity);
+            setU16(pos + E_STATUS, SlotStatus.LIVE.value);
+        }
     }
 
     /**
