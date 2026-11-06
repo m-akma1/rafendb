@@ -341,7 +341,13 @@ public class SlottedPage {
             SlotStatus actual = slotStatus(slot);
             if (actual != expected) {
                 throw new IllegalStateException(
-                        operation + " needs slot " + slot + " to be " + expected + " but it is " + actual);
+                        operation
+                                + " needs slot "
+                                + slot
+                                + " to be "
+                                + expected
+                                + " but it is "
+                                + actual);
             }
             write(slot, record);
         }

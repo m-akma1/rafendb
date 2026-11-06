@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Row;
@@ -85,8 +84,8 @@ public class RecordSerializer {
                 System.arraycopy(text, 0, body, 2, text.length);
                 return body;
             }
-            default -> throw new IllegalArgumentException(
-                    "Unsupported data type: " + column.type());
+            default ->
+                    throw new IllegalArgumentException("Unsupported data type: " + column.type());
         }
     }
 
@@ -133,8 +132,12 @@ public class RecordSerializer {
 
                 if (length > column.length()) {
                     throw new IllegalArgumentException(
-                            "VARCHAR length " + length + " exceeds column '"
-                                    + column.name() + "' limit " + column.length());
+                            "VARCHAR length "
+                                    + length
+                                    + " exceeds column '"
+                                    + column.name()
+                                    + "' limit "
+                                    + column.length());
                 }
 
                 require(bytes, length, column, "VARCHAR text");
@@ -142,8 +145,8 @@ public class RecordSerializer {
                 bytes.get(raw);
                 result = decodeUtf8(raw, length, column);
             }
-            default -> throw new IllegalArgumentException(
-                    "Unsupported data type: " + column.type());
+            default ->
+                    throw new IllegalArgumentException("Unsupported data type: " + column.type());
         }
 
         return new Value(column.type(), result);
@@ -200,10 +203,11 @@ public class RecordSerializer {
                 if (variablePos > MAX_RECORD_OFFSET) {
                     throw new IllegalArgumentException(
                             "Record exceeds maximum VARCHAR offset of "
-                                    + MAX_RECORD_OFFSET + " bytes");
+                                    + MAX_RECORD_OFFSET
+                                    + " bytes");
                 }
-                variablePos = addExact(
-                        variablePos, encodedValues[i].length, "Variable-length data");
+                variablePos =
+                        addExact(variablePos, encodedValues[i].length, "Variable-length data");
             }
         }
 
@@ -309,15 +313,17 @@ public class RecordSerializer {
                     fixedPos += fixedFieldSize(col);
                 }
                 case VARCHAR -> {
-                    int offset = getU16(
-                            bytes, startPos + bitmapSize + offsetIndex * 2);
+                    int offset = getU16(bytes, startPos + bitmapSize + offsetIndex * 2);
                     offsetIndex++;
 
                     if (offset != expectedVariableOffset) {
                         throw new IllegalArgumentException(
-                                "Invalid VARCHAR offset for column '" + col.name()
-                                        + "': expected " + expectedVariableOffset
-                                        + ", got " + offset);
+                                "Invalid VARCHAR offset for column '"
+                                        + col.name()
+                                        + "': expected "
+                                        + expectedVariableOffset
+                                        + ", got "
+                                        + offset);
                     }
 
                     long absoluteOffset = (long) startPos + offset;
@@ -333,11 +339,11 @@ public class RecordSerializer {
                     values.add(value);
 
                     int consumed = variableBytes.position() - (int) absoluteOffset;
-                    expectedVariableOffset = addExact(
-                            expectedVariableOffset, consumed, "VARCHAR record offset");
+                    expectedVariableOffset =
+                            addExact(expectedVariableOffset, consumed, "VARCHAR record offset");
                 }
-                default -> throw new IllegalArgumentException(
-                        "Unsupported data type: " + col.type());
+                default ->
+                        throw new IllegalArgumentException("Unsupported data type: " + col.type());
             }
         }
 
@@ -396,10 +402,11 @@ public class RecordSerializer {
                 if (variablePos > MAX_RECORD_OFFSET) {
                     throw new IllegalArgumentException(
                             "Record exceeds maximum VARCHAR offset of "
-                                    + MAX_RECORD_OFFSET + " bytes");
+                                    + MAX_RECORD_OFFSET
+                                    + " bytes");
                 }
-                variablePos = addExact(
-                        variablePos, encodedValues[i].length, "Variable-length data");
+                variablePos =
+                        addExact(variablePos, encodedValues[i].length, "Variable-length data");
             }
         }
 
@@ -414,8 +421,13 @@ public class RecordSerializer {
         int expected = schema.columns().size();
         if (values.size() != expected) {
             throw new IllegalArgumentException(
-                    "row has " + values.size() + " values but table '"
-                            + schema.table() + "' has " + expected + " columns");
+                    "row has "
+                            + values.size()
+                            + " values but table '"
+                            + schema.table()
+                            + "' has "
+                            + expected
+                            + " columns");
         }
         return values;
     }
@@ -437,8 +449,8 @@ public class RecordSerializer {
                 }
                 yield 0;
             }
-            default -> throw new IllegalArgumentException(
-                    "Unsupported data type: " + column.type());
+            default ->
+                    throw new IllegalArgumentException("Unsupported data type: " + column.type());
         };
     }
 
@@ -450,8 +462,12 @@ public class RecordSerializer {
     private static void checkType(Value value, Column column) {
         if (value.type() != column.type()) {
             throw new IllegalArgumentException(
-                    "column '" + column.name() + "' is " + column.type()
-                            + " but value is " + value.type());
+                    "column '"
+                            + column.name()
+                            + "' is "
+                            + column.type()
+                            + " but value is "
+                            + value.type());
         }
     }
 
@@ -464,7 +480,9 @@ public class RecordSerializer {
             return i;
         }
         throw new IllegalArgumentException(
-                "column '" + column.name() + "' expects Integer but got "
+                "column '"
+                        + column.name()
+                        + "' expects Integer but got "
                         + raw.getClass().getSimpleName());
     }
 
@@ -473,14 +491,18 @@ public class RecordSerializer {
             return f;
         }
         throw new IllegalArgumentException(
-                "column '" + column.name() + "' expects Float but got "
+                "column '"
+                        + column.name()
+                        + "' expects Float but got "
                         + raw.getClass().getSimpleName());
     }
 
     private static byte[] textBytes(Object raw, Column column) {
         if (!(raw instanceof String s)) {
             throw new IllegalArgumentException(
-                    "column '" + column.name() + "' expects String but got "
+                    "column '"
+                            + column.name()
+                            + "' expects String but got "
                             + raw.getClass().getSimpleName());
         }
 
@@ -491,20 +513,24 @@ public class RecordSerializer {
         }
         if (limit <= 0) {
             throw new IllegalArgumentException(
-                    "column '" + column.name() + "' has invalid length "
-                            + column.length());
+                    "column '" + column.name() + "' has invalid length " + column.length());
         }
         if (text.length > limit) {
             throw new IllegalArgumentException(
-                    "text for column '" + column.name() + "' is "
-                            + text.length + " bytes, limit is " + limit);
+                    "text for column '"
+                            + column.name()
+                            + "' is "
+                            + text.length
+                            + " bytes, limit is "
+                            + limit);
         }
         return text;
     }
 
     private static String decodeUtf8(byte[] raw, int length, Column column) {
         try {
-            return StandardCharsets.UTF_8.newDecoder()
+            return StandardCharsets.UTF_8
+                    .newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
                     .decode(ByteBuffer.wrap(raw, 0, length))
@@ -519,8 +545,13 @@ public class RecordSerializer {
         if (needed < 0 || bytes.remaining() < needed) {
             String colName = column != null ? " for column '" + column.name() + "'" : "";
             throw new IllegalArgumentException(
-                    "truncated " + what + colName + ": need " + needed
-                            + " bytes, have " + bytes.remaining());
+                    "truncated "
+                            + what
+                            + colName
+                            + ": need "
+                            + needed
+                            + " bytes, have "
+                            + bytes.remaining());
         }
     }
 
@@ -547,8 +578,7 @@ public class RecordSerializer {
     }
 
     private static int getU16(ByteBuffer bytes, int offset) {
-        return ((bytes.get(offset) & 0xFF) << 8)
-                | (bytes.get(offset + 1) & 0xFF);
+        return ((bytes.get(offset) & 0xFF) << 8) | (bytes.get(offset + 1) & 0xFF);
     }
 
     private static int getU16(ByteBuffer bytes) {
@@ -570,5 +600,4 @@ public class RecordSerializer {
             throw new IllegalArgumentException("Record layout is too large", e);
         }
     }
-
 }
