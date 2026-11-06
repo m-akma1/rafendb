@@ -1,0 +1,50 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.storage.RecordCursor {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +next () : StoredRow
+}
+
+
+interface org.rafendb.api.storage.StorageManager {
+	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
+	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
+	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
+	{method}  {abstract} +flush () : void
+	{method}  {abstract} +getSchema ( table : String ) : TableSchema
+	{method}  {abstract} +getStats ( table : String ) : TableStats
+	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
+	{method}  {abstract} +listIndexes ( table : String ) : List
+	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
+	{method}  {abstract} +listTables () : List
+	{method}  {abstract} +loadSampleDatabase () : void
+	{method}  {abstract} +lookupIndex ( index : String , key : Value ) : List
+	{method}  {abstract} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+	{method}  {abstract} +reloadAfterRestore () : void
+	{method}  {abstract} +reserveRid ( table : String , row : Row ) : Rid
+	{method}  {abstract} +scan ( table : String ) : RecordCursor
+	{method}  {abstract} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void
+}
+
+
+interface org.rafendb.api.storage.WalSync {
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+}
+
+
+
+
+
+
+@enduml
