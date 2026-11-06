@@ -385,6 +385,18 @@ public class CatalogManager {
             }
         }
 
+        // Delete the physical table file before removing its catalog mapping.
+        // This ensures DROP TABLE does not leave stale rows behind when the same
+        // table name is created again.
+        String tableFile = tableFiles.get(table);
+        if (tableFile != null) {
+            try {
+                Files.deleteIfExists(directory.resolve(tableFile));
+            } catch (IOException e) {
+                throw wrap("failed to delete table file for " + table, e);
+            }
+        }
+
         schemas.remove(table);
         tableFiles.remove(table);
         stats.remove(table);
