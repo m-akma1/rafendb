@@ -2,6 +2,7 @@ package org.rafendb.mock.storage;
 
 import java.util.List;
 import org.rafendb.api.storage.RecordCursor;
+import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.StoredRow;
 
 /**
@@ -27,10 +28,11 @@ class MockRecordCursor implements RecordCursor {
     /**
      * {@inheritDoc}
      *
-     * <p>Mock: returns the next fixed dummy row, then {@code null} forever.
+     * <p>Mock: returns the next fixed dummy row, then {@code null} forever; never throws {@link
+     * StorageInternalException}.
      */
     @Override
-    public StoredRow next() {
+    public StoredRow next() throws StorageInternalException {
         if (closed) {
             throw new IllegalStateException("cursor is closed");
         }
