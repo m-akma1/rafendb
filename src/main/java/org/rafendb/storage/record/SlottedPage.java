@@ -287,6 +287,15 @@ public class SlottedPage {
     }
 
     /**
+     * Retrieves the maximum record size that can be stored in an empty page.
+     *
+     * @return maximum record size in an empty page
+     */
+    public int maxRecordSize() {
+        return pageSize - HEADER_SIZE - SLOT_SIZE;
+    }
+
+    /**
      * Makes room for {@code needed} bytes for {@code slot}, growing the directory when the slot
      * is new or beyond the current directory, compacting if the free space is fragmented.
      * Releases the slot's current storage first. Nothing is modified if the room is not there.
