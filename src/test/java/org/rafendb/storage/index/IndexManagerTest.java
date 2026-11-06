@@ -289,20 +289,6 @@ class IndexManagerTest {
     }
 
     @Test
-    void createRejectsHashForNow() {
-        StorageRuntimeException e =
-                assertThrows(
-                        StorageRuntimeException.class,
-                        () ->
-                                manager.create(
-                                        new IndexInfo("h", "emp", "id", IndexType.HASH),
-                                        cursor(List.of())));
-        assertTrue(e.getMessage().endsWith("index type not supported yet: HASH"), e.getMessage());
-        assertTrue(catalog.indexes.isEmpty());
-        assertFalse(Files.exists(dir.resolve(catalog.indexFile("h"))));
-    }
-
-    @Test
     void failedBuildRegistersNothingAndFreesTheName() throws StorageInternalException {
         assertThrows(
                 StorageInternalException.class,
@@ -388,12 +374,6 @@ class IndexManagerTest {
                         () -> manager.range("h", i(1), true, i(2), true));
         assertTrue(
                 e.getMessage().endsWith("index does not support range search: h"), e.getMessage());
-    }
-
-    @Test
-    void hashFromTheCatalogIsAnErrorRatherThanAnEmptyResult() {
-        catalog.indexes.put("h", new IndexInfo("h", "emp", "id", IndexType.HASH));
-        assertThrows(StorageInternalException.class, () -> manager.lookup("h", i(1)));
     }
 
     @Test
@@ -786,6 +766,141 @@ class IndexManagerTest {
         manager.invalidateAll();
         assertEquals(1, manager.lookup("emp_id", i(7)).size());
         manager.lookup("emp_name", s("n1"));
+    }
+
+    // hash
+
+    private static final IndexInfo EMP_NAME_HASH =
+            new IndexInfo("emp_name_h", "emp", "name", IndexType.HASH);
+
+    private static List<Rid> sortedLookup(IndexManager m, String index, Value key)
+            throws StorageInternalException {
+        return m.lookup(index, key).stream().sorted().toList();
+    }
+
+    @Test
+    void hashIndexIsBuiltRegisteredAndSearched() throws StorageInternalException {
+        manager.create(EMP_NAME_HASH, cursor(emps(100)));
+        assertEquals(EMP_NAME_HASH, catalog.indexes.get("emp_name_h"));
+        assertEquals(1, catalog.saves);
+        assertEquals(10, manager.lookup("emp_name_h", s("n3")).size());
+        assertEquals(List.of(), manager.lookup("emp_name_h", s("nope")));
+        assertEquals(List.of(), manager.lookup("emp_name_h", nul(DataType.VARCHAR)));
+        assertThrows(StorageInternalException.class, () -> manager.lookup("emp_name_h", i(1)));
+        assertEquals(List.of(), forced);
+    }
+
+    @Test
+    void hashIndexRefusesRanges() throws StorageInternalException {
+        manager.create(EMP_NAME_HASH, cursor(emps(5)));
+        StorageInternalException e =
+                assertThrows(
+                        StorageInternalException.class,
+                        () -> manager.range("emp_name_h", s("a"), true, s("z"), true));
+        assertTrue(
+                e.getMessage().endsWith("index does not support range search: emp_name_h"),
+                e.getMessage());
+    }
+
+    @Test
+    void hashIndexSurvivesReopenWithoutRebuild() throws StorageInternalException {
+        manager.create(EMP_NAME_HASH, cursor(emps(100)));
+        try (BlockManager fresh = new BlockManager(dir, PAGE_SIZE);
+                BufferManager freshBuffers = new BufferManager(fresh, lsn -> {}, 8)) {
+            IndexManager reopened = new IndexManager(catalog, fresh, freshBuffers);
+            assertEquals(10, reopened.lookup("emp_name_h", s("n3")).size());
+        }
+    }
+
+    @Test
+    void hashIndexIsMaintainedAlongsideATree() throws StorageInternalException {
+        manager.create(EMP_ID, cursor(emps(20)));
+        manager.create(EMP_NAME_HASH, cursor(emps(20)));
+        manager.onInsert("emp", rid(500, 0), row(500, "new", 1f), 9);
+        assertEquals(List.of(rid(500, 0)), manager.lookup("emp_name_h", s("new")));
+        assertEquals(List.of(rid(500, 0)), manager.lookup("emp_id", i(500)));
+
+        manager.onUpdate("emp", rid(500, 0), row(500, "new", 1f), row(500, "newer", 1f), 10);
+        assertEquals(List.of(), manager.lookup("emp_name_h", s("new")));
+        assertEquals(List.of(rid(500, 0)), manager.lookup("emp_name_h", s("newer")));
+
+        manager.onDelete("emp", rid(500, 0), row(500, "newer", 1f), 11);
+        assertEquals(List.of(), manager.lookup("emp_name_h", s("newer")));
+    }
+
+    @Test
+    void failureInAHashIndexUndoesTheTree() throws StorageInternalException {
+        manager.create(EMP_ID, cursor(emps(20)));
+        manager.create(EMP_NAME_HASH, cursor(emps(20)));
+        buffers.failing.add(catalog.indexFile("emp_name_h"));
+        assertThrows(
+                StorageInternalException.class,
+                () -> manager.onInsert("emp", rid(500, 0), row(500, "new", 1f), 9));
+        buffers.failing.clear();
+        assertEquals(List.of(), manager.lookup("emp_id", i(500)));
+        assertThrows(StorageInternalException.class, () -> manager.lookup("emp_name_h", s("n1")));
+    }
+
+    @Test
+    void hashIndexIsRebuiltAndDropped() throws StorageInternalException {
+        manager.create(EMP_NAME_HASH, cursor(emps(100)));
+        manager.rebuild("emp", cursor(emps(10)));
+        assertEquals(1, manager.lookup("emp_name_h", s("n3")).size());
+        manager.dropIndexesOf("emp");
+        assertFalse(Files.exists(dir.resolve(catalog.indexFile("emp_name_h"))));
+    }
+
+    @Test
+    void hashAgreesWithTheMockOnItsDummyData() throws StorageInternalException {
+        try (MockStorageManager mock = new MockStorageManager()) {
+            catalog.schemas.put("prodi", mock.getSchema("prodi"));
+            IndexInfo kode = new IndexInfo("prodi_kode_idx", "prodi", "kode", IndexType.HASH);
+            try (RecordCursor rows = mock.scan("prodi")) {
+                manager.create(kode, rows);
+            }
+            int position = mock.getSchema("prodi").columnIndex("kode");
+            try (RecordCursor rows = mock.scan("prodi")) {
+                for (StoredRow r = rows.next(); r != null; r = rows.next()) {
+                    Value key = r.row().get(position);
+                    assertEquals(
+                            mock.lookupIndex(kode.name(), key).stream().sorted().toList(),
+                            sortedLookup(manager, kode.name(), key));
+                }
+            }
+        }
+    }
+
+    @Test
+    void hashEqualsFullScan() throws StorageInternalException {
+        manager.create(EMP_NAME_HASH, cursor(emps(100)));
+        Map<Rid, Row> table = new TreeMap<>();
+        for (StoredRow r : emps(100)) {
+            table.put(r.rid(), r.row());
+        }
+        Random random = new Random(23);
+        for (int op = 0; op < 3000; op++) {
+            Rid at = rid(random.nextInt(200), 0);
+            Row now = table.get(at);
+            String name = random.nextInt(5) == 0 ? null : "n" + random.nextInt(20);
+            Row next = row(random.nextInt(150), name, 1f);
+            if (now == null) {
+                manager.onInsert("emp", at, next, op + 1L);
+                table.put(at, next);
+            } else if (random.nextBoolean()) {
+                manager.onUpdate("emp", at, now, next, op + 1L);
+                table.put(at, next);
+            } else {
+                manager.onDelete("emp", at, now, op + 1L);
+                table.remove(at);
+            }
+            if (op % 100 == 0) {
+                for (int n = 0; n < 20; n++) {
+                    Value key = s("n" + n);
+                    assertEquals(
+                            ridsWhere(table, 1, key), sortedLookup(manager, "emp_name_h", key));
+                }
+            }
+        }
     }
 
     @Test

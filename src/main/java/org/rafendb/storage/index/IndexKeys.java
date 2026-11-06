@@ -34,7 +34,7 @@ public final class IndexKeys {
     static final int MIN_NODE_ENTRIES = 3;
 
     /** Bytes of a hash bucket header: {@code count} and {@code nextOverflow}. */
-    static final int BUCKET_HEADER_BYTES = 10;
+    public static final int BUCKET_HEADER_BYTES = 10;
 
     private IndexKeys() {}
 
