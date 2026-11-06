@@ -11,7 +11,7 @@ import org.rafendb.common.txn.TxId;
 
 public class WaitForDeadlockDetector implements DeadlockDetector {
 
-     /** {@inheritDoc} */
+    /** {@inheritDoc} */
     @Override
     public Optional<TxId> selectVictim(Map<TxId, Set<TxId>> waitFor) {
         Objects.requireNonNull(waitFor, "waitFor");
@@ -60,5 +60,3 @@ public class WaitForDeadlockDetector implements DeadlockDetector {
         return false;
     }
 }
-
-
