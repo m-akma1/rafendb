@@ -1,0 +1,10 @@
+# Skenario dasar Storage Manager. Jalankan: --run test-scenarios/storage/basic.txt
+# GANTI nama tabel dan nilai insert sesuai hasil perintah "tables" dan "schema" pada sample DB.
+sample
+tables
+insert prodi 99 "Prodi Uji"
+assert fetch prodi $last present
+delete prodi $last
+assert fetch prodi $last absent
+assert fail scan tabel_tidak_ada
+assert fail insert prodi 1
