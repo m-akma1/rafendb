@@ -1,10 +1,14 @@
 # Skenario dasar Storage Manager. Jalankan: --run test-scenarios/storage/basic.txt
-# GANTI nama tabel dan nilai insert sesuai hasil perintah "tables" dan "schema" pada sample DB.
 sample
 tables
-insert prodi 99 "Prodi Uji"
-assert fetch prodi $last present
-delete prodi $last
-assert fetch prodi $last absent
+insert customers 9999 "Uji Coba" 10.5 A
+assert fetch customers $last present
+assert lookup idx_customers_name varchar "Uji Coba" 1
+delete customers $last
+assert fetch customers $last absent
+assert lookup idx_customers_name varchar "Uji Coba" 0
+insert customers 9998 "Tanpa Kredit" NULL I
+assert lookup idx_customers_name varchar "Tanpa Kredit" 1
 assert fail scan tabel_tidak_ada
-assert fail insert prodi 1
+assert fail insert customers 1
+assert fail insert customers abc "Salah Tipe" 1.0 A
