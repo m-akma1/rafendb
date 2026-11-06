@@ -441,7 +441,11 @@ public class StorageManagerImpl implements StorageManager {
             long delta;
             if (image.isPresent()) {
                 if (before == null) {
-                    pageRestore(page, rid.slot(), bytes);
+                    if (page.slotStatus(rid.slot()) == SlottedPage.SlotStatus.RESERVED) {
+                        pageInsert(page, rid.slot(), bytes);
+                    } else {
+                        pageRestore(page, rid.slot(), bytes);
+                    }
                     indexes.onInsert(table, rid, image.get(), lsn);
                     delta = 1;
                 } else {
@@ -544,32 +548,34 @@ public class StorageManagerImpl implements StorageManager {
         return page.read(slot);
     }
 
-    /** Writes a record into a slot and reports a failed write as the contract exception. */
-    private void pageWrite(SlottedPage page, int slot, byte[] bytes)
+    /** Stores a record in a RESERVED slot; a refused write becomes the contract exception. */
+    private void pageInsert(SlottedPage page, int slot, byte[] bytes)
             throws StorageInternalException {
         try {
-            page.write(slot, bytes);
+            page.insert(slot, bytes);
         } catch (IllegalStateException | IllegalArgumentException e) {
             throw new StorageInternalException("cannot write slot " + slot, e);
         }
     }
 
-    /** Stores a record in a RESERVED slot. */
-    private void pageInsert(SlottedPage page, int slot, byte[] bytes)
-            throws StorageInternalException {
-        pageWrite(page, slot, bytes);
-    }
-
-    /** Replaces the record of a LIVE slot. */
+    /** Replaces the record of a LIVE slot; a refused write becomes the contract exception. */
     private void pageUpdate(SlottedPage page, int slot, byte[] bytes)
             throws StorageInternalException {
-        pageWrite(page, slot, bytes);
+        try {
+            page.update(slot, bytes);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new StorageInternalException("cannot write slot " + slot, e);
+        }
     }
 
     /** Puts a record into a FREE slot, for recovery and for undoing a delete. */
     private void pageRestore(SlottedPage page, int slot, byte[] bytes)
             throws StorageInternalException {
-        pageWrite(page, slot, bytes);
+        try {
+            page.restore(slot, bytes);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new StorageInternalException("cannot write slot " + slot, e);
+        }
     }
 
     /** Re-reports a client-side validation failure as the internal type some methods need. */
