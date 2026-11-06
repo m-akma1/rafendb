@@ -1,6 +1,7 @@
-package org.rafendb.api.storage;
+package org.rafendb.storage.record;
 
 import java.nio.ByteBuffer;
+
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Row;
@@ -9,7 +10,7 @@ import org.rafendb.common.type.Value;
 /** To serializes and deserializes a data row in an SQL table
  *
  */
-public interface RecordSerializer {
+public class RecordSerializer {
     /**
      * Returns bytes representation of an SQL value that follows the column rule.
      *
@@ -17,7 +18,9 @@ public interface RecordSerializer {
      * @param column column definition the value resides
      * @return byte[] representation of the value
      */
-    public byte[] encodeValue(Value value, Column column);
+    public byte[] encodeValue(Value value, Column column) {
+        return null;
+    }
 
     /**
      * Returns an SQL value from bytes representation that follows the column rule.
@@ -26,7 +29,9 @@ public interface RecordSerializer {
      * @param column column definition the value resides
      * @return an SQL value the bytes represent
      */
-    public Value decodeValue(ByteBuffer bytes, Column column);
+    public Value decodeValue(ByteBuffer bytes, Column column) {
+        return null;
+    }
 
     /**
      * Returns bytes representation of a row according to the table scheme.
@@ -35,7 +40,9 @@ public interface RecordSerializer {
      * @param column table scheme the row resides
      * @return byte[] representation of the row
      */
-    public byte[] serialize(Row row, TableSchema schema);
+    public byte[] serialize(Row row, TableSchema schema) {
+        return null;
+    }
 
     /**
      * Returns a table row from bytes representation according to the table scheme.
@@ -44,7 +51,9 @@ public interface RecordSerializer {
      * @param column column definition the row resides
      * @return a table row the bytes represent
      */
-    public Row deserialize(ByteBuffer bytes, TableSchema schema);
+    public Row deserialize(ByteBuffer bytes, TableSchema schema) {
+        return null;
+    }
 
     /**
      * Returns the exact size of bytes that represents the row when serialized.
@@ -53,5 +62,7 @@ public interface RecordSerializer {
      * @param column table scheme the row resides
      * @return size of bytes of a row when serialized
      */
-    public int encodedSize(Row row, TableSchema schema);
+    public int encodedSize(Row row, TableSchema schema) {
+        return 0;
+    }
 }
