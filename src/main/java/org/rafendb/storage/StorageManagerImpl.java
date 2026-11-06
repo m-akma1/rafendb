@@ -97,6 +97,7 @@ public class StorageManagerImpl implements StorageManager {
         Objects.requireNonNull(schema, "schema");
         catalog.validateTable(schema);
         String file = catalog.tableFile(schema.table());
+        blocks.delete(file);
         blocks.create(file);
         try {
             catalog.registerTable(schema);
@@ -212,6 +213,7 @@ public class StorageManagerImpl implements StorageManager {
             throws StorageInternalException {
         ensureOpen();
         Objects.requireNonNull(rid, "rid");
+        catalog.getSchema(table);
         String file = catalog.tableFile(table);
         if (rid.block() >= blocks.size(file)) {
             return;
@@ -241,7 +243,8 @@ public class StorageManagerImpl implements StorageManager {
         TableSchema schema = catalog.getSchema(table);
         validateAsInternal(table, row);
         String file = catalog.tableFile(table);
-        if (rid.block() >= blocks.size(file)) {
+        long blockCount = blocks.size(file);
+        if (rid.block() >= blockCount) {
             throw new StorageInternalException("not a pending reservation: " + rid);
         }
         BlockId block = new BlockId(file, rid.block());
@@ -260,7 +263,7 @@ public class StorageManagerImpl implements StorageManager {
                 throw e;
             }
             buffers.markDirty(block, lsn);
-            catalog.recordChanged(table, 1, blocks.size(file));
+            catalog.recordChanged(table, 1, blockCount);
             return rid;
         } finally {
             buffers.unpin(block);
@@ -277,7 +280,8 @@ public class StorageManagerImpl implements StorageManager {
         TableSchema schema = catalog.getSchema(table);
         catalog.validateRow(table, row);
         String file = catalog.tableFile(table);
-        if (rid.block() >= blocks.size(file)) {
+        long blockCount = blocks.size(file);
+        if (rid.block() >= blockCount) {
             throw new StorageInternalException("no live record at " + rid);
         }
         BlockId block = new BlockId(file, rid.block());
@@ -297,7 +301,7 @@ public class StorageManagerImpl implements StorageManager {
                 throw e;
             }
             buffers.markDirty(block, lsn);
-            catalog.recordChanged(table, 0, blocks.size(file));
+            catalog.recordChanged(table, 0, blockCount);
         } finally {
             buffers.unpin(block);
         }
@@ -311,7 +315,8 @@ public class StorageManagerImpl implements StorageManager {
         Objects.requireNonNull(rid, "rid");
         TableSchema schema = catalog.getSchema(table);
         String file = catalog.tableFile(table);
-        if (rid.block() >= blocks.size(file)) {
+        long blockCount = blocks.size(file);
+        if (rid.block() >= blockCount) {
             return false;
         }
         BlockId block = new BlockId(file, rid.block());
@@ -333,7 +338,7 @@ public class StorageManagerImpl implements StorageManager {
                 throw e;
             }
             buffers.markDirty(block, lsn);
-            catalog.recordChanged(table, -1, blocks.size(file));
+            catalog.recordChanged(table, -1, blockCount);
             return true;
         } finally {
             buffers.unpin(block);
@@ -413,7 +418,9 @@ public class StorageManagerImpl implements StorageManager {
             bytes = serializer.serialize(image.get(), schema);
             catalog.persistAllocation(table, rid);
             ensureBlocks(file, rid.block());
-        } else if (rid.block() >= blocks.size(file)) {
+        }
+        long blockCount = blocks.size(file);
+        if (image.isEmpty() && rid.block() >= blockCount) {
             return;
         }
         BlockId block = new BlockId(file, rid.block());
@@ -450,7 +457,7 @@ public class StorageManagerImpl implements StorageManager {
                 return;
             }
             buffers.markDirty(block, lsn);
-            catalog.recordChanged(table, delta, blocks.size(file));
+            catalog.recordChanged(table, delta, blockCount);
         } finally {
             buffers.unpin(block);
         }
@@ -537,13 +544,13 @@ public class StorageManagerImpl implements StorageManager {
         return page.read(slot);
     }
 
-    /** Writes a record into a slot and reports a full page as the contract exception. */
+    /** Writes a record into a slot and reports a failed write as the contract exception. */
     private void pageWrite(SlottedPage page, int slot, byte[] bytes)
             throws StorageInternalException {
         try {
             page.write(slot, bytes);
-        } catch (IllegalStateException e) {
-            throw new StorageInternalException("record does not fit at slot " + slot, e);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new StorageInternalException("cannot write slot " + slot, e);
         }
     }
 
@@ -641,9 +648,12 @@ public class StorageManagerImpl implements StorageManager {
         }
     }
 
-    /** Reserves a slot in one block, or returns null when the block has no room. */
-    private Rid tryReserve(String table, BlockId block, int size)
-            throws StorageInternalException {
+    /**
+     * Reserves a slot in one block, or returns null when the block has no room. Slots at or below
+     * the allocation high-water were handed out before a crash, so they are skipped rather than
+     * reused.
+     */
+    private Rid tryReserve(String table, BlockId block, int size) throws StorageInternalException {
         ByteBuffer buffer = buffers.pin(block);
         try {
             SlottedPage page = new SlottedPage(buffer);
@@ -651,15 +661,14 @@ public class StorageManagerImpl implements StorageManager {
                 page.initialize();
             }
             int slot = page.reserve(size);
+            while (slot >= 0 && slot < catalog.nextSlot(table, block.number())) {
+                page.cancelReservation(slot);
+                slot = page.reserve(size);
+            }
             if (slot < 0) {
                 return null;
             }
             Rid rid = new Rid(block.number(), slot);
-            if (slot < catalog.nextSlot(table, block.number())) {
-                page.cancelReservation(slot);
-                throw new StorageInternalException(
-                        "slot behind the allocation high-water: " + rid);
-            }
             buffers.markUnloggedDirty(block);
             try {
                 catalog.persistAllocation(table, rid);
