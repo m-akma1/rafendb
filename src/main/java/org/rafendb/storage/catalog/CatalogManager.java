@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -126,11 +125,13 @@ public class CatalogManager {
         // Prune allocation entries whose table is not in the snapshot. A DROP TABLE that failed
         // between metadata update and allocation-file write can leave these behind; they are
         // harmless but never read again. Removing them keeps the two files consistent.
-        newAlloc.keySet().removeIf(k -> {
-            int nul = k.indexOf('\u0000');
-            String t = nul < 0 ? k : k.substring(0, nul);
-            return !newSchemas.containsKey(t);
-        });
+        newAlloc.keySet()
+                .removeIf(
+                        k -> {
+                            int nul = k.indexOf('\u0000');
+                            String t = nul < 0 ? k : k.substring(0, nul);
+                            return !newSchemas.containsKey(t);
+                        });
 
         // Commit to in-memory state only after full successful parse.
         schemas.clear();
@@ -150,15 +151,16 @@ public class CatalogManager {
 
     /** Durably saves schema/statistics; never overwrites or rewinds the allocation high-water file. */
     public synchronized void save() throws StorageInternalException {
-    ensureLoaded();
-    byte[] bytes = encodeSnapshot();
-    try {
-        atomicWrite(directory.resolve(SNAPSHOT_TMP), directory.resolve(SNAPSHOT_FILE), bytes);
-    } catch (IOException e) {
-        throw wrap("failed to save catalog snapshot", e);
+        ensureLoaded();
+        byte[] bytes = encodeSnapshot();
+        try {
+            atomicWrite(directory.resolve(SNAPSHOT_TMP), directory.resolve(SNAPSHOT_FILE), bytes);
+        } catch (IOException e) {
+            throw wrap("failed to save catalog snapshot", e);
+        }
+        // Allocation file is intentionally untouched here.
     }
-    // Allocation file is intentionally untouched here.
-}
+
     // Allocation high-water
 
     /**
@@ -566,8 +568,7 @@ public class CatalogManager {
             throw clientError("unknown table for index: " + index.table());
         }
         if (schema.columnIndex(index.column()) < 0) {
-            throw clientError(
-                    "unknown column for index: " + index.table() + "." + index.column());
+            throw clientError("unknown column for index: " + index.table() + "." + index.column());
         }
         indexesByName.put(index.name(), index);
         indexFiles.put(index.name(), safeRelativeFile("idx_" + hex(index.name()) + ".idx"));
