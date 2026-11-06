@@ -55,42 +55,50 @@ import org.rafendb.storage.index.hash.HashIndex;
  * <p>Thread-safe: every public method holds this object's monitor, and no state is cached apart
  * from the damaged set. Index locks and page latches must not be held while re-entering the facade.
  * Isolation between transactions is CCM's job.
- *
- * <p>Not implemented yet: {@link #beginSession} and {@link #markClean} still throw {@link
- * UnsupportedOperationException}.
  */
 public class IndexManager {
     protected final CatalogManager catalog;
     protected final BlockManager blocks;
     protected final BufferManager buffers;
     private final Set<String> damaged = new HashSet<>();
+    private final IndexSessionMarker marker;
 
     /** Wires the same catalog, physical files and buffer used by the storage facade. */
     public IndexManager(CatalogManager catalog, BlockManager blocks, BufferManager buffers) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.blocks = Objects.requireNonNull(blocks, "blocks");
         this.buffers = Objects.requireNonNull(buffers, "buffers");
+        this.marker = new IndexSessionMarker(blocks);
     }
 
     /**
-     * Reads the previous clean-shutdown marker, then durably marks this session unclean before
-     * any index/table mutation. Returns true when the old marker is missing/unclean and all indexes
-     * must be rebuilt. I/O/corruption failures are errors, never interpreted as a clean session.
-     * The marker is a separate binary file in the database directory, owned only by this manager.
+     * Starts a session: reads whether the previous one shut down cleanly, then durably marks this
+     * one not clean, before any index or table changes. I/O failures and a corrupt marker are
+     * errors, never taken for a clean shutdown.
+     *
+     * @return {@code true} if the marker was missing or not clean, so every index must be rebuilt
+     * @throws StorageInternalException on an I/O failure or if the marker is corrupt
      */
-    public boolean beginSession() throws StorageInternalException {
-        // TODO SM5: Baca marker lama, force status tidak bersih, lalu laporkan kebutuhan rebuild.
-        throw new UnsupportedOperationException("SM5: IndexManager.beginSession");
+    public synchronized boolean beginSession() throws StorageInternalException {
+        boolean wasClean = marker.isClean();
+        marker.write(false);
+        return !wasClean;
     }
 
     /**
-     * Durably marks shutdown clean, idempotently. Called only after catalog.save and successful
-     * buffer close/force, with facade mutations blocked. Uses its own marker file, not cached pages;
-     * force atomic replacement and its directory entry. Regular flush/checkpoint does not call it.
+     * Durably marks the shutdown clean. Called only after the catalog is saved and the buffer has
+     * closed successfully, with facade mutations blocked; a regular flush or checkpoint does not
+     * call it. Idempotent.
+     *
+     * <p>If an index is damaged, nothing is written and no error is thrown: the shutdown goes on,
+     * and the marker still says not clean, so the next session rebuilds.
+     *
+     * @throws StorageInternalException on an I/O failure; the marker then still says not clean
      */
-    public void markClean() throws StorageInternalException {
-        // TODO SM5: Force marker bersih hanya setelah semua page/root dan katalog permanen.
-        throw new UnsupportedOperationException("SM5: IndexManager.markClean");
+    public synchronized void markClean() throws StorageInternalException {
+        if (damaged.isEmpty()) {
+            marker.write(true);
+        }
     }
 
     /**
