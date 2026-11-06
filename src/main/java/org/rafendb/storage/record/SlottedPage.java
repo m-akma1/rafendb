@@ -121,11 +121,11 @@ public class SlottedPage {
      * Reserves an invisible slot with the specified byte capacity.
      * A reservation always gets a brand-new slot number (slots are never reused) and is
      * invisible to read() and liveSlots() until write() is called on it.
+     * If the page is full, nothing is modified and -1 is returned.
      *
      * @param recordBytes the required byte capacity for the record
-     * @return the reserved slot number
+     * @return the reserved slot number or -1 when page cannot hold the record plus a new slot entry
      * @throws IllegalArgumentException if recordBytes is not positive
-     * @throws IllegalStateException if the page cannot hold the record plus a new slot entry
      */
     public int reserve(int recordBytes) {
         if (recordBytes <= 0) {
@@ -133,6 +133,9 @@ public class SlottedPage {
         }
         synchronized (lock) {
             requireFormatted();
+            if (recordBytes > freeSpace()) { // freeSpace() already substract the free space with slot entry size
+                return -1;
+            }
             int slot = slotCount();
             int offset = allocate(slot, recordBytes);
             writeEntry(slot, offset, 0, recordBytes, SlotStatus.RESERVED.value);
