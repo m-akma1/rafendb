@@ -23,20 +23,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.ForeignKey;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.schema.ReferencingForeignKey;
+import org.rafendb.common.schema.ReferentialAction;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 
 public class CatalogManager {
@@ -49,10 +51,10 @@ public class CatalogManager {
 
     private static final int SNAPSHOT_MAGIC = 0x52414643; // "RAFC"
     private static final int SNAPSHOT_VERSION = 1;
-    private static final int ALLOC_MAGIC = 0x52414641;    // "RAFA"
+    private static final int ALLOC_MAGIC = 0x52414641; // "RAFA"
     private static final int ALLOC_VERSION = 1;
 
-    //  In-memory state  
+    // In-memory state
     private final Map<String, TableSchema> schemas = new LinkedHashMap<>();
     private final Map<String, String> tableFiles = new LinkedHashMap<>();
     private final Map<String, TableStats> stats = new HashMap<>();
@@ -65,6 +67,20 @@ public class CatalogManager {
     public CatalogManager(Path directory) {
         this.directory =
                 Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
+    }
+
+    // Exception Mapping
+
+    /**
+     * Client errors (unknown table/column, name clash, schema mismatch) surface as {@link
+     * StorageRuntimeException}; storage failures surface as {@link StorageInternalException}.
+     */
+    private static StorageRuntimeException clientError(String message) {
+        return new StorageRuntimeException(message);
+    }
+
+    private static StorageRuntimeException clientError(String message, Throwable cause) {
+        return new StorageRuntimeException(message, cause);
     }
 
     // Lifecycle
@@ -107,6 +123,15 @@ public class CatalogManager {
         readSnapshot(snap, newSchemas, newTableFiles, newStats, newIndexes, newIndexFiles);
         readAlloc(alloc, newAlloc);
 
+        // Prune allocation entries whose table is not in the snapshot. A DROP TABLE that failed
+        // between metadata update and allocation-file write can leave these behind; they are
+        // harmless but never read again. Removing them keeps the two files consistent.
+        newAlloc.keySet().removeIf(k -> {
+            int nul = k.indexOf('\u0000');
+            String t = nul < 0 ? k : k.substring(0, nul);
+            return !newSchemas.containsKey(t);
+        });
+
         // Commit to in-memory state only after full successful parse.
         schemas.clear();
         schemas.putAll(newSchemas);
@@ -125,12 +150,15 @@ public class CatalogManager {
 
     /** Durably saves schema/statistics; never overwrites or rewinds the allocation high-water file. */
     public synchronized void save() throws StorageInternalException {
-        ensureLoaded();
-        byte[] bytes = encodeSnapshot();
+    ensureLoaded();
+    byte[] bytes = encodeSnapshot();
+    try {
         atomicWrite(directory.resolve(SNAPSHOT_TMP), directory.resolve(SNAPSHOT_FILE), bytes);
-        // Allocation file is intentionally untouched here.
+    } catch (IOException e) {
+        throw wrap("failed to save catalog snapshot", e);
     }
-
+    // Allocation file is intentionally untouched here.
+}
     // Allocation high-water
 
     /**
@@ -141,7 +169,7 @@ public class CatalogManager {
         ensureLoaded();
         Objects.requireNonNull(table, "table");
         if (block < 0) {
-            throw new IllegalArgumentException("block must be >= 0, got " + block);
+            throw new StorageRuntimeException("block must be >= 0, got " + block);
         }
         Long hw = allocHighWater.get(allocKey(table, block));
         if (hw == null) {
@@ -149,7 +177,7 @@ public class CatalogManager {
         }
         if (hw > Integer.MAX_VALUE) {
             // Slot numbers are int; a high-water beyond int range cannot be represented.
-            throw new IllegalStateException(
+            throw new StorageRuntimeException(
                     "allocation high-water overflow for table=" + table + " block=" + block);
         }
         return hw.intValue();
@@ -159,8 +187,8 @@ public class CatalogManager {
      * Durably advances nextSlot past rid before reserveRid returns or applyRecovery changes a slot.
      * Monotonic/idempotent; force an atomic replacement of a separate binary allocation file,
      * including its directory entry. Does not flush data pages or require/generate a WAL LSN.
-     * On failure no Rid is exposed; retain the in-memory high-water to avoid retrying that candidate.
-     * Every successfully exposed allocation remains consumed after restart.
+     * On failure no Rid is exposed; retain the in-memory high-water to avoid retrying that
+     * candidate. Every successfully exposed allocation remains consumed after restart.
      */
     public synchronized void persistAllocation(String table, Rid rid)
             throws StorageInternalException {
@@ -205,7 +233,7 @@ public class CatalogManager {
         Objects.requireNonNull(table, "table");
         TableSchema s = schemas.get(table);
         if (s == null) {
-            throw new IllegalArgumentException("unknown table: " + table);
+            throw clientError("unknown table: " + table);
         }
         return s;
     }
@@ -229,7 +257,7 @@ public class CatalogManager {
         ensureLoaded();
         Objects.requireNonNull(schema, "schema");
         if (schemas.containsKey(schema.table())) {
-            throw new IllegalArgumentException("table already exists: " + schema.table());
+            throw clientError("table already exists: " + schema.table());
         }
         validateSchemaBody(schema, schemas);
     }
@@ -239,25 +267,25 @@ public class CatalogManager {
         ensureLoaded();
         Objects.requireNonNull(schema, "schema");
         if (schemas.containsKey(schema.table())) {
-            throw new IllegalArgumentException("table already exists: " + schema.table());
+            throw clientError("table already exists: " + schema.table());
         }
         validateSchemaBody(schema, schemas);
         schemas.put(schema.table(), schema);
         tableFiles.put(schema.table(), safeRelativeFile("tbl_" + hex(schema.table()) + ".dat"));
-        stats.put(
-                schema.table(),
-                new TableStats(
-                        0L, 0L, 0.0, 0.0, zeroDistinct(schema)));
+        stats.put(schema.table(), new TableStats(0L, 0L, 0.0, 0.0, zeroDistinct(schema)));
     }
 
-    /** Validates a row's width, type families, NULLs and UTF-8 lengths against the schema. */
+    /**
+     * Validates a row against the schema. Width, NULL policy, type family and UTF-8 byte length
+     * are all delegated to {@link Column#accepts(Value)} so the rules live in one place.
+     */
     public synchronized void validateRow(String table, Row row) {
         ensureLoaded();
         Objects.requireNonNull(row, "row");
         TableSchema schema = getSchema(table);
         List<Column> cols = schema.columns();
         if (row.size() != cols.size()) {
-            throw new IllegalArgumentException(
+            throw clientError(
                     "row width mismatch: expected " + cols.size() + ", got " + row.size());
         }
         for (int i = 0; i < cols.size(); i++) {
@@ -265,18 +293,22 @@ public class CatalogManager {
             Value v = row.get(i);
             if (v == null) {
                 // Row record already rejects null elements; defensive only.
-                throw new IllegalArgumentException("null Value at column " + col.name());
+                throw clientError("null Value at " + table + "." + col.name());
             }
-            if (v.isNull()) {
-                if (!col.nullable() && !col.primaryKey()) {
-                    throw new IllegalArgumentException(
-                            "NULL not allowed for column " + col.name());
-                }
-                continue;
+            if (!col.accepts(v)) {
+                throw clientError(
+                        "value "
+                                + v
+                                + " is not acceptable for "
+                                + table
+                                + "."
+                                + col.name()
+                                + " ("
+                                + col.type()
+                                + (col.type().isText() ? "(" + col.length() + ")" : "")
+                                + (col.nullable() ? ", nullable" : ", not null")
+                                + ")");
             }
-            // Type family check: Column exposes its type; if the Value API exposes a family
-            // identifier we rely on the schema/type contract being consistent.
-            validateValueAgainstColumn(col, v);
         }
     }
 
@@ -286,6 +318,9 @@ public class CatalogManager {
     public synchronized List<ReferencingForeignKey> listReferencingForeignKeys(String table) {
         ensureLoaded();
         Objects.requireNonNull(table, "table");
+        if (!schemas.containsKey(table)) {
+            throw clientError("unknown table: " + table);
+        }
         List<ReferencingForeignKey> out = new ArrayList<>();
         for (TableSchema s : schemas.values()) {
             for (ForeignKey fk : s.foreignKeys()) {
@@ -302,79 +337,85 @@ public class CatalogManager {
         ensureLoaded();
         Objects.requireNonNull(table, "table");
         if (!schemas.containsKey(table)) {
-            throw new IllegalArgumentException("unknown table: " + table);
+            throw clientError("unknown table: " + table);
         }
         if (cascade) {
             return;
         }
         for (ReferencingForeignKey r : listReferencingForeignKeys(table)) {
             if (!r.referencingTable().equals(table)) {
-                throw new IllegalArgumentException(
-                        "cannot DROP " + table + " RESTRICT: referenced by "
-                                + r.referencingTable() + "." + r.foreignKey().name());
+                throw clientError(
+                        "cannot DROP "
+                                + table
+                                + " RESTRICT: referenced by "
+                                + r.referencingTable()
+                                + "."
+                                + r.foreignKey().name());
             }
         }
     }
 
     /** Removes table/index metadata and, for CASCADE, incoming FK definitions, preserving children. */
-    public synchronized void dropTable(String table, boolean cascade) {
-    ensureLoaded();
-    Objects.requireNonNull(table, "table");
-    if (!schemas.containsKey(table)) {
-        throw new IllegalArgumentException("unknown table: " + table);
-    }
-    if (cascade) {
-        for (Map.Entry<String, TableSchema> e : schemas.entrySet()) {
-            if (e.getKey().equals(table)) {
-                continue;
-            }
-            TableSchema child = e.getValue();
-            List<ForeignKey> kept = new ArrayList<>();
-            boolean changed = false;
-            for (ForeignKey fk : child.foreignKeys()) {
-                if (table.equals(fk.referencedTable())) {
-                    changed = true;
-                } else {
-                    kept.add(fk);
+    public synchronized void dropTable(String table, boolean cascade)
+            throws StorageInternalException {
+        ensureLoaded();
+        Objects.requireNonNull(table, "table");
+        if (!schemas.containsKey(table)) {
+            throw clientError("unknown table: " + table);
+        }
+        if (cascade) {
+            // Iterate over a snapshot to allow schemas.put inside the loop.
+            for (Map.Entry<String, TableSchema> e : new ArrayList<>(schemas.entrySet())) {
+                if (e.getKey().equals(table)) {
+                    continue;
+                }
+                TableSchema child = e.getValue();
+                List<ForeignKey> kept = new ArrayList<>();
+                boolean changed = false;
+                for (ForeignKey fk : child.foreignKeys()) {
+                    if (table.equals(fk.referencedTable())) {
+                        changed = true;
+                    } else {
+                        kept.add(fk);
+                    }
+                }
+                if (changed) {
+                    schemas.put(e.getKey(), new TableSchema(child.table(), child.columns(), kept));
                 }
             }
-            if (changed) {
-                schemas.put(
-                        e.getKey(),
-                        new TableSchema(child.table(), child.columns(), kept));
+        }
+
+        schemas.remove(table);
+        tableFiles.remove(table);
+        stats.remove(table);
+
+        List<String> toRemove = new ArrayList<>();
+        for (IndexInfo idx : indexesByName.values()) {
+            if (table.equals(idx.table())) {
+                toRemove.add(idx.name());
+            }
+        }
+        for (String name : toRemove) {
+            indexesByName.remove(name);
+            indexFiles.remove(name);
+        }
+
+        // DROP TABLE removes the table identity entirely: reset its allocation high-water so a
+        // subsequent CREATE TABLE with the same name starts at slot 0, matching the fresh file.
+        boolean allocChanged =
+                allocHighWater.keySet().removeIf(k -> k.startsWith(table + "\u0000"));
+        if (allocChanged) {
+            try {
+                byte[] bytes = encodeAlloc();
+                atomicWrite(directory.resolve(ALLOC_TMP), directory.resolve(ALLOC_FILE), bytes);
+            } catch (IOException e) {
+                // The in-memory catalog is already updated; the caller must treat this DROP as
+                // failed. The stale alloc entries are pruned by load() on the next restart.
+                throw wrap("failed to persist allocation reset for dropped table " + table, e);
             }
         }
     }
 
-    schemas.remove(table);
-    tableFiles.remove(table);
-    stats.remove(table);
-
-    List<String> toRemove = new ArrayList<>();
-    for (IndexInfo idx : indexesByName.values()) {
-        if (table.equals(idx.table())) {
-            toRemove.add(idx.name());
-        }
-    }
-    for (String name : toRemove) {
-        indexesByName.remove(name);
-        indexFiles.remove(name);
-    }
-
-    // DROP TABLE menghapus identitas tabel sepenuhnya: high-water ikut di-reset
-    // agar CREATE TABLE berikutnya dengan nama sama mulai dari slot 0.
-    boolean allocChanged = allocHighWater.keySet()
-            .removeIf(k -> k.startsWith(table + "\u0000"));
-    if (allocChanged) {
-        try {
-            byte[] bytes = encodeAlloc();
-            atomicWrite(directory.resolve(ALLOC_TMP),
-                        directory.resolve(ALLOC_FILE), bytes);
-        } catch (IOException e) {
-            throw wrap("failed to persist allocation reset for dropped table " + table, e);
-        }
-    }
-}
     // Statistics
 
     /** Returns cached statistics; the facade refreshes derived fields when necessary. */
@@ -383,7 +424,7 @@ public class CatalogManager {
         Objects.requireNonNull(table, "table");
         TableStats s = stats.get(table);
         if (s == null) {
-            throw new IllegalArgumentException("unknown table: " + table);
+            throw clientError("unknown table: " + table);
         }
         return s;
     }
@@ -416,15 +457,10 @@ public class CatalogManager {
                 totalBytes += estimateSize(row);
                 for (int i = 0; i < row.size() && i < schema.columns().size(); i++) {
                     Column c = schema.columns().get(i);
-                    Value v = row.get(i);
-                    if (v == null || v.isNull()) {
-                        distinct.get(c.name()).add(NULL_MARKER);
-                    } else {
-                        distinct.get(c.name()).add(v.payloadKey());
-                    }
+                    distinct.get(c.name()).add(distinctKey(row.get(i)));
                 }
             }
-        } catch (RuntimeException e) {
+        } catch (StorageInternalException e) {
             throw new StorageInternalException("refreshStats failed for " + table, e);
         }
 
@@ -434,13 +470,10 @@ public class CatalogManager {
 
         Map<String, Long> dv = new HashMap<>();
         for (Map.Entry<String, Set<Object>> e : distinct.entrySet()) {
-            long n = e.getValue().size();
-            // A column with all-NULL still counts NULL as one distinct value in QO terms.
-            dv.put(e.getKey(), n);
+            dv.put(e.getKey(), (long) e.getValue().size());
         }
 
-        TableStats computed =
-                new TableStats(count, blocks, avgSize, blocking, dv);
+        TableStats computed = new TableStats(count, blocks, avgSize, blocking, dv);
         synchronized (this) {
             stats.put(table, computed);
         }
@@ -452,7 +485,7 @@ public class CatalogManager {
         Objects.requireNonNull(table, "table");
         TableStats old = stats.get(table);
         if (old == null) {
-            throw new IllegalArgumentException("unknown table: " + table);
+            throw clientError("unknown table: " + table);
         }
         long newCount = old.recordCount() + rowDelta;
         if (newCount < 0) {
@@ -475,6 +508,9 @@ public class CatalogManager {
     public synchronized List<IndexInfo> listIndexes(String table) {
         ensureLoaded();
         Objects.requireNonNull(table, "table");
+        if (!schemas.containsKey(table)) {
+            throw clientError("unknown table: " + table);
+        }
         List<IndexInfo> out = new ArrayList<>();
         for (IndexInfo idx : indexesByName.values()) {
             if (table.equals(idx.table())) {
@@ -490,7 +526,7 @@ public class CatalogManager {
         Objects.requireNonNull(name, "name");
         IndexInfo idx = indexesByName.get(name);
         if (idx == null) {
-            throw new IllegalArgumentException("unknown index: " + name);
+            throw clientError("unknown index: " + name);
         }
         return idx;
     }
@@ -511,18 +547,149 @@ public class CatalogManager {
         ensureLoaded();
         Objects.requireNonNull(index, "index");
         if (indexesByName.containsKey(index.name())) {
-            throw new IllegalArgumentException("index already exists: " + index.name());
+            throw clientError("index already exists: " + index.name());
         }
         TableSchema schema = schemas.get(index.table());
         if (schema == null) {
-            throw new IllegalArgumentException("unknown table for index: " + index.table());
+            throw clientError("unknown table for index: " + index.table());
         }
         if (schema.columnIndex(index.column()) < 0) {
-            throw new IllegalArgumentException(
+            throw clientError(
                     "unknown column for index: " + index.table() + "." + index.column());
         }
         indexesByName.put(index.name(), index);
         indexFiles.put(index.name(), safeRelativeFile("idx_" + hex(index.name()) + ".idx"));
+    }
+
+    // Validation helpers
+
+    /**
+     * Checks every outgoing FK: referenced table exists (or is this table), referenced columns are
+     * exactly the target's primary key in order, and each column pair shares a type family.
+     */
+    private void validateSchemaBody(TableSchema schema, Map<String, TableSchema> existing) {
+        for (ForeignKey fk : schema.foreignKeys()) {
+            if (fk.columns().isEmpty()) {
+                throw clientError("foreign key " + fk.name() + " has no columns");
+            }
+            TableSchema target;
+            if (fk.referencedTable().equals(schema.table())) {
+                target = schema;
+            } else {
+                target = existing.get(fk.referencedTable());
+                if (target == null) {
+                    throw clientError(
+                            "foreign key "
+                                    + fk.name()
+                                    + " references unknown table: "
+                                    + fk.referencedTable());
+                }
+            }
+            if (fk.referencedColumns().isEmpty()) {
+                throw clientError("foreign key " + fk.name() + " has no referenced columns");
+            }
+            if (fk.columns().size() != fk.referencedColumns().size()) {
+                throw clientError("foreign key " + fk.name() + " column count mismatch");
+            }
+
+            // Contract: referenced columns are exactly the target's primary key, in order.
+            List<Column> targetPk = target.primaryKeyColumns();
+            if (targetPk.size() != fk.referencedColumns().size()) {
+                throw clientError(
+                        "foreign key "
+                                + fk.name()
+                                + " referenced columns are not the primary key of "
+                                + fk.referencedTable());
+            }
+            for (int i = 0; i < targetPk.size(); i++) {
+                if (!targetPk.get(i).name().equals(fk.referencedColumns().get(i))) {
+                    throw clientError(
+                            "foreign key "
+                                    + fk.name()
+                                    + " referenced column "
+                                    + fk.referencedColumns().get(i)
+                                    + " is not primary key column "
+                                    + targetPk.get(i).name()
+                                    + " of "
+                                    + fk.referencedTable());
+                }
+            }
+
+            // Each (child column, parent column) pair must share a type family.
+            for (int i = 0; i < fk.columns().size(); i++) {
+                String childName = fk.columns().get(i);
+                Column childCol =
+                        schema.column(childName)
+                                .orElseThrow(
+                                        () ->
+                                                clientError(
+                                                        "foreign key "
+                                                                + fk.name()
+                                                                + " names unknown column: "
+                                                                + childName));
+                Column parentCol = targetPk.get(i);
+                if (family(childCol.type()) != family(parentCol.type())) {
+                    throw clientError(
+                            "foreign key "
+                                    + fk.name()
+                                    + " type mismatch: "
+                                    + childCol.name()
+                                    + " ("
+                                    + childCol.type()
+                                    + ") vs "
+                                    + parentCol.name()
+                                    + " ("
+                                    + parentCol.type()
+                                    + ")");
+                }
+            }
+        }
+    }
+
+    /** CHAR and VARCHAR share one family, matching {@link Value#equals}. */
+    private static DataType family(DataType t) {
+        return t.isText() ? DataType.CHAR : t;
+    }
+
+    /** Estimates stored bytes for a row from the declared column types and payloads. */
+    private static long estimateSize(Row row) {
+        long n = 0;
+        for (int i = 0; i < row.size(); i++) {
+            n += estimateSize(row.get(i));
+        }
+        return n;
+    }
+
+    /**
+     * Estimates the on-disk width of one value: fixed width for numerics, UTF-8 byte length for
+     * text, zero for NULL (NULL is encoded in the null bitmap, not as payload).
+     */
+    private static long estimateSize(Value v) {
+        if (v == null || v.isNull()) {
+            return 0L;
+        }
+        return switch (v.type()) {
+            case INTEGER -> Integer.BYTES;
+            case FLOAT -> Float.BYTES;
+            case CHAR, VARCHAR -> v.asText().getBytes(StandardCharsets.UTF_8).length;
+        };
+    }
+
+    /**
+     * Key for distinct-value counting. {@link Value#equals} already collapses CHAR/VARCHAR into
+     * one family and normalizes -0.0f to 0.0f, so the Value itself is the right key. SQL NULL is
+     * one distinct value in QO terms, regardless of declared type.
+     */
+    private static Object distinctKey(Value v) {
+        return v == null || v.isNull() ? NULL_MARKER : v;
+    }
+
+    private static Map<String, Long> zeroDistinct(TableSchema schema) {
+        Map<String, Long> m = new HashMap<>();
+        for (Column c : schema.columns()) {
+            m.put(c.name(), 0L);
+        }
+        return m;
     }
 
     // Encoding / decoding
@@ -632,8 +799,7 @@ public class CatalogManager {
                 String column = readString(in);
                 String typeName = readString(in);
                 String ifile = readString(in);
-                IndexInfo idx =
-                        new IndexInfo(name, table, column, IndexType.valueOf(typeName));
+                IndexInfo idx = new IndexInfo(name, table, column, IndexType.valueOf(typeName));
                 outIndexes.put(name, idx);
                 outIndexFiles.put(name, ifile);
             }
@@ -700,68 +866,90 @@ public class CatalogManager {
         }
     }
 
-    // Validation helpers
+    private static void writeColumn(DataOutputStream out, Column c) throws IOException {
+        writeString(out, c.name());
+        writeString(out, c.type().name());
+        out.writeInt(c.length());
+        out.writeBoolean(c.nullable());
+        out.writeBoolean(c.primaryKey());
+    }
 
-    private void validateSchemaBody(
-            TableSchema schema, Map<String, TableSchema> existing) {
-        // PK columns must be NOT NULL by SQL semantics; check via Column contract if exposed.
-        // FK target validation against existing tables (and self-references).
-        for (ForeignKey fk : schema.foreignKeys()) {
-            if (fk.columns().isEmpty()) {
-                throw new IllegalArgumentException(
-                        "foreign key " + fk.name() + " has no columns");
-            }
-            TableSchema target;
-            if (fk.referencedTable().equals(schema.table())) {
-                target = schema;
-            } else {
-                target = existing.get(fk.referencedTable());
-                if (target == null) {
-                    throw new IllegalArgumentException(
-                            "foreign key " + fk.name() + " references unknown table: "
-                                    + fk.referencedTable());
-                }
-            }
-            if (fk.referencedColumns().isEmpty()) {
-                throw new IllegalArgumentException(
-                        "foreign key " + fk.name() + " has no referenced columns");
-            }
-            if (fk.columns().size() != fk.referencedColumns().size()) {
-                throw new IllegalArgumentException(
-                        "foreign key " + fk.name() + " column count mismatch");
-            }
-            for (String rc : fk.referencedColumns()) {
-                if (target.columnIndex(rc) < 0) {
-                    throw new IllegalArgumentException(
-                            "foreign key " + fk.name() + " references unknown column: " + rc);
-                }
-            }
+    private static Column readColumn(DataInputStream in) throws IOException {
+        String name = readString(in);
+        DataType type = DataType.valueOf(readString(in));
+        int length = in.readInt();
+        boolean nullable = in.readBoolean();
+        boolean pk = in.readBoolean();
+        return new Column(name, type, length, nullable, pk);
+    }
+
+    private static void writeForeignKey(DataOutputStream out, ForeignKey fk) throws IOException {
+        writeString(out, fk.name());
+        out.writeInt(fk.columns().size());
+        for (String c : fk.columns()) {
+            writeString(out, c);
+        }
+        writeString(out, fk.referencedTable());
+        out.writeInt(fk.referencedColumns().size());
+        for (String c : fk.referencedColumns()) {
+            writeString(out, c);
+        }
+        writeString(out, fk.onDelete().name());
+    }
+
+    private static ForeignKey readForeignKey(DataInputStream in) throws IOException {
+        String name = readString(in);
+        int n = in.readInt();
+        if (n < 0) {
+            throw new IOException("negative fk column count");
+        }
+        List<String> cols = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            cols.add(readString(in));
+        }
+        String refTable = readString(in);
+        int rn = in.readInt();
+        if (rn < 0) {
+            throw new IOException("negative fk referenced column count");
+        }
+        List<String> refCols = new ArrayList<>(rn);
+        for (int i = 0; i < rn; i++) {
+            refCols.add(readString(in));
+        }
+        ReferentialAction onDelete = ReferentialAction.valueOf(readString(in));
+        return new ForeignKey(name, cols, refTable, refCols, onDelete);
+    }
+
+    private static void writeStats(DataOutputStream out, TableStats st) throws IOException {
+        out.writeLong(st.recordCount());
+        out.writeLong(st.blockCount());
+        out.writeDouble(st.averageRecordSize());
+        out.writeDouble(st.blockingFactor());
+        Map<String, Long> dv = st.distinctValues();
+        out.writeInt(dv.size());
+        TreeMap<String, Long> sorted = new TreeMap<>(dv);
+        for (Map.Entry<String, Long> e : sorted.entrySet()) {
+            writeString(out, e.getKey());
+            out.writeLong(e.getValue());
         }
     }
 
-    private static void validateValueAgainstColumn(Column col, Value v) {
-        // The Value/Column APIs own the precise type-family rules; here we only guard the
-        // invariants we can assert generically. If Column exposes a declared type family,
-        // this is where a mismatch should be rejected. The Column record contract already
-        // ties the two together at schema construction, so we accept the pair as consistent.
-        // Intentionally no-op beyond null checks already done by callers.
-    }
-
-    private static long estimateSize(Row row) {
-        long n = 0;
-        for (int i = 0; i < row.size(); i++) {
-            Value v = row.get(i);
-            n += v == null ? 0 : v.estimatedBytes();
+    private static TableStats readStats(DataInputStream in) throws IOException {
+        long rc = in.readLong();
+        long bc = in.readLong();
+        double avg = in.readDouble();
+        double bf = in.readDouble();
+        int n = in.readInt();
+        if (n < 0) {
+            throw new IOException("negative distinct-value count");
         }
-        return n;
-    }
-
-    private static Map<String, Long> zeroDistinct(TableSchema schema) {
-        Map<String, Long> m = new HashMap<>();
-        for (Column c : schema.columns()) {
-            m.put(c.name(), 0L);
+        Map<String, Long> dv = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            String k = readString(in);
+            long v = in.readLong();
+            dv.put(k, v);
         }
-        return m;
+        return new TableStats(rc, bc, avg, bf, dv);
     }
 
     // IO helpers
@@ -787,8 +975,7 @@ public class CatalogManager {
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
         }
         // Force directory entry on best-effort basis.
-        try (FileChannel dir =
-                FileChannel.open(target.getParent(), StandardOpenOption.READ)) {
+        try (FileChannel dir = FileChannel.open(target.getParent(), StandardOpenOption.READ)) {
             dir.force(true);
         } catch (IOException ignored) {
             // Not all platforms support forcing a directory; the data file was forced.
@@ -841,93 +1028,6 @@ public class CatalogManager {
         byte[] b = new byte[len];
         in.readFully(b);
         return new String(b, StandardCharsets.UTF_8);
-    }
-
-    private static void writeColumn(DataOutputStream out, Column c) throws IOException {
-        writeString(out, c.name());
-        writeString(out, c.type().name());
-        out.writeBoolean(c.nullable());
-        out.writeBoolean(c.primaryKey());
-    }
-
-    private static Column readColumn(DataInputStream in) throws IOException {
-        String name = readString(in);
-        String type = readString(in);
-        boolean nullable = in.readBoolean();
-        boolean pk = in.readBoolean();
-        return new Column(name, resolveType(type), nullable, pk);
-    }
-
-    private static void writeForeignKey(DataOutputStream out, ForeignKey fk) throws IOException {
-        writeString(out, fk.name());
-        out.writeInt(fk.columns().size());
-        for (String c : fk.columns()) {
-            writeString(out, c);
-        }
-        writeString(out, fk.referencedTable());
-        out.writeInt(fk.referencedColumns().size());
-        for (String c : fk.referencedColumns()) {
-            writeString(out, c);
-        }
-    }
-
-    private static ForeignKey readForeignKey(DataInputStream in) throws IOException {
-        String name = readString(in);
-        int n = in.readInt();
-        if (n < 0) {
-            throw new IOException("negative fk column count");
-        }
-        List<String> cols = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            cols.add(readString(in));
-        }
-        String refTable = readString(in);
-        int rn = in.readInt();
-        if (rn < 0) {
-            throw new IOException("negative fk referenced column count");
-        }
-        List<String> refCols = new ArrayList<>(rn);
-        for (int i = 0; i < rn; i++) {
-            refCols.add(readString(in));
-        }
-        return new ForeignKey(name, cols, refTable, refCols);
-    }
-
-    private static void writeStats(DataOutputStream out, TableStats st) throws IOException {
-        out.writeLong(st.recordCount());
-        out.writeLong(st.blockCount());
-        out.writeDouble(st.averageRecordSize());
-        out.writeDouble(st.blockingFactor());
-        Map<String, Long> dv = st.distinctValues();
-        out.writeInt(dv.size());
-        TreeMap<String, Long> sorted = new TreeMap<>(dv);
-        for (Map.Entry<String, Long> e : sorted.entrySet()) {
-            writeString(out, e.getKey());
-            out.writeLong(e.getValue());
-        }
-    }
-
-    private static TableStats readStats(DataInputStream in) throws IOException {
-        long rc = in.readLong();
-        long bc = in.readLong();
-        double avg = in.readDouble();
-        double bf = in.readDouble();
-        int n = in.readInt();
-        if (n < 0) {
-            throw new IOException("negative distinct-value count");
-        }
-        Map<String, Long> dv = new HashMap<>();
-        for (int i = 0; i < n; i++) {
-            String k = readString(in);
-            long v = in.readLong();
-            dv.put(k, v);
-        }
-        return new TableStats(rc, bc, avg, bf, dv);
-    }
-
-    private static org.rafendb.common.type.DataType resolveType(String name) {
-        // The Value/Column API resolves enum-style type names; keep this localized.
-        return org.rafendb.common.type.DataType.valueOf(name);
     }
 
     private static final Object NULL_MARKER = new Object();
