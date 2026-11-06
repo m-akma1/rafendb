@@ -1,6 +1,9 @@
 package org.rafendb.storage;
 
+import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.ToLongFunction;
@@ -17,16 +20,21 @@ import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.Value;
 import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
+import org.rafendb.storage.file.BlockId;
 import org.rafendb.storage.file.BlockManager;
 import org.rafendb.storage.index.IndexManager;
 import org.rafendb.storage.record.RecordSerializer;
+import org.rafendb.storage.record.SlottedPage;
 import org.rafendb.storage.record.TableScan;
 import org.rafendb.storage.seed.SampleDatabaseLoader;
 
 /**
- * SM1 composition facade. Module dependencies and delegations are wired; physical operations
- * marked TODO intentionally fail until their owners implement them. Facade calls are serialized;
- * cursors release page latches before returning rows. DDL must still exclude active cursors.
+ * SM1 composition facade. Module dependencies and delegations are wired;
+ * physical operations
+ * marked TODO intentionally fail until their owners implement them. Facade
+ * calls are serialized;
+ * cursors release page latches before returning rows. DDL must still exclude
+ * active cursors.
  */
 public class StorageManagerImpl implements StorageManager {
     protected final CatalogManager catalog;
@@ -45,6 +53,7 @@ public class StorageManagerImpl implements StorageManager {
     }
 
     private ClosePhase closePhase = ClosePhase.OPEN;
+    private final Map<String, Integer> openCursors = new HashMap<>();
 
     /** Accepts one shared module graph; constructors perform no database I/O. */
     public StorageManagerImpl(
@@ -87,9 +96,22 @@ public class StorageManagerImpl implements StorageManager {
     @Override
     public synchronized void createTable(TableSchema schema) throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Validasi skema, buat berkas, lalu registerTable/save.
-        // TODO SM1: Bersihkan DDL parsial; PK tidak otomatis membuat indeks.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.createTable");
+        Objects.requireNonNull(schema, "schema");
+        catalog.validateTable(schema);
+        String file = catalog.tableFile(schema.table());
+        blocks.create(file);
+        try {
+            catalog.registerTable(schema);
+            try {
+                catalog.save();
+            } catch (StorageInternalException | RuntimeException e) {
+                catalog.dropTable(schema.table(), true);
+                throw e;
+            }
+        } catch (StorageInternalException | RuntimeException e) {
+            blocks.delete(file);
+            throw e;
+        }
     }
 
     /** {@inheritDoc} */
@@ -97,12 +119,20 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized void dropTable(String table, boolean cascade)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Hentikan akses tabel, validasi DROP, lalu hapus indeks dan cache.
-        // TODO SM1: Hapus berkas/metadata; CASCADE menghapus FK tanpa menghapus baris anak.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.dropTable");
+        catalog.validateDrop(table, cascade);
+        requireNoOpenCursors(table);
+        String file = catalog.tableFile(table);
+        indexes.dropIndexesOf(table);
+        buffers.invalidateFile(file);
+        catalog.dropTable(table, cascade);
+        catalog.save();
+        blocks.delete(file);
     }
 
-    /** {@inheritDoc} Uses the existing cursor directly, avoiding an Iterable<Row> adapter. */
+    /**
+     * {@inheritDoc} Uses the existing cursor directly, avoiding an Iterable<Row>
+     * adapter.
+     */
     @Override
     public synchronized TableStats getStats(String table) throws StorageInternalException {
         ensureOpen();
@@ -124,7 +154,10 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized RecordCursor scan(String table) throws StorageInternalException {
         ensureOpen();
         TableSchema schema = catalog.getSchema(table);
-        return new TableScan(catalog.tableFile(table), schema, blocks, buffers, serializer);
+        RecordCursor cursor =
+                new TableScan(catalog.tableFile(table), schema, blocks, buffers, serializer);
+        openCursors.merge(table, 1, Integer::sum);
+        return new TrackedCursor(table, cursor);
     }
 
     /** {@inheritDoc} */
@@ -132,16 +165,34 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized Optional<StoredRow> fetch(String table, Rid rid)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Ambil skema/berkas, pin, baca/dekode slot, lalu unpin di finally.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.fetch");
+        Objects.requireNonNull(rid, "rid");
+        TableSchema schema = catalog.getSchema(table);
+        String file = catalog.tableFile(table);
+        if (rid.block() >= blocks.size(file)) {
+            return Optional.empty();
+        }
+        BlockId block = new BlockId(file, rid.block());
+        ByteBuffer page = buffers.pin(block);
+        try {
+            Optional<byte[]> bytes = new SlottedPage(page).read(rid.slot());
+            if (bytes.isEmpty()) {
+                return Optional.empty();
+            }
+            Row row = serializer.deserialize(ByteBuffer.wrap(bytes.get()), schema);
+            return Optional.of(new StoredRow(rid, row));
+        } finally {
+            buffers.unpin(block);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public synchronized Rid reserveRid(String table, Row row) throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Validasi ukuran, pin, lalu reserve(size, catalog.nextSlot(table, block)).
-        // TODO SM1: markUnloggedDirty lalu catalog.persistAllocation sebelum return RID.
+        // TODO SM1: Validasi ukuran, pin, lalu reserve(size, catalog.nextSlot(table,
+        // block)).
+        // TODO SM1: markUnloggedDirty lalu catalog.persistAllocation sebelum return
+        // RID.
         // TODO SM1: Unpin di finally, termasuk bila persistensi alokasi gagal.
         throw new UnsupportedOperationException("SM1: StorageManagerImpl.reserveRid");
     }
@@ -151,7 +202,8 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized void cancelReservation(String table, Rid rid)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Batalkan reservasi saja, markUnloggedDirty, lalu unpin; high-water tidak turun.
+        // TODO SM1: Batalkan reservasi saja, markUnloggedDirty, lalu unpin; high-water
+        // tidak turun.
         throw new UnsupportedOperationException("SM1: StorageManagerImpl.cancelReservation");
     }
 
@@ -170,9 +222,35 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized void update(String table, Rid rid, Row row, long lsn)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Tulis serializer.serialize sebagai byte[] di slot sama; markDirty dan onUpdate.
-        // TODO SM1: Perbarui statistik; jangan relokasi atau samakan error I/O dengan ruang penuh.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.update");
+        Objects.requireNonNull(rid, "rid");
+        Objects.requireNonNull(row, "row");
+        TableSchema schema = catalog.getSchema(table);
+        catalog.validateRow(table, row);
+        String file = catalog.tableFile(table);
+        if (rid.block() >= blocks.size(file)) {
+            throw new StorageInternalException("no live record at " + rid);
+        }
+        BlockId block = new BlockId(file, rid.block());
+        ByteBuffer buffer = buffers.pin(block);
+        try {
+            SlottedPage page = new SlottedPage(buffer);
+            Optional<byte[]> old = page.read(rid.slot());
+            if (old.isEmpty()) {
+                throw new StorageInternalException("no live record at " + rid);
+            }
+            Row before = serializer.deserialize(ByteBuffer.wrap(old.get()), schema);
+            page.write(rid.slot(), serializer.serialize(row, schema));
+            try {
+                indexes.onUpdate(table, rid, before, row, lsn);
+            } catch (StorageInternalException | RuntimeException e) {
+                page.write(rid.slot(), old.get());
+                throw e;
+            }
+            buffers.markDirty(block, lsn);
+            catalog.recordChanged(table, 0, blocks.size(file));
+        } finally {
+            buffers.unpin(block);
+        }
     }
 
     /** {@inheritDoc} */
@@ -180,8 +258,38 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized boolean delete(String table, Rid rid, long lsn)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Baca before-image, hapus slot aktif, lalu perbarui dirty, indeks, dan count.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.delete");
+        Objects.requireNonNull(rid, "rid");
+        TableSchema schema = catalog.getSchema(table);
+        String file = catalog.tableFile(table);
+        if (rid.block() >= blocks.size(file)) {
+            return false;
+        }
+        BlockId block = new BlockId(file, rid.block());
+        ByteBuffer buffer = buffers.pin(block);
+
+        try {
+            SlottedPage page = new SlottedPage(buffer);
+            Optional<byte[]> old = page.read(rid.slot());
+            if (old.isEmpty()) {
+                return false;
+            }
+
+            Row before = serializer.deserialize(ByteBuffer.wrap(old.get()), schema);
+            if (!page.delete(rid.slot())) {
+                return false;
+            }
+            try {
+                indexes.onDelete(table, rid, before, lsn);
+            } catch (StorageInternalException | RuntimeException e) {
+                page.restore(rid.slot(), old);
+                throw e;
+            }
+            buffers.markDirty(block, lsn);
+            catalog.recordChanged(table, -1, blocks.size(file));
+            return true;
+        } finally {
+            buffers.unpin(block);
+        }
     }
 
     /** {@inheritDoc} */
@@ -189,11 +297,24 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized long clearTable(String table, ToLongFunction<StoredRow> logDelete)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: Scan bertahap, log sebelum delete; pertahankan hasil parsial jika gagal.
-        throw new UnsupportedOperationException("SM1: StorageManagerImpl.clearTable");
+        Objects.requireNonNull(logDelete, "logDelete");
+        long deleted = 0;
+        try (RecordCursor rows = scan(table)) {
+            StoredRow row;
+            while ((row = rows.next()) != null) {
+                long lsn = logDelete.applyAsLong(row);
+                if (delete(table, row.rid(), lsn)) {
+                    deleted++;
+                }
+            }
+        }
+        return deleted;
     }
 
-    /** {@inheritDoc} The facade owns the build cursor; IndexManager owns final registration. */
+    /**
+     * {@inheritDoc} The facade owns the build cursor; IndexManager owns final
+     * registration.
+     */
     @Override
     public synchronized void createIndex(IndexInfo index) throws StorageInternalException {
         ensureOpen();
@@ -219,7 +340,10 @@ public class StorageManagerImpl implements StorageManager {
         return indexes.range(index, lower, includeLower, upper, includeUpper);
     }
 
-    /** {@inheritDoc} Catalog save must itself force its binary file before returning. */
+    /**
+     * {@inheritDoc} Catalog save must itself force its binary file before
+     * returning.
+     */
     @Override
     public synchronized void flush() throws StorageInternalException {
         ensureOpen();
@@ -232,8 +356,10 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized void applyRecovery(String table, Rid rid, Optional<Row> image, long lsn)
             throws StorageInternalException {
         ensureOpen();
-        // TODO SM1: catalog.persistAllocation, restore RID tepat, lalu markDirty dengan LSN.
-        // TODO SM1: Perbarui indeks/statistik dari transisi aktual; jangan catat log ulang.
+        // TODO SM1: catalog.persistAllocation, restore RID tepat, lalu markDirty dengan
+        // LSN.
+        // TODO SM1: Perbarui indeks/statistik dari transisi aktual; jangan catat log
+        // ulang.
         throw new UnsupportedOperationException("SM1: StorageManagerImpl.applyRecovery");
     }
 
@@ -261,9 +387,12 @@ public class StorageManagerImpl implements StorageManager {
     }
 
     /**
-     * Opens the durable index-session marker and rebuilds untrusted indexes before admission.
-     * Called by Engine after catalog.load, before FRM recovery; applyRecovery maintains the rebuilt
-     * indexes while FRM replays table changes. No client transactions or cursors may exist yet.
+     * Opens the durable index-session marker and rebuilds untrusted indexes before
+     * admission.
+     * Called by Engine after catalog.load, before FRM recovery; applyRecovery
+     * maintains the rebuilt
+     * indexes while FRM replays table changes. No client transactions or cursors
+     * may exist yet.
      */
     public synchronized void initializeIndexes() throws StorageInternalException {
         ensureOpen();
@@ -276,8 +405,10 @@ public class StorageManagerImpl implements StorageManager {
     }
 
     /**
-     * {@inheritDoc} A failed initial flush leaves storage open. Once closing starts, normal calls
-     * are rejected and close retries only the unfinished phase; it never flushes a closed buffer.
+     * {@inheritDoc} A failed initial flush leaves storage open. Once closing
+     * starts, normal calls
+     * are rejected and close retries only the unfinished phase; it never flushes a
+     * closed buffer.
      */
     @Override
     public synchronized void close() throws StorageInternalException {
@@ -299,10 +430,52 @@ public class StorageManagerImpl implements StorageManager {
         }
     }
 
-    /** Rejects use as soon as resource shutdown starts, including after a partial failure. */
+    /**
+     * Rejects use as soon as resource shutdown starts, including after a partial
+     * failure.
+     */
     private void ensureOpen() {
         if (closePhase != ClosePhase.OPEN) {
             throw new IllegalStateException("storage manager is closing or closed");
+        }
+    }
+
+    private final class TrackedCursor implements RecordCursor {
+        private final String table;
+        private final RecordCursor delegate;
+        private boolean closed;
+
+        TrackedCursor(String table, RecordCursor delegate) {
+            this.table = table;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public StoredRow next() throws StorageInternalException {
+            return delegate.next();
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                delegate.close();
+            } finally {
+                release(table);
+            }
+        }
+    }
+
+    private synchronized void release(String table) {
+        openCursors.computeIfPresent(table, (name, count) -> count > 1 ? count - 1 : null);
+    }
+
+    private void requireNoOpenCursors(String table) throws StorageInternalException {
+        if (openCursors.containsKey(table)) {
+            throw new StorageInternalException("table has open cursors: " + table);
         }
     }
 }
