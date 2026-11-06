@@ -1,0 +1,62 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.common.expr.Expr {
+}
+
+
+class org.rafendb.common.expr.Expr$Binary {
+	{method} +left () : Expr
+	{method} +op () : Op
+	{method} +right () : Expr
+}
+
+
+class org.rafendb.common.expr.Expr$ColumnRef {
+	{method} +column () : String
+	{method} +offset () : int
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.expr.Expr$Literal {
+	{method} +value () : Value
+}
+
+
+class org.rafendb.common.expr.Expr$Null {
+}
+
+
+enum org.rafendb.common.expr.Expr$Op {
+	{field} +ADD
+	{field} +AND
+	{field} +DIV
+	{field} +EQ
+	{field} +GE
+	{field} +GT
+	{field} +LE
+	{field} +LT
+	{field} +MOD
+	{field} +MUL
+	{field} +NE
+	{field} +SUB
+}
+
+
+
+
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : left
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : right
+org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr$Op : op
+org.rafendb.common.expr.Expr$Binary ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$ColumnRef ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$Literal ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$Null ..|>  org.rafendb.common.expr.Expr
+
+
+@enduml

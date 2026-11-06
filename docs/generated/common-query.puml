@@ -1,0 +1,101 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.query.CreateIndexQuery {
+	{method} +column () : String
+	{method} +indexName () : String
+	{method} +indexType () : IndexType
+	{method} +originalSql () : String
+	{method} +table () : String
+}
+
+
+class org.rafendb.common.query.DeleteQuery {
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +where () : Expr
+}
+
+
+class org.rafendb.common.query.InsertQuery {
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +values () : List
+}
+
+
+interface org.rafendb.common.query.ParsedQuery {
+	{method}  {abstract} +originalSql () : String
+}
+
+
+interface org.rafendb.common.query.QueryResult {
+}
+
+
+class org.rafendb.common.query.QueryResult$Affected {
+	{method} +count () : long
+}
+
+
+class org.rafendb.common.query.QueryResult$Rows {
+	{method} +columns () : List
+	{method} +rows () : List
+}
+
+
+class org.rafendb.common.query.QueryResult$Status {
+	{method} +message () : String
+}
+
+
+class org.rafendb.common.query.SelectQuery {
+	{method} +joinCondition () : Expr
+	{method} +originalSql () : String
+	{method} +projection () : List
+	{method} +sourceTables () : List
+	{method} +whereCondition () : Expr
+}
+
+
+class org.rafendb.common.query.TransactionQuery {
+	{method} +kind () : Kind
+	{method} +originalSql () : String
+}
+
+
+enum org.rafendb.common.query.TransactionQuery$Kind {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +COMMIT
+}
+
+
+class org.rafendb.common.query.UpdateQuery {
+	{method} +column () : String
+	{method} +originalSql () : String
+	{method} +table () : String
+	{method} +value () : Expr
+	{method} +where () : Expr
+}
+
+
+
+
+org.rafendb.common.query.CreateIndexQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.DeleteQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.QueryResult$Affected ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.TransactionQuery *--  org.rafendb.common.query.TransactionQuery$Kind : kind
+org.rafendb.common.query.TransactionQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.UpdateQuery ..|>  org.rafendb.common.query.ParsedQuery
+
+
+@enduml

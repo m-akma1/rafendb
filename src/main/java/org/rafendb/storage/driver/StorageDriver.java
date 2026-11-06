@@ -11,6 +11,7 @@ public final class StorageDriver {
     private StorageDriver() {}
 
     public static void main(String[] args) {
+        // TODO SM1: Buat komponen lewat Engine.storage dengan WalSync asli, lalu jalankan skenario.
         System.out.println(Version.banner("Storage Manager Driver"));
         System.out.println("Not implemented yet.");
     }
