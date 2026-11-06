@@ -11,8 +11,8 @@ import org.rafendb.common.expr.ColumnRef;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
@@ -22,13 +22,13 @@ import org.rafendb.mock.processor.MockPlanTranslator;
 class Qp2ContractTest {
     @Test
     void wrapperExposesTraversableTreeWithoutEmbeddingChildrenInDescriptions() {
-        var left = new TableScanNode("pegawai");
-        var right = new TableScanNode("departemen");
-        var root = new CartesianProductPlanNode(left, right);
+        var left = new TableScanNode(null, "pegawai");
+        var right = new TableScanNode(null, "departemen");
+        var root = new CartesianPlanNode(JoinAlgorithm.BLOCK_NESTED_LOOP, left, right);
         var plan = new QueryPlan(root, 27.5);
-        assertSame(root, plan.getRoot());
-        assertEquals(27.5, plan.getTotalCost());
-        assertEquals(List.of(left, right), plan.getRoot().children());
+        assertSame(root, plan.root());
+        assertEquals(27.5, plan.totalCost());
+        assertEquals(List.of(left, right), plan.root().children());
         assertTrue(left.children().isEmpty());
         assertFalse(root.describe().contains("\n"));
         assertFalse(root.describe().contains("pegawai"));
@@ -47,8 +47,8 @@ class Qp2ContractTest {
     void qoFixtureCanCrossBoundaryAndPreserveEmptyHeaders() {
         var plan =
                 new ProjectionPlanNode(
-                        new SelectionPlanNode(new TableScanNode("pegawai"), condition),
-                        List.of(salary));
+                        List.of(new Expr.ColumnRef("pegawai", "salary", 0)),
+                        new SelectionPlanNode(condition, new TableScanNode(null, "pegawai")));
         var translator = new MockPlanTranslator(List.of(salarySchema));
         var result =
                 assertInstanceOf(
@@ -117,7 +117,7 @@ class Qp2ContractTest {
         assertThrows(NullPointerException.class, () -> new ResultRow(null, null));
         assertThrows(
                 NullPointerException.class,
-                () -> new SelectionPlanNode(new TableScanNode("pegawai"), null));
+                () -> new SelectionPlanNode(null, new TableScanNode(null, "pegawai")));
         assertThrows(
                 NullPointerException.class,
                 () -> new MockPlanTranslator(List.of()).translate(null));

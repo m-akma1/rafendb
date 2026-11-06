@@ -4,20 +4,35 @@ import java.util.List;
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
-/** Local placeholder payload; only the node name and PlanNode boundary were supplied by QO. */
-public record SelectionPlanNode(PlanNode input, Expr condition) implements PlanNode {
+/**
+ * Unary node that keeps only the rows of its child that satisfy a condition.
+ *
+ * <p>Immutable and thread-safe.
+ *
+ * @param condition the filter condition, not null
+ * @param child the input node, not null
+ */
+public record SelectionPlanNode(Expr condition, PlanNode child) implements PlanNode {
+
+    /**
+     * Checks the arguments.
+     *
+     * @throws NullPointerException if any argument is null
+     */
     public SelectionPlanNode {
-        Objects.requireNonNull(input, "input");
         Objects.requireNonNull(condition, "condition");
+        Objects.requireNonNull(child, "child");
     }
 
+    /** {@inheritDoc} Always {@code [child]}. */
     @Override
     public List<PlanNode> children() {
-        return List.of(input);
+        return List.of(child);
     }
 
+    /** {@inheritDoc} For example {@code SELECTION <condition>}. */
     @Override
     public String describe() {
-        return "SelectionPlanNode";
+        return "SELECTION " + condition;
     }
 }

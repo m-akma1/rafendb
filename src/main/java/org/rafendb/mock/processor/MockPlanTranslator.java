@@ -23,11 +23,11 @@ public final class MockPlanTranslator implements PlanTranslator {
     @Override
     public ExecutionPlan translate(QueryPlan plan) {
         Objects.requireNonNull(plan, "plan");
-        if (plan.getRoot() instanceof InsertPlanNode
-                || plan.getRoot() instanceof UpdatePlanNode
-                || plan.getRoot() instanceof DeletePlanNode
-                || plan.getRoot() instanceof CreateIndexPlanNode
-                || plan.getRoot() instanceof TransactionPlanNode) {
+        if (plan.root() instanceof InsertPlanNode
+                || plan.root() instanceof UpdatePlanNode
+                || plan.root() instanceof DeletePlanNode
+                || plan.root() instanceof CreateIndexPlanNode
+                || plan.root() instanceof TransactionPlanNode) {
             return new ExecutionPlan.Command(new DummyCommand());
         }
         return new ExecutionPlan.Rows(columns, new MockOperator(columns, List.of()));

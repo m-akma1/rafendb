@@ -1,5 +1,7 @@
 /**
- * Implementasi dummy kontrak QP untuk milestone 1. Tidak memanggil QO, SM, CCM, atau FRM;
- * tidak menghitung ekspresi SQL dan tidak mengubah data tersimpan.
+ * Mocks of api.processor: {@link org.rafendb.mock.processor.MockQueryProcessor} returns canned
+ * results so the server, client and driver can run without the real QP.
+ *
+ * <p>Owner: G1 Query Processor.
  */
 package org.rafendb.mock.processor;

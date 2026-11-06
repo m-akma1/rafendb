@@ -2,24 +2,28 @@ package org.rafendb.common.plan;
 
 import java.util.Objects;
 
-/** QO plan wrapper. Constructor and accessor naming are provisional until QO confirms them. */
-public class QueryPlan {
-    private final PlanNode root;
-    private final double totalCost;
+/**
+ * An executable query plan produced by the Query Optimizer and consumed by the Query Processor: a
+ * tree of {@link PlanNode}s plus the optimizer's estimated total cost.
+ *
+ * <p>Plans may be produced for SELECT, UPDATE, INSERT, DELETE, transaction commands, and CREATE
+ * INDEX; concrete node types reflect the statement family.
+ *
+ * <p>Immutable and thread-safe.
+ *
+ * @param root the root node, not null
+ * @param totalCost the estimated total cost, in the optimizer's consistent cost unit (QO-08); an
+ *     estimate, not a measured cost
+ * @see PlanNode
+ */
+public record QueryPlan(PlanNode root, double totalCost) {
 
-    /** Stores a non-null tree and the optimizer cost unchanged; does not execute the tree. */
-    public QueryPlan(PlanNode root, double totalCost) {
-        this.root = Objects.requireNonNull(root, "root");
-        this.totalCost = totalCost;
-    }
-
-    /** Returns the root; local accessor name, not yet confirmed by QO. */
-    public PlanNode getRoot() {
-        return root;
-    }
-
-    /** Returns the supplied cost; local accessor name, not yet confirmed by QO. */
-    public double getTotalCost() {
-        return totalCost;
+    /**
+     * Checks the arguments.
+     *
+     * @throws NullPointerException if {@code root} is null
+     */
+    public QueryPlan {
+        Objects.requireNonNull(root, "root");
     }
 }
