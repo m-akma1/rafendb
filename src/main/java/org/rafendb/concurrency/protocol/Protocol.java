@@ -10,7 +10,6 @@ import org.rafendb.common.txn.TxStatus;
 /**
  * Strategy for the active protocol, lock-based or timestamp-based.
  */
-
 public interface Protocol {
 
     /** Decision for one access request. */
