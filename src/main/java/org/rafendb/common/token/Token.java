@@ -1,6 +1,7 @@
 package org.rafendb.common.token;
 
 import java.util.Objects;
+import java.util.Set;
 
 // why is it in common? bcs SyntaxException later uses this (also in common)
 public record Token(TokenType type, String text, SourcePosition position) {
@@ -35,14 +36,24 @@ public record Token(TokenType type, String text, SourcePosition position) {
         }
     }
 
+    private static final Set<String> KEYWORDS = Set.of(
+        "SELECT", "FROM", "WHERE", "AS", "JOIN", "NATURAL", "ON", "AND", "ORDER", "BY", "ASC", "DESC",
+        "UPDATE", "SET", "INSERT", "INTO", "VALUES", "DELETE",
+        "BEGIN", "TRANSACTION", "COMMIT", "ABORT",
+        "CREATE", "INDEX", "USING", "HASH", "BTREE");
+
     public Token {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(position, "position");
     }
 
+    public static boolean isTextKeyword(String keyword) {
+        return KEYWORDS.contains(keyword.toUpperCase());
+    }
+
     public boolean isKeyword(String keyword) {
-        return type == TokenType.KEYWORD && text.equalsIgnoreCase(keyword);
+        return type == TokenType.KEYWORD && KEYWORDS.contains(keyword.toUpperCase());
     }
 
     public boolean isPunctuation(String symbol) {
