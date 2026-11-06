@@ -22,10 +22,10 @@ import org.rafendb.common.type.Value;
 public final class IndexKeys {
 
     /** Bytes of a B+ tree node header: {@code isLeaf}, {@code count} and {@code nextLeaf}. */
-    static final int NODE_HEADER_BYTES = 11;
+    public static final int NODE_HEADER_BYTES = 11;
 
     /** Bytes of a child page number in an internal node. */
-    static final int CHILD_BYTES = 8;
+    public static final int CHILD_BYTES = 8;
 
     /**
      * Entries a B+ tree node must hold, so that splitting an overfull node leaves both halves
