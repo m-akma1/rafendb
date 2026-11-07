@@ -21,17 +21,17 @@ import org.rafendb.concurrency.bridge.FrmBridge;
 import org.rafendb.concurrency.protocol.Protocol;
 import org.rafendb.concurrency.txn.TransactionManager;
 
-
-public final class ConcurrencyControlManager implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
+public final class ConcurrencyControlManager
+        implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
     private final TransactionManager txns;
     private final Protocol protocol;
     private final FrmBridge bridge;
 
-
-    public ConcurrencyControlManager(TransactionManager txns, Protocol protocol, RecoveryManager frm) {
-            this.txns = Objects.requireNonNull(txns, "txns");
-            this.protocol = Objects.requireNonNull(protocol, "protocol");
-            this.bridge = new FrmBridge(frm, txns, protocol);
+    public ConcurrencyControlManager(
+            TransactionManager txns, Protocol protocol, RecoveryManager frm) {
+        this.txns = Objects.requireNonNull(txns, "txns");
+        this.protocol = Objects.requireNonNull(protocol, "protocol");
+        this.bridge = new FrmBridge(frm, txns, protocol);
     }
 
     @Override
