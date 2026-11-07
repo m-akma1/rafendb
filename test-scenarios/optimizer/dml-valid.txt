@@ -6,3 +6,5 @@ INSERT INTO employee VALUES (1, 'Rafen', 21, 5000.5);
 DELETE FROM employee WHERE age >= 60;
 DELETE FROM employee;
 delete from employee where name = 'x';
+INSERT INTO employee VALUES (2, NULL, 30, NULL);
+UPDATE employee SET age = NULL WHERE id = 1;

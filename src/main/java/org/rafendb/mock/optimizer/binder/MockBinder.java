@@ -4,8 +4,9 @@ import java.util.Objects;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.optimizer.binder.Binder;
 
-/** Pass-through placeholder until AST and catalog contracts are available. */
+/** Pass-through placeholder until AST and catalog contracts are available; stateless and thread-safe. */
 public final class MockBinder implements Binder {
+    /** {@inheritDoc} */
     @Override
     public ParsedQuery bind(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed query");
