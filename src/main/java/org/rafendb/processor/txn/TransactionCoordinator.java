@@ -74,7 +74,6 @@ public class TransactionCoordinator {
         if (newTxId != null) {
             this.execContext.getSContext().setCurrentTxId(newTxId);
         }
-
     }
 
     /**
@@ -86,10 +85,10 @@ public class TransactionCoordinator {
      * </p>
      */
     public void commitTx() throws ConcurrencyInternalException {
-        TxResult commitRes =
-                this.execContext
-                        .getConcurrencyControl()
-                        .commit(this.execContext.getSContext().getCurrentTxId());
+        // TxResult commitRes =
+        //         this.execContext
+        //                 .getConcurrencyControl()
+        //                 .commit(this.execContext.getSContext().getCurrentTxId());
 
         // TO-Do = change currenttx id and handle if tx status is aborted.
     }
@@ -104,10 +103,10 @@ public class TransactionCoordinator {
      * </p>
      */
     public void abortTx() throws ConcurrencyInternalException {
-        TxResult abortRes =
-                this.execContext
-                        .getConcurrencyControl()
-                        .abort(this.execContext.getSContext().getCurrentTxId());
+        // TxResult abortRes =
+        //         this.execContext
+        //                 .getConcurrencyControl()
+        //                 .abort(this.execContext.getSContext().getCurrentTxId());
         // TO-Do = change currenttx id and handle if aborted is failed
     }
 }
