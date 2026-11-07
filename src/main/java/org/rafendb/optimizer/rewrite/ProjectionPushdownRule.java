@@ -2,7 +2,6 @@ package org.rafendb.optimizer.rewrite;
 
 import java.util.ArrayList;
 import java.util.List;
-
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
@@ -39,16 +38,20 @@ public class ProjectionPushdownRule implements RewriteRule {
 
     private PlanNode reconstructNode(PlanNode original, List<PlanNode> newChildren) {
         return switch (original) {
-            case SelectionPlanNode sel -> 
-                new SelectionPlanNode(sel.condition(), newChildren.get(0));
-            case ProjectionPlanNode proj -> 
-                new ProjectionPlanNode(proj.columns(), newChildren.get(0));
-            case JoinPlanNode join -> 
-                new JoinPlanNode(join.algorithm(), join.condition(), newChildren.get(0), newChildren.get(1));
-            case CartesianPlanNode cart -> 
-                new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
-            case SortPlanNode sort -> 
-                new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());
+            case SelectionPlanNode sel ->
+                    new SelectionPlanNode(sel.condition(), newChildren.get(0));
+            case ProjectionPlanNode proj ->
+                    new ProjectionPlanNode(proj.columns(), newChildren.get(0));
+            case JoinPlanNode join ->
+                    new JoinPlanNode(
+                            join.algorithm(),
+                            join.condition(),
+                            newChildren.get(0),
+                            newChildren.get(1));
+            case CartesianPlanNode cart ->
+                    new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
+            case SortPlanNode sort ->
+                    new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());
             default -> original;
         };
     }
@@ -60,14 +63,23 @@ public class ProjectionPushdownRule implements RewriteRule {
             java.util.Set<String> leftTables = getProvidedTables(join.left());
             java.util.Set<String> rightTables = getProvidedTables(join.right());
 
-            List<org.rafendb.common.expr.Expr> leftCols = extractRequiredColumns(proj.columns(), join.condition(), leftTables);
-            List<org.rafendb.common.expr.Expr> rightCols = extractRequiredColumns(proj.columns(), join.condition(), rightTables);
+            List<org.rafendb.common.expr.Expr> leftCols =
+                    extractRequiredColumns(proj.columns(), join.condition(), leftTables);
+            List<org.rafendb.common.expr.Expr> rightCols =
+                    extractRequiredColumns(proj.columns(), join.condition(), rightTables);
 
-            PlanNode newLeft = leftCols.isEmpty() ? join.left() : attemptPushdown(new ProjectionPlanNode(leftCols, join.left()));
-            PlanNode newRight = rightCols.isEmpty() ? join.right() : attemptPushdown(new ProjectionPlanNode(rightCols, join.right()));
+            PlanNode newLeft =
+                    leftCols.isEmpty()
+                            ? join.left()
+                            : attemptPushdown(new ProjectionPlanNode(leftCols, join.left()));
+            PlanNode newRight =
+                    rightCols.isEmpty()
+                            ? join.right()
+                            : attemptPushdown(new ProjectionPlanNode(rightCols, join.right()));
 
-            JoinPlanNode newJoin = new JoinPlanNode(join.algorithm(), join.condition(), newLeft, newRight);
-            
+            JoinPlanNode newJoin =
+                    new JoinPlanNode(join.algorithm(), join.condition(), newLeft, newRight);
+
             return new ProjectionPlanNode(proj.columns(), newJoin);
         }
 
@@ -75,11 +87,19 @@ public class ProjectionPushdownRule implements RewriteRule {
             java.util.Set<String> leftTables = getProvidedTables(cart.left());
             java.util.Set<String> rightTables = getProvidedTables(cart.right());
 
-            List<org.rafendb.common.expr.Expr> leftCols = extractRequiredColumns(proj.columns(), null, leftTables);
-            List<org.rafendb.common.expr.Expr> rightCols = extractRequiredColumns(proj.columns(), null, rightTables);
+            List<org.rafendb.common.expr.Expr> leftCols =
+                    extractRequiredColumns(proj.columns(), null, leftTables);
+            List<org.rafendb.common.expr.Expr> rightCols =
+                    extractRequiredColumns(proj.columns(), null, rightTables);
 
-            PlanNode newLeft = leftCols.isEmpty() ? cart.left() : attemptPushdown(new ProjectionPlanNode(leftCols, cart.left()));
-            PlanNode newRight = rightCols.isEmpty() ? cart.right() : attemptPushdown(new ProjectionPlanNode(rightCols, cart.right()));
+            PlanNode newLeft =
+                    leftCols.isEmpty()
+                            ? cart.left()
+                            : attemptPushdown(new ProjectionPlanNode(leftCols, cart.left()));
+            PlanNode newRight =
+                    rightCols.isEmpty()
+                            ? cart.right()
+                            : attemptPushdown(new ProjectionPlanNode(rightCols, cart.right()));
 
             CartesianPlanNode newCart = new CartesianPlanNode(cart.algorithm(), newLeft, newRight);
             return new ProjectionPlanNode(proj.columns(), newCart);
@@ -89,13 +109,14 @@ public class ProjectionPushdownRule implements RewriteRule {
     }
 
     private List<org.rafendb.common.expr.Expr> extractRequiredColumns(
-            List<org.rafendb.common.expr.Expr> outputCols, 
-            org.rafendb.common.expr.Expr joinCondition, 
+            List<org.rafendb.common.expr.Expr> outputCols,
+            org.rafendb.common.expr.Expr joinCondition,
             java.util.Set<String> availableTables) {
-        
+
         List<org.rafendb.common.expr.Expr> requiredForThisSide = new ArrayList<>();
         for (org.rafendb.common.expr.Expr expr : outputCols) {
-            if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col && availableTables.contains(col.table())) {
+            if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col
+                    && availableTables.contains(col.table())) {
                 if (!requiredForThisSide.contains(col)) requiredForThisSide.add(col);
             }
         }
@@ -108,15 +129,17 @@ public class ProjectionPushdownRule implements RewriteRule {
     }
 
     private void extractColumnsFromExpr(
-            org.rafendb.common.expr.Expr expr, 
-            java.util.Set<String> availableTables, 
+            org.rafendb.common.expr.Expr expr,
+            java.util.Set<String> availableTables,
             List<org.rafendb.common.expr.Expr> collectedCols) {
-        
+
         if (expr instanceof org.rafendb.common.expr.Expr.Binary bin) {
             extractColumnsFromExpr(bin.left(), availableTables, collectedCols);
             extractColumnsFromExpr(bin.right(), availableTables, collectedCols);
         } else if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col) {
-            if (col.table() != null && availableTables.contains(col.table()) && !collectedCols.contains(col)) {
+            if (col.table() != null
+                    && availableTables.contains(col.table())
+                    && !collectedCols.contains(col)) {
                 collectedCols.add(col);
             }
         }

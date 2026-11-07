@@ -48,7 +48,10 @@ public class TokenizerImpl implements Tokenizer {
             } else {
                 throw error(
                         "Illegal character: " + sql.charAt(offset),
-                        new Token(Token.TokenType.UNKNOWN, String.valueOf(sql.charAt(offset)), currentPosition()));
+                        new Token(
+                                Token.TokenType.UNKNOWN,
+                                String.valueOf(sql.charAt(offset)),
+                                currentPosition()));
             }
         }
         checkBalancedParentheses(tokens);
@@ -76,26 +79,36 @@ public class TokenizerImpl implements Tokenizer {
         int start = offset;
         boolean seenDot = false;
         SourcePosition startPosition = currentPosition();
-        while (offset < sql.length()){
+        while (offset < sql.length()) {
             char c = sql.charAt(offset);
             if (Character.isLetterOrDigit(c) || c == '_') {
-                offset++; column++;
+                offset++;
+                column++;
             } else if (c == '.') {
                 char next = offset + 1 < sql.length() ? sql.charAt(offset + 1) : '\0';
                 boolean validNext = Character.isLetter(next) || next == '_' || next == '*';
                 if (seenDot || !validNext) {
-                    throw error("Malformed identifier",
-                            new Token(TokenType.IDENTIFIER, sql.substring(start, offset + 1), startPosition));
+                    throw error(
+                            "Malformed identifier",
+                            new Token(
+                                    TokenType.IDENTIFIER,
+                                    sql.substring(start, offset + 1),
+                                    startPosition));
                 }
                 seenDot = true;
-                offset++; column++;
-                if (next == '*') { offset++; column++; break; }
+                offset++;
+                column++;
+                if (next == '*') {
+                    offset++;
+                    column++;
+                    break;
+                }
             } else {
                 break;
             }
         }
         String word = sql.substring(start, offset);
-        if (!seenDot && Token.isTextKeyword(word)) { 
+        if (!seenDot && Token.isTextKeyword(word)) {
             return new Token(TokenType.KEYWORD, word.toUpperCase(), startPosition);
         }
         return new Token(TokenType.IDENTIFIER, word, startPosition);
@@ -120,18 +133,27 @@ public class TokenizerImpl implements Tokenizer {
         }
         String number = sql.substring(start, offset);
         if (number.isEmpty()) {
-            throw error("Malformed number literal", new Token(Token.TokenType.INTEGER_LITERAL, "", startPosition));
+            throw error(
+                    "Malformed number literal",
+                    new Token(Token.TokenType.INTEGER_LITERAL, "", startPosition));
         }
         if (offset < sql.length() && Character.isLetter(sql.charAt(offset))) {
             throw error(
                     "Malformed number literal: " + sql.substring(start, offset + 1),
-                    new Token(Token.TokenType.INTEGER_LITERAL, sql.substring(start, offset + 1), startPosition));
+                    new Token(
+                            Token.TokenType.INTEGER_LITERAL,
+                            sql.substring(start, offset + 1),
+                            startPosition));
         }
         if (hasDot) {
             if (number.startsWith(".") || number.endsWith(".")) {
-                throw error("Malformed float literal: " + number, new Token(Token.TokenType.FLOAT_LITERAL, number, startPosition));
+                throw error(
+                        "Malformed float literal: " + number,
+                        new Token(Token.TokenType.FLOAT_LITERAL, number, startPosition));
             } else if (number.chars().filter(ch -> ch == '.').count() > 1) {
-                throw error("Malformed float literal: " + number, new Token(Token.TokenType.FLOAT_LITERAL, number, startPosition));
+                throw error(
+                        "Malformed float literal: " + number,
+                        new Token(Token.TokenType.FLOAT_LITERAL, number, startPosition));
             } else {
                 return new Token(Token.TokenType.FLOAT_LITERAL, number, startPosition);
             }
@@ -164,7 +186,12 @@ public class TokenizerImpl implements Tokenizer {
                 column++;
             }
         }
-        throw error("Unterminated string literal", new Token(Token.TokenType.STRING_LITERAL, sql.substring(start, offset), startPosition));
+        throw error(
+                "Unterminated string literal",
+                new Token(
+                        Token.TokenType.STRING_LITERAL,
+                        sql.substring(start, offset),
+                        startPosition));
     }
 
     private Token readOperator() throws SyntaxException {
@@ -206,15 +233,19 @@ public class TokenizerImpl implements Tokenizer {
                 column++;
                 return new Token(Token.TokenType.COMPARISON_OPERATOR, "!=", startPosition);
             } else {
-                throw error("Illegal operator: !", new Token(Token.TokenType.COMPARISON_OPERATOR, "!", startPosition));
+                throw error(
+                        "Illegal operator: !",
+                        new Token(Token.TokenType.COMPARISON_OPERATOR, "!", startPosition));
             }
         } else if ("+-*/".indexOf(c) != -1) {
             offset++;
             column++;
-            return new Token(
-                    Token.TokenType.ARITHMETIC_OPERATOR, String.valueOf(c), startPosition);
+            return new Token(Token.TokenType.ARITHMETIC_OPERATOR, String.valueOf(c), startPosition);
         } else {
-            throw error("Illegal operator: " + c, new Token(Token.TokenType.ARITHMETIC_OPERATOR, String.valueOf(c), startPosition));
+            throw error(
+                    "Illegal operator: " + c,
+                    new Token(
+                            Token.TokenType.ARITHMETIC_OPERATOR, String.valueOf(c), startPosition));
         }
     }
 
@@ -226,7 +257,9 @@ public class TokenizerImpl implements Tokenizer {
             column++;
             return new Token(Token.TokenType.PUNCTUATION, String.valueOf(c), startPosition);
         } else {
-            throw error("Illegal punctuation: " + c, new Token(Token.TokenType.PUNCTUATION, String.valueOf(c), startPosition));
+            throw error(
+                    "Illegal punctuation: " + c,
+                    new Token(Token.TokenType.PUNCTUATION, String.valueOf(c), startPosition));
         }
     }
 
@@ -246,7 +279,8 @@ public class TokenizerImpl implements Tokenizer {
             }
         }
         if (stack.size() > 0) {
-            throw new SyntaxException("Unmatched opening parenthesis at " + stack.peek().position(), stack.peek());
+            throw new SyntaxException(
+                    "Unmatched opening parenthesis at " + stack.peek().position(), stack.peek());
         }
     }
 

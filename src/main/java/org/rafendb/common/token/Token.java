@@ -37,11 +37,35 @@ public record Token(TokenType type, String text, SourcePosition position) {
         }
     }
 
-    private static final Set<String> KEYWORDS = Set.of(
-        "SELECT", "FROM", "WHERE", "AS", "JOIN", "NATURAL", "ON", "AND", "ORDER", "BY", "ASC", "DESC",
-        "UPDATE", "SET", "INSERT", "INTO", "VALUES", "DELETE",
-        "BEGIN", "TRANSACTION", "COMMIT", "ABORT",
-        "CREATE", "INDEX", "USING", "HASH", "BTREE");
+    private static final Set<String> KEYWORDS =
+            Set.of(
+                    "SELECT",
+                    "FROM",
+                    "WHERE",
+                    "AS",
+                    "JOIN",
+                    "NATURAL",
+                    "ON",
+                    "AND",
+                    "ORDER",
+                    "BY",
+                    "ASC",
+                    "DESC",
+                    "UPDATE",
+                    "SET",
+                    "INSERT",
+                    "INTO",
+                    "VALUES",
+                    "DELETE",
+                    "BEGIN",
+                    "TRANSACTION",
+                    "COMMIT",
+                    "ABORT",
+                    "CREATE",
+                    "INDEX",
+                    "USING",
+                    "HASH",
+                    "BTREE");
 
     public Token {
         Objects.requireNonNull(type, "type");
@@ -54,7 +78,7 @@ public record Token(TokenType type, String text, SourcePosition position) {
     }
 
     public boolean isKeyword(String keyword) {
-        return type == TokenType.KEYWORD && KEYWORDS.contains(keyword.toUpperCase());
+        return type == TokenType.KEYWORD && text.equalsIgnoreCase(keyword);
     }
 
     public boolean isPunctuation(String symbol) {

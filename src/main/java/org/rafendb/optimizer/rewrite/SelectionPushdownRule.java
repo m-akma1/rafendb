@@ -2,12 +2,11 @@ package org.rafendb.optimizer.rewrite;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.rafendb.common.plan.PlanNode;
-import org.rafendb.common.plan.SelectionPlanNode;
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.JoinPlanNode;
+import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
-import org.rafendb.common.plan.TableScanNode;
+import org.rafendb.common.plan.SelectionPlanNode;
 import org.rafendb.common.plan.SortPlanNode;
 
 public class SelectionPushdownRule implements RewriteRule {
@@ -39,16 +38,20 @@ public class SelectionPushdownRule implements RewriteRule {
 
     private PlanNode reconstructNode(PlanNode original, List<PlanNode> newChildren) {
         return switch (original) {
-            case SelectionPlanNode sel -> 
-                new SelectionPlanNode(sel.condition(), newChildren.get(0));
-            case ProjectionPlanNode proj -> 
-                new ProjectionPlanNode(proj.columns(), newChildren.get(0));
-            case JoinPlanNode join -> 
-                new JoinPlanNode(join.algorithm(), join.condition(), newChildren.get(0), newChildren.get(1));
-            case CartesianPlanNode cart -> 
-                new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
-            case SortPlanNode sort -> 
-                new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());            
+            case SelectionPlanNode sel ->
+                    new SelectionPlanNode(sel.condition(), newChildren.get(0));
+            case ProjectionPlanNode proj ->
+                    new ProjectionPlanNode(proj.columns(), newChildren.get(0));
+            case JoinPlanNode join ->
+                    new JoinPlanNode(
+                            join.algorithm(),
+                            join.condition(),
+                            newChildren.get(0),
+                            newChildren.get(1));
+            case CartesianPlanNode cart ->
+                    new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
+            case SortPlanNode sort ->
+                    new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());
             default -> original;
         };
     }
@@ -73,10 +76,12 @@ public class SelectionPushdownRule implements RewriteRule {
 
             if (!condTables.isEmpty() && leftTables.containsAll(condTables)) {
                 SelectionPlanNode newLeft = new SelectionPlanNode(sel.condition(), join.left());
-                return new JoinPlanNode(join.algorithm(), join.condition(), attemptPushdown(newLeft), join.right());
+                return new JoinPlanNode(
+                        join.algorithm(), join.condition(), attemptPushdown(newLeft), join.right());
             } else if (!condTables.isEmpty() && rightTables.containsAll(condTables)) {
                 SelectionPlanNode newRight = new SelectionPlanNode(sel.condition(), join.right());
-                return new JoinPlanNode(join.algorithm(), join.condition(), join.left(), attemptPushdown(newRight));
+                return new JoinPlanNode(
+                        join.algorithm(), join.condition(), join.left(), attemptPushdown(newRight));
             }
         }
 
@@ -87,10 +92,12 @@ public class SelectionPushdownRule implements RewriteRule {
 
             if (!condTables.isEmpty() && leftTables.containsAll(condTables)) {
                 SelectionPlanNode newLeft = new SelectionPlanNode(sel.condition(), cart.left());
-                return new CartesianPlanNode(cart.algorithm(), attemptPushdown(newLeft), cart.right());
+                return new CartesianPlanNode(
+                        cart.algorithm(), attemptPushdown(newLeft), cart.right());
             } else if (!condTables.isEmpty() && rightTables.containsAll(condTables)) {
                 SelectionPlanNode newRight = new SelectionPlanNode(sel.condition(), cart.right());
-                return new CartesianPlanNode(cart.algorithm(), cart.left(), attemptPushdown(newRight));
+                return new CartesianPlanNode(
+                        cart.algorithm(), cart.left(), attemptPushdown(newRight));
             }
         }
 
@@ -103,7 +110,8 @@ public class SelectionPushdownRule implements RewriteRule {
         return tables;
     }
 
-    private void extractTablesFromExpr(org.rafendb.common.expr.Expr expr, java.util.Set<String> tables) {
+    private void extractTablesFromExpr(
+            org.rafendb.common.expr.Expr expr, java.util.Set<String> tables) {
         if (expr instanceof org.rafendb.common.expr.Expr.Binary bin) {
             extractTablesFromExpr(bin.left(), tables);
             extractTablesFromExpr(bin.right(), tables);
