@@ -42,7 +42,7 @@ public final class ConcurrencyControlManager
 
     @Override
     public TxId begin() {
-        //[TODO] For CC3: forward BEGIN to FRM after the transaction starts.
+        // [TODO] For CC3: forward BEGIN to FRM after the transaction starts.
         return txns.begin();
     }
 
@@ -65,7 +65,7 @@ public final class ConcurrencyControlManager
             case WAITING -> AccessResult.waiting();
             case ABORT_REQUIRED -> {
                 txns.transition(tx, TxStatus.FAILED);
-                //[TODO] For CC3: start the single abort flow (cancelPending, rollback, release).
+                // [TODO] For CC3: start the single abort flow (cancelPending, rollback, release).
                 yield AccessResult.aborted(abortedMessage(tx));
             }
         };
@@ -77,25 +77,25 @@ public final class ConcurrencyControlManager
 
     @Override
     public TxResult commit(TxId tx) throws ConcurrencyInternalException {
-        //[TODO] For CC3: commit flow (wait writes, COMMIT record via FRM, then release).
+        // [TODO] For CC3: commit flow (wait writes, COMMIT record via FRM, then release).
         throw new UnsupportedOperationException("commit: CC3");
     }
 
     @Override
     public TxResult abort(TxId tx) throws ConcurrencyInternalException {
-        //[TODO] For CC3: the single abort flow (FAILED, cancelPending, rollback, release).
+        // [TODO] For CC3: the single abort flow (FAILED, cancelPending, rollback, release).
         throw new UnsupportedOperationException("abort: CC3");
     }
 
     @Override
     public long logChange(TxId tx, ChangeRecord change) throws ConcurrencyInternalException {
-        //[TODO] For CC3: forward the change to FRM and return its LSN.
+        // [TODO] For CC3: forward the change to FRM and return its LSN.
         throw new UnsupportedOperationException("logChange: CC3");
     }
 
     @Override
     public void initializeAfterRecovery(RecoveryInfo recovery) {
-        //[TODO] For CC3: validate, protocol.reset(), then txns.open(max of the two marks).
+        // [TODO] For CC3: validate, protocol.reset(), then txns.open(max of the two marks).
         throw new UnsupportedOperationException("initializeAfterRecovery: CC3");
     }
 
