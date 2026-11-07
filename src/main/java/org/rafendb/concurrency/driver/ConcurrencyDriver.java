@@ -37,6 +37,12 @@ public final class ConcurrencyDriver {
     private static final ResourceId A = ResourceId.ofRow("a", new Rid(0, 0));
     private static final ResourceId B = ResourceId.ofRow("b", new Rid(0, 0));
 
+    private enum Scenario {
+        WAIT_AND_ROLLBACK,
+        TWO_COMMITS,
+        DEADLOCK
+    }
+
     private ConcurrencyDriver() {}
 
     public static void main(String[] args) throws Exception {
@@ -55,9 +61,10 @@ public final class ConcurrencyDriver {
         System.out.println("FRM and storage: in-memory fake");
         boolean passed;
         try {
-            passed = runScenario(type, false);
+            passed = runScenario(type, Scenario.WAIT_AND_ROLLBACK);
+            passed &= runScenario(type, Scenario.TWO_COMMITS);
             if (type == ProtocolType.LOCK_BASED) {
-                passed &= runScenario(type, true);
+                passed &= runScenario(type, Scenario.DEADLOCK);
             }
         } catch (Exception e) {
             System.out.println("FAIL: " + e);
@@ -68,7 +75,7 @@ public final class ConcurrencyDriver {
         }
     }
 
-    private static boolean runScenario(ProtocolType type, boolean deadlock) throws Exception {
+    private static boolean runScenario(ProtocolType type, Scenario scenario) throws Exception {
         MemoryRecovery frm = new MemoryRecovery();
         Protocol protocol =
                 switch (type) {
@@ -83,7 +90,7 @@ public final class ConcurrencyDriver {
         CountDownLatch firstWrite = new CountDownLatch(1);
         CountDownLatch secondReady = new CountDownLatch(1);
         List<Access> schedule = new ArrayList<>();
-        System.out.println("Scenario: " + (deadlock ? "deadlock" : "wait and rollback"));
+        System.out.println("Scenario: " + scenario);
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var one =
@@ -93,8 +100,13 @@ public final class ConcurrencyDriver {
                                 write(ccm, frm, schedule, first, A, 1);
                                 firstWrite.countDown();
                                 require(secondReady.await(3, TimeUnit.SECONDS));
-                                if (deadlock) {
+                                if (scenario == Scenario.DEADLOCK) {
                                     require(retry(ccm, first, B) == AccessResult.Status.ALLOWED);
+                                    if (frm.value(B) != 0) {
+                                        throw new IllegalStateException(
+                                                "Victim rollback did not restore B");
+                                    }
+                                    System.out.println("Victim rollback restored B to 0");
                                     write(ccm, frm, schedule, first, B, 3);
                                 }
                                 require(ccm.commit(first).status() == TxStatus.COMMITTED);
@@ -105,7 +117,7 @@ public final class ConcurrencyDriver {
                     executor.submit(
                             () -> {
                                 require(firstWrite.await(3, TimeUnit.SECONDS));
-                                if (deadlock) {
+                                if (scenario == Scenario.DEADLOCK) {
                                     require(access(ccm, second, B) == AccessResult.Status.ALLOWED);
                                     write(ccm, frm, schedule, second, B, 2);
                                     secondReady.countDown();
@@ -115,20 +127,41 @@ public final class ConcurrencyDriver {
                                     secondReady.countDown();
                                     require(retry(ccm, second, A) == AccessResult.Status.ALLOWED);
                                     write(ccm, frm, schedule, second, A, 2);
-                                    require(ccm.abort(second).status() == TxStatus.ABORTED);
+                                    if (scenario == Scenario.TWO_COMMITS) {
+                                        require(ccm.commit(second).status() == TxStatus.COMMITTED);
+                                    } else {
+                                        require(ccm.abort(second).status() == TxStatus.ABORTED);
+                                    }
                                 }
-                                System.out.println(second + " ABORTED");
+                                System.out.println(
+                                        second
+                                                + (scenario == Scenario.TWO_COMMITS
+                                                        ? " COMMITTED"
+                                                        : " ABORTED"));
                                 return true;
                             });
             one.get(5, TimeUnit.SECONDS);
             two.get(5, TimeUnit.SECONDS);
         }
-        var verification =
-                new PrecedenceGraphVerifier().verify(List.copyOf(schedule), Set.of(first));
+        Set<TxId> committed =
+                scenario == Scenario.TWO_COMMITS ? Set.of(first, second) : Set.of(first);
+        var verification = new PrecedenceGraphVerifier().verify(List.copyOf(schedule), committed);
         boolean passed =
                 verification.serializable()
-                        && frm.value(A) == 1
-                        && (!deadlock || frm.value(B) == 3);
+                        && frm.value(A) == (scenario == Scenario.TWO_COMMITS ? 2 : 1)
+                        && (scenario != Scenario.DEADLOCK || frm.value(B) == 3)
+                        && (scenario != Scenario.TWO_COMMITS
+                                || (verification
+                                                .graph()
+                                                .equals(
+                                                        Map.of(
+                                                                first,
+                                                                Set.of(second),
+                                                                second,
+                                                                Set.of()))
+                                        && verification
+                                                .serialOrder()
+                                                .equals(List.of(first, second))));
         System.out.println("Executed schedule: " + schedule);
         System.out.println("Precedence graph: " + verification.graph());
         System.out.println("Serial order: " + verification.serialOrder());
