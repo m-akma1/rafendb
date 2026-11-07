@@ -15,7 +15,6 @@ public final class CachingCatalog implements Catalog {
     private final Map<String, TableStats> stats = new ConcurrentHashMap<>();
     private final Map<String, List<IndexInfo>> indexes = new ConcurrentHashMap<>();
 
-    /** Wraps a non-null catalog. Instances are safe for concurrent calls within one query. */
     /**
      * Wraps a non-null catalog. Construct a new instance per query so statistics do not outlive
      * the query's planning snapshot.
