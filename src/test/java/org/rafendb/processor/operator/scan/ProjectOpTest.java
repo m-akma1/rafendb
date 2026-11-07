@@ -80,8 +80,8 @@ class ProjectOpTest {
     void qualifierFromBindingIsKept() {
         FakeChildOp child = new FakeChildOp(SCHEMA, List.of());
         Expr withAlias = new Expr.ColumnRef("m", "nim", 0);
-        Expr withoutPrefix = new Expr.ColumnRef(null, "ipk", 2);
-        ProjectOp project = new ProjectOp(child, List.of(withAlias, withoutPrefix));
+        Expr nullQualifier = new Expr.ColumnRef(null, "ipk", 2);
+        ProjectOp project = new ProjectOp(child, List.of(withAlias, nullQualifier));
         assertEquals(new Expr.ColumnRef("m", "nim"), project.schema().get(0).reference());
         assertEquals(new Expr.ColumnRef(null, "ipk"), project.schema().get(1).reference());
     }
