@@ -21,30 +21,17 @@ import org.rafendb.concurrency.bridge.FrmBridge;
 import org.rafendb.concurrency.protocol.Protocol;
 import org.rafendb.concurrency.txn.TransactionManager;
 
-/**
- * The CCM facade (CC-01, CC-02): the one entry point other components use. It owns the transaction
- * table and forwards access decisions to the configured {@link Protocol}. The protocol is chosen
- * once at startup. Logging, commit, abort and recovery initialization go through {@link FrmBridge}
- * (CC-03 to CC-05).
- */
-public final class ConcurrencyControlManager
-        implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
+
+public final class ConcurrencyControlManager implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
     private final TransactionManager txns;
     private final Protocol protocol;
     private final FrmBridge bridge;
 
-    /**
-     * Creates the facade.
-     *
-     * @param txns the transaction table; admission opens with {@link #initializeAfterRecovery}
-     * @param protocol the protocol selected at startup
-     * @param frm the recovery manager the CCM logs and rolls back through
-     */
-    public ConcurrencyControlManager(
-            TransactionManager txns, Protocol protocol, RecoveryManager frm) {
-        this.txns = Objects.requireNonNull(txns, "txns");
-        this.protocol = Objects.requireNonNull(protocol, "protocol");
-        this.bridge = new FrmBridge(frm, txns, protocol);
+    
+    public ConcurrencyControlManager(TransactionManager txns, Protocol protocol, RecoveryManager frm) {
+            this.txns = Objects.requireNonNull(txns, "txns");
+            this.protocol = Objects.requireNonNull(protocol, "protocol");
+            this.bridge = new FrmBridge(frm, txns, protocol);
     }
 
     @Override
@@ -78,12 +65,11 @@ public final class ConcurrencyControlManager
         };
     }
 
-    /** Runs the abort flow; if rollback fails, tx stays FAILED and protected for a later abort. */
     private void abortAfterViolation(TxId tx) {
         try {
             bridge.abort(tx);
         } catch (ConcurrencyInternalException e) {
-            // QP's own ABORT retries the rollback and reports the error.
+
         }
     }
 
