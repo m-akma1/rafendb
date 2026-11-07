@@ -19,6 +19,34 @@ class org.rafendb.common.error.ConcurrencyInternalException {
 }
 
 
+enum org.rafendb.common.error.ErrorCode {
+	{field} +COST_ESTIMATION_ERROR
+	{field} +INTERNAL_ERROR
+	{field} +SYNTAX_ERROR
+	{field} +VALIDATION_ERROR
+}
+
+
+class org.rafendb.common.error.OptimizerInternalException {
+}
+
+
+class org.rafendb.common.error.OptimizerInternalException$CostEstimationException {
+}
+
+
+abstract class org.rafendb.common.error.OptimizerRuntimeException {
+}
+
+
+class org.rafendb.common.error.OptimizerRuntimeException$SyntaxException {
+}
+
+
+class org.rafendb.common.error.OptimizerRuntimeException$ValidationException {
+}
+
+
 class org.rafendb.common.error.RafenDBInternalException {
 	{method} +getMessage () : String
 }
@@ -41,24 +69,21 @@ class org.rafendb.common.error.StorageRuntimeException {
 }
 
 
-class org.rafendb.common.error.SyntaxException {
-}
-
-
-class org.rafendb.common.error.ValidationException {
-}
-
-
 
 
 org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.OptimizerInternalException *--  org.rafendb.common.error.ErrorCode : code
+org.rafendb.common.error.OptimizerInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.OptimizerInternalException$CostEstimationException --|>  org.rafendb.common.error.OptimizerInternalException
+org.rafendb.common.error.OptimizerRuntimeException *--  org.rafendb.common.error.ErrorCode : code
+org.rafendb.common.error.OptimizerRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.OptimizerRuntimeException$SyntaxException --|>  org.rafendb.common.error.OptimizerRuntimeException
+org.rafendb.common.error.OptimizerRuntimeException$ValidationException --|>  org.rafendb.common.error.OptimizerRuntimeException
 org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.error.Component : component
 org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.error.Component : component
 org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
-org.rafendb.common.error.SyntaxException --|>  org.rafendb.common.error.RafenDBRuntimeException
-org.rafendb.common.error.ValidationException --|>  org.rafendb.common.error.RafenDBRuntimeException
 
 
 @enduml

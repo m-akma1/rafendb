@@ -5,6 +5,15 @@ hide empty members
 skinparam linetype ortho
 
 
+class org.rafendb.common.plan.CartesianPlanNode {
+	{method} +algorithm () : JoinAlgorithm
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +left () : PlanNode
+	{method} +right () : PlanNode
+}
+
+
 class org.rafendb.common.plan.IndexScanDescriptor {
 	{method} +column () : String
 	{method} +condition () : Expr
@@ -68,6 +77,21 @@ class org.rafendb.common.plan.SelectionPlanNode {
 }
 
 
+class org.rafendb.common.plan.SortPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +column () : ColumnRef
+	{method} +describe () : String
+	{method} +direction () : Direction
+}
+
+
+enum org.rafendb.common.plan.SortPlanNode$Direction {
+	{field} +ASC
+	{field} +DESC
+}
+
+
 class org.rafendb.common.plan.TableScanNode {
 	{method} +alias () : String
 	{method} +children () : List
@@ -78,6 +102,10 @@ class org.rafendb.common.plan.TableScanNode {
 
 
 
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.JoinAlgorithm : algorithm
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.PlanNode : left
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.PlanNode : right
+org.rafendb.common.plan.CartesianPlanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.plan.IndexScanNode *--  org.rafendb.common.plan.IndexScanDescriptor : descriptor
 org.rafendb.common.plan.IndexScanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.plan.JoinPlanNode *--  org.rafendb.common.plan.JoinAlgorithm : algorithm
@@ -89,6 +117,9 @@ org.rafendb.common.plan.ProjectionPlanNode ..|>  org.rafendb.common.plan.PlanNod
 org.rafendb.common.plan.QueryPlan *--  org.rafendb.common.plan.PlanNode : root
 org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
 org.rafendb.common.plan.SelectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.SortPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.SortPlanNode *--  org.rafendb.common.plan.SortPlanNode$Direction : direction
+org.rafendb.common.plan.SortPlanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.plan.TableScanNode ..|>  org.rafendb.common.plan.PlanNode
 
 

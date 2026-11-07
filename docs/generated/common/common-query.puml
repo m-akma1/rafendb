@@ -28,6 +28,12 @@ class org.rafendb.common.query.InsertQuery {
 }
 
 
+class org.rafendb.common.query.OrderByItem {
+	{method} +ascending () : boolean
+	{method} +expression () : Expr
+}
+
+
 interface org.rafendb.common.query.ParsedQuery {
 	{method}  {abstract} +originalSql () : String
 }
@@ -55,6 +61,7 @@ class org.rafendb.common.query.QueryResult$Status {
 
 class org.rafendb.common.query.SelectQuery {
 	{method} +joinCondition () : Expr
+	{method} +orderBy () : List
 	{method} +originalSql () : String
 	{method} +projection () : List
 	{method} +sourceTables () : List
@@ -92,6 +99,7 @@ org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.QueryResult$Affected ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
+org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.query.OrderByItem : orderBy
 org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.TransactionQuery *--  org.rafendb.common.query.TransactionQuery$Kind : kind
 org.rafendb.common.query.TransactionQuery ..|>  org.rafendb.common.query.ParsedQuery

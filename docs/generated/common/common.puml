@@ -19,6 +19,34 @@ class org.rafendb.common.error.ConcurrencyInternalException {
 }
 
 
+enum org.rafendb.common.error.ErrorCode {
+	{field} +COST_ESTIMATION_ERROR
+	{field} +INTERNAL_ERROR
+	{field} +SYNTAX_ERROR
+	{field} +VALIDATION_ERROR
+}
+
+
+class org.rafendb.common.error.OptimizerInternalException {
+}
+
+
+class org.rafendb.common.error.OptimizerInternalException$CostEstimationException {
+}
+
+
+abstract class org.rafendb.common.error.OptimizerRuntimeException {
+}
+
+
+class org.rafendb.common.error.OptimizerRuntimeException$SyntaxException {
+}
+
+
+class org.rafendb.common.error.OptimizerRuntimeException$ValidationException {
+}
+
+
 class org.rafendb.common.error.RafenDBInternalException {
 	{method} +getMessage () : String
 }
@@ -38,14 +66,6 @@ class org.rafendb.common.error.StorageInternalException {
 
 
 class org.rafendb.common.error.StorageRuntimeException {
-}
-
-
-class org.rafendb.common.error.SyntaxException {
-}
-
-
-class org.rafendb.common.error.ValidationException {
 }
 
 
@@ -114,6 +134,15 @@ enum org.rafendb.common.log.LogType {
 }
 
 
+class org.rafendb.common.plan.CartesianPlanNode {
+	{method} +algorithm () : JoinAlgorithm
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +left () : PlanNode
+	{method} +right () : PlanNode
+}
+
+
 class org.rafendb.common.plan.IndexScanDescriptor {
 	{method} +column () : String
 	{method} +condition () : Expr
@@ -177,6 +206,21 @@ class org.rafendb.common.plan.SelectionPlanNode {
 }
 
 
+class org.rafendb.common.plan.SortPlanNode {
+	{method} +child () : PlanNode
+	{method} +children () : List
+	{method} +column () : ColumnRef
+	{method} +describe () : String
+	{method} +direction () : Direction
+}
+
+
+enum org.rafendb.common.plan.SortPlanNode$Direction {
+	{field} +ASC
+	{field} +DESC
+}
+
+
 class org.rafendb.common.plan.TableScanNode {
 	{method} +alias () : String
 	{method} +children () : List
@@ -208,6 +252,12 @@ class org.rafendb.common.query.InsertQuery {
 }
 
 
+class org.rafendb.common.query.OrderByItem {
+	{method} +ascending () : boolean
+	{method} +expression () : Expr
+}
+
+
 interface org.rafendb.common.query.ParsedQuery {
 	{method}  {abstract} +originalSql () : String
 }
@@ -235,6 +285,7 @@ class org.rafendb.common.query.QueryResult$Status {
 
 class org.rafendb.common.query.SelectQuery {
 	{method} +joinCondition () : Expr
+	{method} +orderBy () : List
 	{method} +originalSql () : String
 	{method} +projection () : List
 	{method} +sourceTables () : List
@@ -327,6 +378,38 @@ class org.rafendb.common.schema.TableStats {
 	{method} +distinctValues () : Map
 	{method} +distinctValues ( column : String ) : long
 	{method} +recordCount () : long
+}
+
+
+class org.rafendb.common.token.SourcePosition {
+	{method} +column () : int
+	{method} +line () : int
+	{method} +offset () : int
+}
+
+
+class org.rafendb.common.token.Token {
+	{method} +isEof () : boolean
+	{method} +isKeyword ( keyword : String ) : boolean
+	{method} +isPunctuation ( symbol : String ) : boolean
+	{method}  {static} +isTextKeyword ( keyword : String ) : boolean
+	{method} +position () : SourcePosition
+	{method} +text () : String
+	{method} +type () : TokenType
+}
+
+
+enum org.rafendb.common.token.Token$TokenType {
+	{field} +ARITHMETIC_OPERATOR
+	{field} +COMPARISON_OPERATOR
+	{field} +EOF
+	{field} +FLOAT_LITERAL
+	{field} +IDENTIFIER
+	{field} +INTEGER_LITERAL
+	{field} +KEYWORD
+	{field} +PUNCTUATION
+	{field} +STRING_LITERAL
+	{field} +UNKNOWN
 }
 
 
@@ -440,13 +523,19 @@ class org.rafendb.common.type.Value {
 
 
 org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.OptimizerInternalException *--  org.rafendb.common.error.ErrorCode : code
+org.rafendb.common.error.OptimizerInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.OptimizerInternalException$CostEstimationException --|>  org.rafendb.common.error.OptimizerInternalException
+org.rafendb.common.error.OptimizerRuntimeException *--  org.rafendb.common.error.ErrorCode : code
+org.rafendb.common.error.OptimizerRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.OptimizerRuntimeException$SyntaxException *--  org.rafendb.common.token.Token : offendingToken
+org.rafendb.common.error.OptimizerRuntimeException$SyntaxException --|>  org.rafendb.common.error.OptimizerRuntimeException
+org.rafendb.common.error.OptimizerRuntimeException$ValidationException --|>  org.rafendb.common.error.OptimizerRuntimeException
 org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.error.Component : component
 org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.error.Component : component
 org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
-org.rafendb.common.error.SyntaxException --|>  org.rafendb.common.error.RafenDBRuntimeException
-org.rafendb.common.error.ValidationException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : left
 org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : right
 org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr$Op : op
@@ -457,6 +546,10 @@ org.rafendb.common.expr.Expr$Literal ..|>  org.rafendb.common.expr.Expr
 org.rafendb.common.expr.Expr$Null ..|>  org.rafendb.common.expr.Expr
 org.rafendb.common.log.LogPayload *--  org.rafendb.common.log.LogType : type
 org.rafendb.common.log.LogPayload *--  org.rafendb.common.txn.TxId : tx
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.JoinAlgorithm : algorithm
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.PlanNode : left
+org.rafendb.common.plan.CartesianPlanNode *--  org.rafendb.common.plan.PlanNode : right
+org.rafendb.common.plan.CartesianPlanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.plan.IndexScanDescriptor *--  org.rafendb.common.expr.Expr : condition
 org.rafendb.common.plan.IndexScanNode *--  org.rafendb.common.plan.IndexScanDescriptor : descriptor
 org.rafendb.common.plan.IndexScanNode ..|>  org.rafendb.common.plan.PlanNode
@@ -472,6 +565,10 @@ org.rafendb.common.plan.QueryPlan *--  org.rafendb.common.plan.PlanNode : root
 org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.expr.Expr : condition
 org.rafendb.common.plan.SelectionPlanNode *--  org.rafendb.common.plan.PlanNode : child
 org.rafendb.common.plan.SelectionPlanNode ..|>  org.rafendb.common.plan.PlanNode
+org.rafendb.common.plan.SortPlanNode *--  org.rafendb.common.expr.Expr$ColumnRef : column
+org.rafendb.common.plan.SortPlanNode *--  org.rafendb.common.plan.PlanNode : child
+org.rafendb.common.plan.SortPlanNode *--  org.rafendb.common.plan.SortPlanNode$Direction : direction
+org.rafendb.common.plan.SortPlanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.plan.TableScanNode ..|>  org.rafendb.common.plan.PlanNode
 org.rafendb.common.query.CreateIndexQuery *--  org.rafendb.common.schema.IndexType : indexType
 org.rafendb.common.query.CreateIndexQuery ..|>  org.rafendb.common.query.ParsedQuery
@@ -479,11 +576,13 @@ org.rafendb.common.query.DeleteQuery *--  org.rafendb.common.expr.Expr : where
 org.rafendb.common.query.DeleteQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.InsertQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : values
 org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.OrderByItem *--  org.rafendb.common.expr.Expr : expression
 org.rafendb.common.query.QueryResult$Affected ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Rows "1" o-- "0..*"  org.rafendb.common.tuple.Row : rows
 org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : projection
+org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.query.OrderByItem : orderBy
 org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : joinCondition
 org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : whereCondition
 org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
@@ -498,6 +597,9 @@ org.rafendb.common.schema.IndexInfo *--  org.rafendb.common.schema.IndexType : t
 org.rafendb.common.schema.ReferencingForeignKey *--  org.rafendb.common.schema.ForeignKey : foreignKey
 org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.Column : columns
 org.rafendb.common.schema.TableSchema "1" o-- "0..*"  org.rafendb.common.schema.ForeignKey : foreignKeys
+org.rafendb.common.token.SourcePosition *--  org.rafendb.common.token.SourcePosition : START
+org.rafendb.common.token.Token *--  org.rafendb.common.token.SourcePosition : position
+org.rafendb.common.token.Token *--  org.rafendb.common.token.Token$TokenType : type
 org.rafendb.common.tuple.Row "1" o-- "0..*"  org.rafendb.common.type.Value : values
 org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Rid : rid
 org.rafendb.common.tuple.StoredRow *--  org.rafendb.common.tuple.Row : row
