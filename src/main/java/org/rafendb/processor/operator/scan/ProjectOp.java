@@ -3,11 +3,11 @@ package org.rafendb.processor.operator.scan;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Operator SELECT kolom (QP-05). Ngambil nilai kolom child sesuai urutan hasil binding QO,
