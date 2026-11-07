@@ -46,14 +46,17 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
 
     public void logBegin(TxId tx) {
         Objects.requireNonNull(tx, "tx");
-        boolean logged;
+        boolean logged = false;
+        RuntimeException error = null;
         try {
             logged = frm.beginTransaction(tx);
         } catch (RuntimeException e) {
-            throw new IllegalStateException("BEGIN of " + tx + " could not be logged", e);
+            error = e;
         }
         if (!logged) {
-            throw new IllegalStateException("BEGIN of " + tx + " could not be logged");
+            txns.transition(tx, TxStatus.FAILED);
+            txns.transition(tx, TxStatus.ABORTED);
+            throw new IllegalStateException("BEGIN of " + tx + " could not be logged", error);
         }
     }
 

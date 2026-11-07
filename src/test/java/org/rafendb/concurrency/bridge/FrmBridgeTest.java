@@ -2,6 +2,7 @@ package org.rafendb.concurrency.bridge;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -112,11 +113,13 @@ class FrmBridgeTest {
     }
 
     @Test
-    void failedBeginLogIsRejected() {
+    void failedBeginLogEndsTransactionSoCheckpointsAreNotBlocked() throws Exception {
         TxId tx = activeTransaction();
         frm.beginSucceeds = false;
 
         assertThrows(IllegalStateException.class, () -> bridge.logBegin(tx));
+        assertEquals(TxStatus.ABORTED, txns.status(tx));
+        assertTrue(txns.awaitNoActive(Duration.ZERO));
     }
 
     @Test
