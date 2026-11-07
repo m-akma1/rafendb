@@ -41,6 +41,7 @@ public final class PitrManager {
             long timestamp, Map<String, ? extends Map<Integer, String>> rows) {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
+        logger.flushAll();
         snapshotRows = copyRows(rows);
         currentRows = copyRows(rows);
         snapshotTimestamp = timestamp;
@@ -105,41 +106,49 @@ public final class PitrManager {
     private boolean runRecovery(
             List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
         if (!stopClientAdmission()) return false;
-        if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
-        if (!reloadStorageAfterRestore()) return false;
-        if (!restore(wal, timestampBoundary, lsnBoundary, targetTx)) return false;
-        if (!rebuildIndexesAndStatistics()) return false;
-        if (!resetConcurrencyState(recoveredHighestTransactionId, recoveredHighestTimestamp))
-            return false;
-        return resumeClientAdmission();
+        try {
+            if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
+            if (!reloadStorageAfterRestore()) return false;
+            if (!restore(wal, timestampBoundary, lsnBoundary, targetTx)) return false;
+            if (!rebuildIndexesAndStatistics()) return false;
+            return resetConcurrencyState(recoveredHighestTransactionId, recoveredHighestTimestamp);
+        } finally {
+            resumeClientAdmission();
+        }
     }
 
-    /** QP integration seam; server admission is not wired in this mock yet. */
+    /**
+     * QP integration seam. The current repository has no server-admission contract, so this
+     * in-memory manager cannot quiesce client connections.
+     */
     private boolean stopClientAdmission() {
         return true;
     }
 
-    /** SM integration seam; a real implementation restores a validated snapshot atomically. */
+    /**
+     * SM integration seam. The current StorageManager contract has no snapshot-copy or atomic
+     * restore operation; callers must supply the snapshot rows through {@link #captureSnapshot}.
+     */
     private boolean restoreStorageSnapshot(long targetTimestamp, long targetLsn) {
         return true;
     }
 
-    /** SM integration seam; a real implementation invalidates buffers and reloads the catalog. */
+    /** Reloads storage state after a real snapshot restore; unavailable in this in-memory manager. */
     private boolean reloadStorageAfterRestore() {
         return true;
     }
 
-    /** SM5 integration seam; a real implementation restores or rebuilds snapshot indexes. */
+    /** Rebuilds indexes and statistics after a real snapshot restore; unavailable here. */
     private boolean rebuildIndexesAndStatistics() {
         return true;
     }
 
-    /** CCM integration seam; a real implementation clears state and advances both generators. */
+    /** Resets CCM state and generators; unavailable without a CCM maintenance contract. */
     private boolean resetConcurrencyState(int highestTransactionId, long highestTimestamp) {
         return true;
     }
 
-    /** QP integration seam; admission reopens only after every recovery phase succeeds. */
+    /** Reopens QP admission after recovery; unavailable without a server-admission contract. */
     private boolean resumeClientAdmission() {
         return true;
     }
@@ -147,6 +156,7 @@ public final class PitrManager {
     private boolean restore(
             List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
         Set<Integer> begun = new HashSet<>();
+        Set<Integer> finished = new HashSet<>();
         Set<Integer> aborted = new HashSet<>();
         Map<Integer, WALRecord> commits = new HashMap<>();
         long previousLsn = 0;
@@ -158,9 +168,24 @@ public final class PitrManager {
             highTransactionId = Math.max(highTransactionId, record.getIdTransaction());
             highTimestamp = Math.max(highTimestamp, record.getTimestamp());
             switch (record.getLogType()) {
-                case BEGIN -> begun.add(record.getIdTransaction());
-                case COMMIT -> commits.putIfAbsent(record.getIdTransaction(), record);
-                case ABORT -> aborted.add(record.getIdTransaction());
+                case BEGIN -> {
+                    if (!begun.add(record.getIdTransaction())
+                            || finished.contains(record.getIdTransaction())) return false;
+                }
+                case COMMIT -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || !finished.add(record.getIdTransaction())) return false;
+                    commits.put(record.getIdTransaction(), record);
+                }
+                case ABORT -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || !finished.add(record.getIdTransaction())) return false;
+                    aborted.add(record.getIdTransaction());
+                }
+                case INSERT, UPDATE, DELETE -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || finished.contains(record.getIdTransaction())) return false;
+                }
                 default -> {}
             }
         }
