@@ -73,7 +73,7 @@ public class SessionContext {
      *
      * @param txId the transaction ID to associate with this session
      */
-    public synchronized void setCurrentTxId(long value) {
-        this.currentTxId = new TxId(value);
+    public synchronized void setCurrentTxId(TxId newTxId) {
+        this.currentTxId = newTxId;
     }
 }
