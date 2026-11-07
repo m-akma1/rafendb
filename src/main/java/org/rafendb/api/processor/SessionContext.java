@@ -1,5 +1,7 @@
 package org.rafendb.api.processor;
 
+import org.rafendb.common.txn.TxId;
+
 /**
  * Stores the state and transaction information associated with a client session.
  *
@@ -12,7 +14,7 @@ package org.rafendb.api.processor;
  */
 public class SessionContext {
     private final int sessionId;
-    private int currentTxId;
+    private TxId currentTxId;
     private volatile boolean valid;
 
     /**
@@ -22,7 +24,7 @@ public class SessionContext {
      */
     public SessionContext(int sessionId) {
         this.sessionId = sessionId;
-        this.currentTxId = -1;
+        this.currentTxId = null;
         this.valid = true;
     }
 
@@ -48,9 +50,9 @@ public class SessionContext {
     /**
      * Returns the ID of the transaction currently associated with this session.
      *
-     * @return the current transaction ID, or {@code -1} if no transaction is active
+     * @return the current transaction ID, or {@code null} if no transaction is active
      */
-    public int getCurrentTxId() {
+    public TxId getCurrentTxId() {
         return this.currentTxId;
     }
 
@@ -71,7 +73,7 @@ public class SessionContext {
      *
      * @param txId the transaction ID to associate with this session
      */
-    public synchronized void setCurrentTxId(int txId) {
-        this.currentTxId = txId;
+    public synchronized void setCurrentTxId(long value) {
+        this.currentTxId = new TxId(value);
     }
 }
