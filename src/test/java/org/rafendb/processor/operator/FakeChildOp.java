@@ -1,9 +1,8 @@
 package org.rafendb.processor.operator;
 
 import java.util.List;
-import org.rafendb.api.processor.Operator;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /** Operator palsu buat test: ngeluarin baris dari list, nyatet panggilan close/schema. */
 public final class FakeChildOp implements Operator {

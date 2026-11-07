@@ -2,11 +2,11 @@ package org.rafendb.processor.operator.filter;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.ExpressionEvaluator;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.processor.expr.ExpressionEvaluator;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Operator WHERE (QP-06). Cuma baris yang kondisinya TRUE yang diterusin, FALSE sama UNKNOWN
