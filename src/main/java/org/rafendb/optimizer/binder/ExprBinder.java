@@ -121,7 +121,8 @@ final class ExprBinder {
     Expr assign(Expr expr, Column target, String table) {
         Typed typed = bind(expr);
         DataType expected = target.type();
-        if (expr instanceof Expr.Null || expr instanceof Literal literal && literal.value().isNull()) {
+        if (expr instanceof Expr.Null
+                || expr instanceof Literal literal && literal.value().isNull()) {
             if (!target.nullable())
                 throw new ValidationException(
                         "NULL is not allowed for column '" + table + "." + target.name() + "'");

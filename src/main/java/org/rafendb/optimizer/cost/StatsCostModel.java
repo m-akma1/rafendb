@@ -299,10 +299,10 @@ public final class StatsCostModel implements CostModel {
             if (expr instanceof Expr.Literal literal) return literal.value().isNull();
             if (expr instanceof Expr.Binary binary) {
                 return binary.op() == Expr.Op.ADD
-                        || binary.op() == Expr.Op.SUB
-                        || binary.op() == Expr.Op.MUL
-                        || binary.op() == Expr.Op.DIV
-                        || binary.op() == Expr.Op.MOD
+                                || binary.op() == Expr.Op.SUB
+                                || binary.op() == Expr.Op.MUL
+                                || binary.op() == Expr.Op.DIV
+                                || binary.op() == Expr.Op.MOD
                         ? isNullValue(binary.left()) || isNullValue(binary.right())
                         : false;
             }

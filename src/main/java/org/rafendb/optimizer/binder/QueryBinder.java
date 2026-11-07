@@ -10,6 +10,7 @@ import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.DeleteQuery;
 import org.rafendb.common.query.InsertQuery;
+import org.rafendb.common.query.OrderByItem;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.query.TransactionQuery;
@@ -87,12 +88,17 @@ public final class QueryBinder implements Binder {
         List<Expr> projection = StarExpander.expand(query.projection(), scope, natural);
         List<Expr> boundProjection = new ArrayList<>();
         for (Expr expression : projection) boundProjection.add(binder.bind(expression).expr());
+        List<OrderByItem> orderBy = new ArrayList<>();
+        for (OrderByItem item : query.orderBy()) {
+            orderBy.add(new OrderByItem(binder.bind(item.expression()).expr(), item.ascending()));
+        }
         return new SelectQuery(
                 query.originalSql(),
                 List.copyOf(boundProjection),
                 scope.tables().stream().map(Scope.Table::name).toList(),
                 join,
-                where);
+                where,
+                List.copyOf(orderBy));
     }
 
     private ParsedQuery bindInsert(InsertQuery query) {
