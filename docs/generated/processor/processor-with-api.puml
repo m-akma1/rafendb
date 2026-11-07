@@ -16,6 +16,23 @@ interface org.rafendb.api.processor.Session {
 }
 
 
+class org.rafendb.processor.api.ExecutionContext {
+	{method} +getConcurrencyControl () : ConcurrencyControl
+	{method} +getRecoveryManager () : RecoveryManager
+	{method} +getStorageManager () : StorageManager
+}
+
+
+class org.rafendb.processor.api.SessionContext {
+	{field} +currentTxId : TxId
+	{method} +invalidate () : void
+}
+
+
+class org.rafendb.processor.error.TransactionAbortedException {
+}
+
+
 interface org.rafendb.processor.execution.ExecutionPlan {
 }
 
@@ -99,6 +116,11 @@ class org.rafendb.processor.operator.sort.SortOp {
 	{method} +next () : ResultRow
 	{method} +open () : void
 	{method} +schema () : List
+}
+
+
+interface org.rafendb.processor.operator.write.DMLOperator {
+	{method}  {abstract} +execute () : Long
 }
 
 
@@ -197,8 +219,17 @@ class org.rafendb.processor.tuple.ResultRow {
 }
 
 
+class org.rafendb.processor.txn.TransactionCoordinator {
+	{method} +abortTx () : void
+	{method} +beginTx () : void
+	{method} +commitTx () : void
+	{method} +getExecutionContext () : ExecutionContext
+}
 
 
+
+
+org.rafendb.processor.api.ExecutionContext *--  org.rafendb.processor.api.SessionContext : sContext
 org.rafendb.processor.execution.ExecutionPlan$Command *--  org.rafendb.processor.execution.ExecutionPlan$CommandAction : action
 org.rafendb.processor.execution.ExecutionPlan$Command ..|>  org.rafendb.processor.execution.ExecutionPlan
 org.rafendb.processor.execution.ExecutionPlan$Rows "1" o-- "0..*"  org.rafendb.processor.schema.ColumnSchema : columns
@@ -227,6 +258,7 @@ org.rafendb.processor.plan.DefaultPlanTranslator -->  org.rafendb.processor.plan
 org.rafendb.processor.plan.DefaultPlanTranslator ..|>  org.rafendb.processor.plan.PlanTranslator
 org.rafendb.processor.plan.command.CreateIndexPlanNode *--  org.rafendb.processor.plan.command.CreateIndexPlanNode$IndexKind : kind
 org.rafendb.processor.plan.command.TransactionPlanNode *--  org.rafendb.processor.plan.command.TransactionPlanNode$Action : action
+org.rafendb.processor.txn.TransactionCoordinator *--  org.rafendb.processor.api.ExecutionContext : execContext
 
 
 @enduml

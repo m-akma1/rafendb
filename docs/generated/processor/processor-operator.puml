@@ -45,6 +45,11 @@ class org.rafendb.processor.operator.sort.SortOp {
 }
 
 
+interface org.rafendb.processor.operator.write.DMLOperator {
+	{method}  {abstract} +execute () : Long
+}
+
+
 
 
 org.rafendb.processor.operator.filter.FilterOp *--  org.rafendb.processor.operator.Operator : child
