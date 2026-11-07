@@ -105,8 +105,10 @@ public class IndexManager {
      * Builds an index from a table's live records, then registers it in the catalog as the last
      * step.
      *
-     * <p>Rows whose key is NULL are skipped. The build is atomic: if any step fails before the
-     * catalog is saved, nothing is registered, the name stays free, and table data is unchanged. The caller opens and closes
+     * <p>Rows whose key is NULL are skipped. Failed publication removes the catalog entry before
+     * deleting the file. If saving that rollback fails too, metadata and file are retained so the
+     * name cannot be reused while a durable reference may exist. Cleanup errors are suppressed.
+     * Table data is unchanged. The caller opens and closes
      * {@code rows}; this method only reads it to the end.
      *
      * @param index the index definition
@@ -133,6 +135,7 @@ public class IndexManager {
         String file = catalog.indexFile(index.name());
         IndexPageStore store = new IndexPageStore(file, blocks, buffers);
         Index structure = open(index, store, column);
+        boolean registered = false;
         try {
             replaceFile(file);
             structure.initialize();
@@ -141,13 +144,26 @@ public class IndexManager {
             }
             store.force();
             catalog.registerIndex(index);
+            registered = true;
+            catalog.save();
         } catch (StorageInternalException | RuntimeException e) {
+            if (registered) {
+                try {
+                    catalog.unregisterIndex(index.name());
+                    catalog.save();
+                } catch (StorageInternalException | RuntimeException cleanup) {
+                    try {
+                        if (!isRegistered(index.name())) catalog.registerIndex(index);
+                    } catch (RuntimeException restore) {
+                        cleanup.addSuppressed(restore);
+                    }
+                    e.addSuppressed(cleanup);
+                    throw e;
+                }
+            }
             deleteAfterFailure(file, e);
             throw e;
         }
-        // shortcut: if this fails the entry stays in memory, because CatalogManager cannot remove
-        // one yet, so the file stays too. Undo both once SM4 adds unregisterIndex.
-        catalog.save();
     }
 
     /**

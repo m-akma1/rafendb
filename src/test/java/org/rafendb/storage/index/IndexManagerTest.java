@@ -68,7 +68,7 @@ class IndexManagerTest {
         final Map<String, TableSchema> schemas = new LinkedHashMap<>();
         final Map<String, IndexInfo> indexes = new LinkedHashMap<>();
         Runnable beforeRegister = () -> {};
-        boolean failSave;
+        int failedSaves;
         int saves;
 
         FakeCatalog(Path directory) {
@@ -116,8 +116,14 @@ class IndexManagerTest {
         }
 
         @Override
+        public void unregisterIndex(String name) {
+            indexes.remove(name);
+        }
+
+        @Override
         public void save() throws StorageInternalException {
-            if (failSave) {
+            if (failedSaves > 0) {
+                failedSaves--;
                 throw new StorageInternalException("cannot save catalog");
             }
             saves++;
@@ -345,11 +351,22 @@ class IndexManagerTest {
     }
 
     @Test
-    void saveFailureReportsAndKeepsTheFileTheCatalogEntryPointsTo()
+    void saveFailureRollsBackAndRetainsTheFileOnlyIfRollbackAlsoFails()
             throws StorageInternalException {
-        catalog.failSave = true;
+        catalog.failedSaves = 1;
         assertThrows(StorageInternalException.class, () -> manager.create(EMP_ID, cursor(emps(5))));
-        // CatalogManager cannot remove the entry yet, so deleting the file would break it.
+        assertTrue(catalog.listIndexes("emp").isEmpty());
+        assertFalse(Files.exists(dir.resolve(catalog.indexFile("emp_id"))));
+
+        catalog.failedSaves = 2;
+        StorageInternalException failure =
+                assertThrows(
+                        StorageInternalException.class,
+                        () -> manager.create(EMP_ID, cursor(emps(5))));
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals(List.of(EMP_ID), catalog.listIndexes("emp"));
+        assertTrue(Files.exists(dir.resolve(catalog.indexFile("emp_id"))));
+        assertThrows(StorageRuntimeException.class, () -> manager.create(EMP_ID, cursor(emps(5))));
         assertEquals(List.of(rid(3, 0)), manager.lookup("emp_id", i(3)));
     }
 

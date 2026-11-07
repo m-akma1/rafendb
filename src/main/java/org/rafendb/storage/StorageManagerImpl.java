@@ -133,7 +133,7 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized TableStats getStats(String table) throws StorageInternalException {
         ensureOpen();
         try (RecordCursor rows = scan(table)) {
-            catalog.refreshStats(table, rows);
+            catalog.refreshStats(table, rows, blocks.size(catalog.tableFile(table)));
         }
         return catalog.getStats(table);
     }
@@ -416,9 +416,9 @@ public class StorageManagerImpl implements StorageManager {
         if (image.isPresent()) {
             validateAsInternal(table, image.get());
             bytes = serializer.serialize(image.get(), schema);
-            catalog.persistAllocation(table, rid);
-            ensureBlocks(file, rid.block());
         }
+        catalog.persistAllocation(table, rid);
+        if (image.isPresent()) ensureBlocks(file, rid.block());
         long blockCount = blocks.size(file);
         if (image.isEmpty() && rid.block() >= blockCount) {
             return;
@@ -426,6 +426,8 @@ public class StorageManagerImpl implements StorageManager {
         BlockId block = new BlockId(file, rid.block());
         ByteBuffer buffer = buffers.pin(block);
         try {
+            byte[] originalPage = new byte[buffer.capacity()];
+            buffer.duplicate().clear().get(originalPage);
             SlottedPage page = new SlottedPage(buffer);
             if (!page.isFormatted()) {
                 if (image.isEmpty()) {
@@ -439,28 +441,40 @@ public class StorageManagerImpl implements StorageManager {
                             ? serializer.deserialize(ByteBuffer.wrap(old.get()), schema)
                             : null;
             long delta;
-            if (image.isPresent()) {
-                if (before == null) {
-                    if (page.slotStatus(rid.slot()) == SlottedPage.SlotStatus.RESERVED) {
-                        pageInsert(page, rid.slot(), bytes);
+            try {
+                if (image.isPresent()) {
+                    if (before == null) {
+                        if (page.slotStatus(rid.slot()) == SlottedPage.SlotStatus.RESERVED) {
+                            pageInsert(page, rid.slot(), bytes);
+                        } else {
+                            pageRestore(page, rid.slot(), bytes);
+                        }
+                        buffers.markDirty(block, lsn);
+                        indexes.onInsert(table, rid, image.get(), lsn);
+                        delta = 1;
                     } else {
-                        pageRestore(page, rid.slot(), bytes);
+                        pageUpdate(page, rid.slot(), bytes);
+                        buffers.markDirty(block, lsn);
+                        indexes.onUpdate(table, rid, before, image.get(), lsn);
+                        delta = 0;
                     }
-                    indexes.onInsert(table, rid, image.get(), lsn);
-                    delta = 1;
+                } else if (before != null) {
+                    page.delete(rid.slot());
+                    buffers.markDirty(block, lsn);
+                    indexes.onDelete(table, rid, before, lsn);
+                    delta = -1;
                 } else {
-                    pageUpdate(page, rid.slot(), bytes);
-                    indexes.onUpdate(table, rid, before, image.get(), lsn);
-                    delta = 0;
+                    if (page.slotStatus(rid.slot()) == SlottedPage.SlotStatus.RESERVED) {
+                        page.cancelReservation(rid.slot());
+                        buffers.markDirty(block, lsn);
+                    }
+                    return;
                 }
-            } else if (before != null) {
-                page.delete(rid.slot());
-                indexes.onDelete(table, rid, before, lsn);
-                delta = -1;
-            } else {
-                return;
+            } catch (StorageInternalException | RuntimeException e) {
+                buffer.duplicate().clear().put(originalPage);
+                buffers.markDirty(block, lsn);
+                throw e;
             }
-            buffers.markDirty(block, lsn);
             catalog.recordChanged(table, delta, blockCount);
         } finally {
             buffers.unpin(block);

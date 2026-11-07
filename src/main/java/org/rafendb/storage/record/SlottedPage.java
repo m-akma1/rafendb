@@ -186,7 +186,9 @@ public class SlottedPage {
             if (rawStatus(slot) != SlotStatus.RESERVED.value) {
                 return;
             }
+            setU16(entryPos(slot) + E_OFFSET, 0);
             setU16(entryPos(slot) + E_LENGTH, 0);
+            setU16(entryPos(slot) + E_CAPACITY, 0);
             setU16(entryPos(slot) + E_STATUS, SlotStatus.FREE.value);
         }
     }
@@ -259,7 +261,7 @@ public class SlottedPage {
     }
 
     /**
-     * Deletes the contents of a slot while preserving the identity of other slots.
+     * Deletes a live slot while retaining its capacity for exact-RID undo.
      * The slot number itself is kept (FREE, never handed out again by reserve).
      * A RESERVED slot is not touched, use cancelReservation for that.
      *
@@ -302,8 +304,8 @@ public class SlottedPage {
     /**
      * Retrieves the available byte space that can be used after directory overhead.
      * This is the largest record that reserve() would accept right now: it counts space that
-     * compaction can recover (deleted records, holes) and already subtracts the 8-byte entry a
-     * new slot needs.
+     * compaction can recover from cancelled reservations and holes, excluding capacity retained
+     * for deleted rows. It already subtracts the 8-byte entry a new slot needs.
      *
      * @return the remaining free space in bytes
      */
@@ -439,7 +441,8 @@ public class SlottedPage {
     }
 
     /**
-     * Packs RESERVED/LIVE records against the end of the page. Capacity is reclaimed from FREE slots.
+     * Packs retained capacities against the end of the page, including deleted rows for undo.
+     * Only cancelled reservations release capacity; older FREE slots are conservatively retained.
      */
     private void compact() {
         int count = slotCount();
@@ -451,12 +454,6 @@ public class SlottedPage {
         int cursor = pageSize;
         for (int s = 0; s < count; s++) {
             int pos = entryPos(s);
-            if (u16(pos + E_STATUS) == SlotStatus.FREE.value) {
-                setU16(pos + E_OFFSET, 0);
-                setU16(pos + E_LENGTH, 0);
-                setU16(pos + E_CAPACITY, 0);
-                continue;
-            }
             int capacity = u16(pos + E_CAPACITY);
             if (capacity == 0) {
                 continue;
@@ -474,7 +471,7 @@ public class SlottedPage {
         page.putInt(OFF_DATA_START, cursor);
     }
 
-    /** Sum of the capacity of RESERVED and LIVE slots, ignoring {@code exclude}. */
+    /** Sum of all retained capacities, including deleted rows, ignoring {@code exclude}. */
     private long sumCapacity(int exclude) {
         int count = slotCount();
         long sum = 0;
@@ -483,9 +480,7 @@ public class SlottedPage {
                 continue;
             }
             int pos = entryPos(s);
-            if (u16(pos + E_STATUS) != SlotStatus.FREE.value) {
-                sum += u16(pos + E_CAPACITY);
-            }
+            sum += u16(pos + E_CAPACITY);
         }
         return sum;
     }

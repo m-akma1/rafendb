@@ -61,6 +61,7 @@ public class CatalogManager {
     private final Map<String, String> indexFiles = new LinkedHashMap<>();
     private final Map<String, Long> allocHighWater = new HashMap<>(); // key = table + '\0' + block
     private boolean loaded = false;
+    private boolean allocationDirty;
 
     /** Wires the database directory without loading or creating the catalog. */
     public CatalogManager(Path directory) {
@@ -84,11 +85,8 @@ public class CatalogManager {
 
     // Lifecycle
 
-    /** Loads the binary catalog and allocation metadata; never hides a corrupt existing catalog. */
+    /** Reloads binary catalog/allocation metadata, publishing state only after a successful read. */
     public synchronized void load() throws StorageInternalException {
-        if (loaded) {
-            return;
-        }
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
@@ -102,7 +100,13 @@ public class CatalogManager {
         boolean allocExists = Files.exists(alloc);
 
         if (!snapExists && !allocExists) {
-            // New database: nothing to load, allocation starts empty.
+            schemas.clear();
+            tableFiles.clear();
+            stats.clear();
+            indexesByName.clear();
+            indexFiles.clear();
+            allocHighWater.clear();
+            allocationDirty = true;
             loaded = true;
             return;
         }
@@ -146,19 +150,22 @@ public class CatalogManager {
         indexFiles.putAll(newIndexFiles);
         allocHighWater.clear();
         allocHighWater.putAll(newAlloc);
+        allocationDirty = false;
         loaded = true;
     }
 
-    /** Durably saves schema/statistics; never overwrites or rewinds the allocation high-water file. */
+    /** Saves schemas/statistics and pending allocations without rewinding the allocation ledger. */
     public synchronized void save() throws StorageInternalException {
         ensureLoaded();
+        if (allocationDirty || !Files.exists(directory.resolve(ALLOC_FILE))) {
+            saveAllocation();
+        }
         byte[] bytes = encodeSnapshot();
         try {
             atomicWrite(directory.resolve(SNAPSHOT_TMP), directory.resolve(SNAPSHOT_FILE), bytes);
         } catch (IOException e) {
             throw wrap("failed to save catalog snapshot", e);
         }
-        // Allocation file is intentionally untouched here.
     }
 
     // Allocation high-water
@@ -201,22 +208,11 @@ public class CatalogManager {
         String key = allocKey(table, rid.block());
         long candidate = (long) rid.slot() + 1L;
         Long current = allocHighWater.get(key);
-        if (current != null && current >= candidate) {
-            // Idempotent: never lower the high-water mark.
-            return;
+        if (current == null || current < candidate) {
+            allocHighWater.put(key, candidate);
+            allocationDirty = true;
         }
-
-        // Update in-memory first; on IO failure we keep it so this candidate is not re-tried
-        // below the persisted level, matching the documented contract.
-        allocHighWater.put(key, candidate);
-
-        try {
-            byte[] bytes = encodeAlloc();
-            atomicWrite(directory.resolve(ALLOC_TMP), directory.resolve(ALLOC_FILE), bytes);
-        } catch (IOException e) {
-            // In-memory state is retained; the rid must not be published by the caller.
-            throw wrap("failed to persist allocation for " + table + " " + rid, e);
-        }
+        if (allocationDirty) saveAllocation();
     }
 
     // Schema / files
@@ -419,14 +415,8 @@ public class CatalogManager {
         boolean allocChanged =
                 allocHighWater.keySet().removeIf(k -> k.startsWith(table + "\u0000"));
         if (allocChanged) {
-            try {
-                byte[] bytes = encodeAlloc();
-                atomicWrite(directory.resolve(ALLOC_TMP), directory.resolve(ALLOC_FILE), bytes);
-            } catch (IOException e) {
-                // The in-memory catalog is already updated; the caller must treat this DROP as
-                // failed. The stale alloc entries are pruned by load() on the next restart.
-                throw wrap("failed to persist allocation reset for dropped table " + table, e);
-            }
+            allocationDirty = true;
+            saveAllocation();
         }
     }
 
@@ -443,9 +433,11 @@ public class CatalogManager {
         return s;
     }
 
-    /** Recalculates statistics from a one-pass cursor; the caller owns and closes it. */
-    public void refreshStats(String table, RecordCursor rows) throws StorageInternalException {
+    /** Recalculates statistics using the physical block count; the caller owns/closes the cursor. */
+    public void refreshStats(String table, RecordCursor rows, long blockCount)
+            throws StorageInternalException {
         Objects.requireNonNull(rows, "rows");
+        if (blockCount < 0) throw new IllegalArgumentException("negative block count");
         TableSchema schema;
         synchronized (this) {
             ensureLoaded();
@@ -453,7 +445,6 @@ public class CatalogManager {
         }
 
         long count = 0;
-        long maxBlock = -1;
         long totalBytes = 0;
         Map<String, Set<Object>> distinct = new HashMap<>();
         for (Column c : schema.columns()) {
@@ -464,9 +455,6 @@ public class CatalogManager {
             StoredRow r;
             while ((r = rows.next()) != null) {
                 count++;
-                if (r.rid().block() > maxBlock) {
-                    maxBlock = r.rid().block();
-                }
                 Row row = r.row();
                 totalBytes += estimateSize(row);
                 for (int i = 0; i < row.size() && i < schema.columns().size(); i++) {
@@ -478,7 +466,6 @@ public class CatalogManager {
             throw new StorageInternalException("refreshStats failed for " + table, e);
         }
 
-        long blocks = maxBlock < 0 ? 0 : maxBlock + 1;
         double avgSize = count == 0 ? 0.0 : (double) totalBytes / count;
         double blocking = avgSize == 0.0 ? 0.0 : Math.max(1.0, 4096.0 / avgSize);
 
@@ -487,7 +474,7 @@ public class CatalogManager {
             dv.put(e.getKey(), (long) e.getValue().size());
         }
 
-        TableStats computed = new TableStats(count, blocks, avgSize, blocking, dv);
+        TableStats computed = new TableStats(count, blockCount, avgSize, blocking, dv);
         synchronized (this) {
             stats.put(table, computed);
         }
@@ -572,6 +559,14 @@ public class CatalogManager {
         }
         indexesByName.put(index.name(), index);
         indexFiles.put(index.name(), safeRelativeFile("idx_" + hex(index.name()) + ".idx"));
+    }
+
+    /** Removes index metadata idempotently; the caller saves it before deleting the index file. */
+    public synchronized void unregisterIndex(String name) {
+        ensureLoaded();
+        Objects.requireNonNull(name, "name");
+        indexesByName.remove(name);
+        indexFiles.remove(name);
     }
 
     // Validation helpers
@@ -967,6 +962,16 @@ public class CatalogManager {
 
     // IO helpers
 
+    /** Keeps unsaved allocation state on failure so an identical retry still reaches disk. */
+    private void saveAllocation() throws StorageInternalException {
+        try {
+            atomicWrite(directory.resolve(ALLOC_TMP), directory.resolve(ALLOC_FILE), encodeAlloc());
+            allocationDirty = false;
+        } catch (IOException e) {
+            throw wrap("failed to save allocation high-water", e);
+        }
+    }
+
     private static void atomicWrite(Path tmp, Path target, byte[] bytes) throws IOException {
         Files.createDirectories(target.getParent());
         try (FileChannel ch =
@@ -975,7 +980,11 @@ public class CatalogManager {
                         StandardOpenOption.CREATE,
                         StandardOpenOption.TRUNCATE_EXISTING,
                         StandardOpenOption.WRITE)) {
-            ch.write(java.nio.ByteBuffer.wrap(bytes));
+            java.nio.ByteBuffer contents = java.nio.ByteBuffer.wrap(bytes);
+            while (contents.hasRemaining()) {
+                if (ch.write(contents) <= 0)
+                    throw new IOException("catalog write made no progress");
+            }
             ch.force(true);
         }
         try {
