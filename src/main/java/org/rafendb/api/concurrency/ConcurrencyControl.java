@@ -1,6 +1,7 @@
 package org.rafendb.api.concurrency;
 
 import java.time.Duration;
+import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.AccessType;
 import org.rafendb.common.txn.ResourceId;
@@ -19,6 +20,16 @@ import org.rafendb.common.txn.TxResult;
  *
  * <p>Thread-safety: all methods may be called concurrently. Calls for one transaction come from one
  * session thread at a time.
+ *
+ * <p>Errors:
+ *
+ * <ul>
+ *   <li>{@link ConcurrencyInternalException}: a failure while logging or rolling back through the
+ *       Failure Recovery Manager. Declared by every method that goes through the FRM. Handled by
+ *       the caller, never shown to the user.
+ *   <li>{@link IllegalArgumentException} or {@link IllegalStateException}: a call that breaks this
+ *       contract.
+ * </ul>
  */
 public interface ConcurrencyControl {
 
@@ -54,8 +65,10 @@ public interface ConcurrencyControl {
      * @return COMMITTED on success, otherwise the current state with the reason
      * @throws NullPointerException if {@code tx} is null
      * @throws IllegalArgumentException if {@code tx} is unknown
+     * @throws ConcurrencyInternalException if its commit record cannot be logged (the FRM error is
+     *     the cause)
      */
-    TxResult commit(TxId tx);
+    TxResult commit(TxId tx) throws ConcurrencyInternalException;
 
     /**
      * Aborts a transaction and returns after its changes were rolled back. Aborting an aborted
@@ -65,8 +78,9 @@ public interface ConcurrencyControl {
      * @return ABORTED on success, otherwise the current state with the reason
      * @throws NullPointerException if {@code tx} is null
      * @throws IllegalArgumentException if {@code tx} is unknown
+     * @throws ConcurrencyInternalException if its rollback fails (the FRM error is the cause)
      */
-    TxResult abort(TxId tx);
+    TxResult abort(TxId tx) throws ConcurrencyInternalException;
 
     /**
      * Holds back new transactions until {@link #resumeNewTransactions()}. Running transactions can

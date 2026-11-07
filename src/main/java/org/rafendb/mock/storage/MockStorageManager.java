@@ -11,7 +11,8 @@ import java.util.function.ToLongFunction;
 import java.util.stream.IntStream;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
-import org.rafendb.common.error.StorageException;
+import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.ForeignKey;
 import org.rafendb.common.schema.IndexInfo;
@@ -131,11 +132,11 @@ public final class MockStorageManager implements StorageManager {
      * Mock: throws if the name is a dummy table; otherwise does nothing.
      */
     @Override
-    public void createTable(TableSchema schema) {
+    public void createTable(TableSchema schema) throws StorageInternalException {
         ensureOpen();
         Objects.requireNonNull(schema, "schema");
         if (TABLES.containsKey(schema.table())) {
-            throw new StorageException("table already exists: " + schema.table());
+            throw new StorageRuntimeException("table already exists: " + schema.table());
         }
     }
 
@@ -147,12 +148,12 @@ public final class MockStorageManager implements StorageManager {
      * {@code false}; nothing is dropped.
      */
     @Override
-    public void dropTable(String table, boolean cascade) {
+    public void dropTable(String table, boolean cascade) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         if (!cascade
                 && referencingKeys(t).stream().anyMatch(k -> !k.referencingTable().equals(table))) {
-            throw new StorageException("table is referenced by a foreign key: " + table);
+            throw new StorageRuntimeException("table is referenced by a foreign key: " + table);
         }
     }
 
@@ -163,7 +164,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: returns statistics computed from the dummy rows, with one block.
      */
     @Override
-    public TableStats getStats(String table) {
+    public TableStats getStats(String table) throws StorageInternalException {
         ensureOpen();
         return statsOf(tableNamed(table));
     }
@@ -188,7 +189,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: returns a cursor over the dummy rows in Rid order.
      */
     @Override
-    public RecordCursor scan(String table) {
+    public RecordCursor scan(String table) throws StorageInternalException {
         ensureOpen();
         return new MockRecordCursor(tableNamed(table).rows());
     }
@@ -200,7 +201,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: returns the dummy row at that Rid, or empty if there is none.
      */
     @Override
-    public Optional<StoredRow> fetch(String table, Rid rid) {
+    public Optional<StoredRow> fetch(String table, Rid rid) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(rid, "rid");
@@ -215,7 +216,7 @@ public final class MockStorageManager implements StorageManager {
      * is reserved.
      */
     @Override
-    public Rid reserveRid(String table, Row row) {
+    public Rid reserveRid(String table, Row row) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(row, "row");
@@ -230,7 +231,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: does nothing.
      */
     @Override
-    public void cancelReservation(String table, Rid rid) {
+    public void cancelReservation(String table, Rid rid) throws StorageInternalException {
         ensureOpen();
         tableNamed(table);
         Objects.requireNonNull(rid, "rid");
@@ -243,12 +244,15 @@ public final class MockStorageManager implements StorageManager {
      * Mock: validates the row and returns {@code rid}; nothing is stored.
      */
     @Override
-    public Rid insert(String table, Rid rid, Row row, long lsn) {
+    public Rid insert(String table, Rid rid, Row row, long lsn) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(rid, "rid");
         Objects.requireNonNull(row, "row");
-        validateRow(t, row);
+        String mismatch = rowMismatch(t, row);
+        if (mismatch != null) {
+            throw new StorageInternalException(mismatch);
+        }
         return rid;
     }
 
@@ -260,14 +264,14 @@ public final class MockStorageManager implements StorageManager {
      * changed.
      */
     @Override
-    public void update(String table, Rid rid, Row row, long lsn) {
+    public void update(String table, Rid rid, Row row, long lsn) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(rid, "rid");
         Objects.requireNonNull(row, "row");
         validateRow(t, row);
         if (!t.hasRid(rid)) {
-            throw new StorageException("no live record at " + rid + " in table " + table);
+            throw new StorageInternalException("no live record at " + rid + " in table " + table);
         }
     }
 
@@ -278,7 +282,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: returns whether {@code rid} is a dummy Rid; nothing is deleted.
      */
     @Override
-    public boolean delete(String table, Rid rid, long lsn) {
+    public boolean delete(String table, Rid rid, long lsn) throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(rid, "rid");
@@ -294,7 +298,8 @@ public final class MockStorageManager implements StorageManager {
      * nothing is deleted.
      */
     @Override
-    public long clearTable(String table, ToLongFunction<StoredRow> logDelete) {
+    public long clearTable(String table, ToLongFunction<StoredRow> logDelete)
+            throws StorageInternalException {
         ensureOpen();
         Table t = tableNamed(table);
         Objects.requireNonNull(logDelete, "logDelete");
@@ -312,16 +317,16 @@ public final class MockStorageManager implements StorageManager {
      * {@code listIndexes} is unchanged afterwards.
      */
     @Override
-    public void createIndex(IndexInfo index) {
+    public void createIndex(IndexInfo index) throws StorageInternalException {
         ensureOpen();
         Objects.requireNonNull(index, "index");
         Table t = tableNamed(index.table());
         if (t.schema().columnIndex(index.column()) < 0) {
-            throw new StorageException(
+            throw new StorageRuntimeException(
                     "unknown column: " + index.column() + " in table " + index.table());
         }
         if (INDEXES.stream().anyMatch(i -> i.name().equals(index.name()))) {
-            throw new StorageException("index name already used: " + index.name());
+            throw new StorageRuntimeException("index name already used: " + index.name());
         }
     }
 
@@ -333,7 +338,7 @@ public final class MockStorageManager implements StorageManager {
      * {@code key}.
      */
     @Override
-    public List<Rid> lookupIndex(String index, Value key) {
+    public List<Rid> lookupIndex(String index, Value key) throws StorageInternalException {
         ensureOpen();
         IndexInfo info = indexNamed(index);
         Objects.requireNonNull(key, "key");
@@ -358,11 +363,12 @@ public final class MockStorageManager implements StorageManager {
      */
     @Override
     public List<Rid> rangeIndex(
-            String index, Value lower, boolean includeLower, Value upper, boolean includeUpper) {
+            String index, Value lower, boolean includeLower, Value upper, boolean includeUpper)
+            throws StorageInternalException {
         ensureOpen();
         IndexInfo info = indexNamed(index);
         if (!info.type().supportsRange()) {
-            throw new StorageException("index does not support range search: " + index);
+            throw new StorageInternalException("index does not support range search: " + index);
         }
         Table t = TABLES.get(info.table());
         int col = t.schema().columnIndex(info.column());
@@ -396,7 +402,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: does nothing.
      */
     @Override
-    public void flush() {
+    public void flush() throws StorageInternalException {
         ensureOpen();
     }
 
@@ -407,12 +413,22 @@ public final class MockStorageManager implements StorageManager {
      * Mock: validates the arguments and the image; nothing is changed.
      */
     @Override
-    public void applyRecovery(String table, Rid rid, Optional<Row> image, long lsn) {
+    public void applyRecovery(String table, Rid rid, Optional<Row> image, long lsn)
+            throws StorageInternalException {
         ensureOpen();
-        Table t = tableNamed(table);
+        Objects.requireNonNull(table, "table");
+        Table t = TABLES.get(table);
+        if (t == null) {
+            throw new StorageInternalException("unknown table: " + table);
+        }
         Objects.requireNonNull(rid, "rid");
         Objects.requireNonNull(image, "image");
-        image.ifPresent(row -> validateRow(t, row));
+        if (image.isPresent()) {
+            String mismatch = rowMismatch(t, image.get());
+            if (mismatch != null) {
+                throw new StorageInternalException(mismatch);
+            }
+        }
     }
 
     /**
@@ -422,7 +438,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: does nothing.
      */
     @Override
-    public void reloadAfterRestore() {
+    public void reloadAfterRestore() throws StorageInternalException {
         ensureOpen();
     }
 
@@ -433,7 +449,7 @@ public final class MockStorageManager implements StorageManager {
      * Mock: does nothing, the dummy tables are always present.
      */
     @Override
-    public void loadSampleDatabase() {
+    public void loadSampleDatabase() throws StorageInternalException {
         ensureOpen();
     }
 
@@ -445,7 +461,7 @@ public final class MockStorageManager implements StorageManager {
      * IllegalStateException}.
      */
     @Override
-    public void close() {
+    public void close() throws StorageInternalException {
         closed = true;
     }
 
@@ -466,13 +482,13 @@ public final class MockStorageManager implements StorageManager {
      * @param name the table name
      * @return the table
      * @throws NullPointerException if {@code name} is {@code null}
-     * @throws StorageException     if there is no such table
+     * @throws StorageRuntimeException     if there is no such table
      */
     private static Table tableNamed(String name) {
         Objects.requireNonNull(name, "table");
         Table t = TABLES.get(name);
         if (t == null) {
-            throw new StorageException("unknown table: " + name);
+            throw new StorageRuntimeException("unknown table: " + name);
         }
         return t;
     }
@@ -505,14 +521,28 @@ public final class MockStorageManager implements StorageManager {
      * @param name the index name
      * @return the index definition
      * @throws NullPointerException if {@code name} is {@code null}
-     * @throws StorageException     if there is no such index
+     * @throws StorageInternalException if there is no such index
      */
-    private static IndexInfo indexNamed(String name) {
+    private static IndexInfo indexNamed(String name) throws StorageInternalException {
         Objects.requireNonNull(name, "index");
         return INDEXES.stream()
                 .filter(i -> i.name().equals(name))
                 .findFirst()
-                .orElseThrow(() -> new StorageException("unknown index: " + name));
+                .orElseThrow(() -> new StorageInternalException("unknown index: " + name));
+    }
+
+    /**
+     * Checks a row from a client statement against the table's schema.
+     *
+     * @param t   the table
+     * @param row the row
+     * @throws StorageRuntimeException if the row does not match the schema
+     */
+    private static void validateRow(Table t, Row row) {
+        String mismatch = rowMismatch(t, row);
+        if (mismatch != null) {
+            throw new StorageRuntimeException(mismatch);
+        }
     }
 
     /**
@@ -520,20 +550,19 @@ public final class MockStorageManager implements StorageManager {
      *
      * @param t   the table
      * @param row the row
-     * @throws StorageException if the row does not match the schema
+     * @return why the row does not match the schema, or {@code null} if it matches
      */
-    private static void validateRow(Table t, Row row) {
+    private static String rowMismatch(Table t, Row row) {
         List<Column> columns = t.schema().columns();
         if (row.size() != columns.size()) {
-            throw new StorageException(
-                    "row has " + row.size() + " values, expected " + columns.size());
+            return "row has " + row.size() + " values, expected " + columns.size();
         }
         for (int i = 0; i < columns.size(); i++) {
             if (!columns.get(i).accepts(row.get(i))) {
-                throw new StorageException(
-                        "value " + row.get(i) + " does not fit column " + columns.get(i).name());
+                return "value " + row.get(i) + " does not fit column " + columns.get(i).name();
             }
         }
+        return null;
     }
 
     /**
@@ -542,13 +571,14 @@ public final class MockStorageManager implements StorageManager {
      *
      * @param column the indexed column
      * @param key    the key or bound
-     * @throws StorageException if the families differ
+     * @throws StorageInternalException if the families differ
      */
-    private static void requireSameFamily(Column column, Value key) {
+    private static void requireSameFamily(Column column, Value key)
+            throws StorageInternalException {
         DataType a = column.type();
         DataType b = key.type();
         if (a != b && !(a.isText() && b.isText())) {
-            throw new StorageException(
+            throw new StorageInternalException(
                     "key of type "
                             + b
                             + " does not match column "

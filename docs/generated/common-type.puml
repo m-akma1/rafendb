@@ -1,0 +1,36 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+enum org.rafendb.common.type.DataType {
+	{field} +CHAR
+	{field} +FLOAT
+	{field} +INTEGER
+	{field} +VARCHAR
+}
+
+
+class org.rafendb.common.type.Value {
+	{method} +asFloat () : float
+	{method} +asInt () : int
+	{method} +asText () : String
+	{method} +compareTo ( other : Value ) : int
+	{method} +isNull () : boolean
+	{method}  {static} +nullOf ( type : DataType ) : Value
+	{method}  {static} +ofFloat ( v : float ) : Value
+	{method}  {static} +ofInt ( v : int ) : Value
+	{method}  {static} +ofText ( type : DataType , s : String ) : Value
+	{method} +type () : DataType
+	{method} +value () : Object
+}
+
+
+
+
+org.rafendb.common.type.Value *--  org.rafendb.common.type.DataType : type
+
+
+@enduml

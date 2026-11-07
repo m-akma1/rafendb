@@ -1,6 +1,6 @@
 package org.rafendb.api.concurrency;
 
-import java.io.IOException;
+import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
 
@@ -22,7 +22,8 @@ public interface ConcurrencyLogging {
      * @throws NullPointerException if an argument or required change field is null
      * @throws IllegalArgumentException if tx is unknown or the change is invalid
      * @throws IllegalStateException if tx is not ACTIVE or lacks WRITE protection
-     * @throws IOException if logging or subsequent rollback fails
+     * @throws ConcurrencyInternalException if logging or the following rollback fails (the FRM error
+     *     is the cause)
      */
-    long logChange(TxId tx, ChangeRecord change) throws IOException;
+    long logChange(TxId tx, ChangeRecord change) throws ConcurrencyInternalException;
 }

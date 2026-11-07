@@ -1,5 +1,7 @@
 /**
- * FRM facade. Implements api.recovery. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Failure Recovery Manager (FRM) facade and coordinator.
+ *
+ * <p>Coordinates logging, checkpointing, rollback, and crash recovery implementations.
  *
  * <p>Owner: G5 Failure Recovery Manager (FR1).
  */
