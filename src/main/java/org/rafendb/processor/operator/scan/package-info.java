@@ -1,5 +1,6 @@
 /**
- * Sequential scan and projection (QP-05). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Sequential scan dan projection (QP-05). {@link org.rafendb.processor.operator.scan.ProjectOp}
+ * ngambil kolom child sesuai urutan SELECT, tanpa RID.
  *
  * <p>Owner: G1 Query Processor (QP3).
  */
