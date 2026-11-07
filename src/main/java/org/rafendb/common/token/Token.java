@@ -23,6 +23,7 @@ public record Token(TokenType type, String text, SourcePosition position) {
         COMPARISON_OPERATOR,
         ARITHMETIC_OPERATOR,
         PUNCTUATION,
+        UNKNOWN,
         EOF;
 
         /** Returns {@code true} for numeric and string literals. */
