@@ -1,5 +1,6 @@
 /**
- * Internal protocol strategy interface (CC-02). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Protocol strategy of the CCM (CC-02): {@link Protocol}, implemented by the lock-based and
+ * timestamp-based protocols.
  *
  * <p>Owner: G2 Concurrency Control Manager (CC1).
  */
