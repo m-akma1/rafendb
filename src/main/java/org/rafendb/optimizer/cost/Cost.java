@@ -6,6 +6,7 @@ import java.util.Objects;
 public final class Cost {
     /** Provisional weights; not a final contract and subject to QO5/API owner approval. */
     public static final double SEEK_MILLIS = 4.0;
+
     public static final double TRANSFER_MILLIS = 0.1;
 
     private final long seeks;
@@ -19,8 +20,13 @@ public final class Cost {
         this.transfers = transfers;
     }
 
-    public long getSeeks() { return seeks; }
-    public long getTransfers() { return transfers; }
+    public long getSeeks() {
+        return seeks;
+    }
+
+    public long getTransfers() {
+        return transfers;
+    }
 
     public double timeMs() {
         return seeks * SEEK_MILLIS + transfers * TRANSFER_MILLIS;
@@ -28,18 +34,23 @@ public final class Cost {
 
     public Cost plus(Cost other) {
         Objects.requireNonNull(other, "other cost");
-        return new Cost(Math.addExact(seeks, other.seeks), Math.addExact(transfers, other.transfers));
+        return new Cost(
+                Math.addExact(seeks, other.seeks), Math.addExact(transfers, other.transfers));
     }
 
     @Override
     public boolean equals(Object other) {
-        return this == other || other instanceof Cost that
-                && seeks == that.seeks && transfers == that.transfers;
+        return this == other
+                || other instanceof Cost that && seeks == that.seeks && transfers == that.transfers;
     }
 
     @Override
-    public int hashCode() { return Objects.hash(seeks, transfers); }
+    public int hashCode() {
+        return Objects.hash(seeks, transfers);
+    }
 
     @Override
-    public String toString() { return "Cost[seeks=" + seeks + ", transfers=" + transfers + "]"; }
+    public String toString() {
+        return "Cost[seeks=" + seeks + ", transfers=" + transfers + "]";
+    }
 }

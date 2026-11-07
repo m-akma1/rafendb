@@ -1,4 +1,4 @@
-package org.rafendb.optimizer.cost;
+package org.rafendb.mock.optimizer.cost;
 
 import java.util.Objects;
 import org.rafendb.common.error.CostEstimationException;
@@ -6,18 +6,30 @@ import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
 import org.rafendb.common.plan.SelectionPlanNode;
+import org.rafendb.optimizer.cost.Cost;
+import org.rafendb.optimizer.cost.CostModel;
 
-/** Deterministic placeholder estimates; does not use storage statistics. */
+/** Deterministic placeholder estimates; does not use storage statistics and is thread-safe. */
 public final class MockCostModel implements CostModel {
     private final long defaultRows;
 
-    public MockCostModel() { this(100); }
+    /** Creates a placeholder model with 100 default rows. */
+    public MockCostModel() {
+        this(100);
+    }
 
+    /**
+     * Creates a placeholder model with a fixed row estimate.
+     *
+     * @param defaultRows nonnegative row count
+     * @throws IllegalArgumentException if {@code defaultRows} is negative
+     */
     public MockCostModel(long defaultRows) {
         if (defaultRows < 0) throw new IllegalArgumentException("defaultRows must be nonnegative");
         this.defaultRows = defaultRows;
     }
 
+    /** {@inheritDoc} */
     @Override
     public long estimateRows(PlanNode node) {
         requireNode(node);
@@ -27,6 +39,7 @@ public final class MockCostModel implements CostModel {
         return defaultRows;
     }
 
+    /** {@inheritDoc} */
     @Override
     public Cost estimateLocalCost(PlanNode node) {
         requireNode(node);

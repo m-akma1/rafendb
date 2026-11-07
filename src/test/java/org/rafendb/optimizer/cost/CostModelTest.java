@@ -5,16 +5,25 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.plan.PlanNode;
+import org.rafendb.mock.optimizer.cost.MockCostModel;
 
 class CostModelTest {
     private static PlanNode node(String name, PlanNode... children) {
         return new PlanNode() {
-            @Override public List<PlanNode> children() { return List.of(children); }
-            @Override public String describe() { return name; }
+            @Override
+            public List<PlanNode> children() {
+                return List.of(children);
+            }
+
+            @Override
+            public String describe() {
+                return name;
+            }
         };
     }
 
-    @Test void costValidatesAndAddsValues() {
+    @Test
+    void costValidatesAndAddsValues() {
         Cost a = new Cost(2, 10);
         Cost b = new Cost(3, 5);
         assertEquals(2, a.getSeeks());
@@ -27,7 +36,8 @@ class CostModelTest {
         assertThrows(IllegalArgumentException.class, () -> new Cost(0, -1));
     }
 
-    @Test void mockModelReturnsNonnegativeEstimatesAndLocalCost() {
+    @Test
+    void mockModelReturnsNonnegativeEstimatesAndLocalCost() {
         MockCostModel model = new MockCostModel(100);
         PlanNode leaf = node("leaf");
         PlanNode parent = node("parent", leaf);
@@ -37,7 +47,8 @@ class CostModelTest {
         assertThrows(RuntimeException.class, () -> model.estimateRows(null));
     }
 
-    @Test void totalIncludesNestedSubtreeAndCountsSharedNodeOnce() {
+    @Test
+    void totalIncludesNestedSubtreeAndCountsSharedNodeOnce() {
         MockCostModel model = new MockCostModel(10);
         PlanNode shared = node("shared");
         PlanNode left = node("left", shared);
@@ -48,16 +59,33 @@ class CostModelTest {
         assertThrows(RuntimeException.class, () -> model.estimateTotalCost(null));
     }
 
-    @Test void totalRejectsInvalidChildrenAndNullLocalCost() {
-        CostModel nullCost = new CostModel() {
-            @Override public long estimateRows(PlanNode node) { return 0; }
-            @Override public Cost estimateLocalCost(PlanNode node) { return null; }
-        };
+    @Test
+    void totalRejectsInvalidChildrenAndNullLocalCost() {
+        CostModel nullCost =
+                new CostModel() {
+                    @Override
+                    public long estimateRows(PlanNode node) {
+                        return 0;
+                    }
+
+                    @Override
+                    public Cost estimateLocalCost(PlanNode node) {
+                        return null;
+                    }
+                };
         assertThrows(RuntimeException.class, () -> nullCost.estimateTotalCost(node("x")));
-        PlanNode invalid = new PlanNode() {
-            @Override public List<PlanNode> children() { return null; }
-            @Override public String describe() { return "invalid"; }
-        };
+        PlanNode invalid =
+                new PlanNode() {
+                    @Override
+                    public List<PlanNode> children() {
+                        return null;
+                    }
+
+                    @Override
+                    public String describe() {
+                        return "invalid";
+                    }
+                };
         assertThrows(RuntimeException.class, () -> new MockCostModel().estimateTotalCost(invalid));
     }
 }
