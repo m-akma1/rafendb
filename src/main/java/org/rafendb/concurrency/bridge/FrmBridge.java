@@ -1,5 +1,6 @@
 package org.rafendb.concurrency.bridge;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
@@ -11,6 +12,7 @@ import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.log.LogType;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.RecoveryInfo;
+import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
@@ -67,6 +69,11 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         TxStatus status = txns.status(tx);
         if (status != TxStatus.ACTIVE) {
             throw new IllegalStateException(tx + " is " + status + " and cannot write");
+        }
+        ResourceId table =
+                ResourceId.ofTable(change.resource().table().strip().toLowerCase(Locale.ROOT));
+        if (!protocol.holdsWrite(tx, table)) {
+            throw new IllegalStateException(tx + " does not hold WRITE protection for " + table);
         }
         try {
             return frm.writeLog(LogPayload.ofChange(tx, type, change));

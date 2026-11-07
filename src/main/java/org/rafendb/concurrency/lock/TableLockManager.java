@@ -22,6 +22,13 @@ public final class TableLockManager implements LockManager {
 
     private final Map<ResourceId, LockState> tables = new HashMap<>();
 
+    public synchronized boolean holdsWrite(TxId tx, ResourceId resource) {
+        Objects.requireNonNull(tx, "tx");
+        Objects.requireNonNull(resource, "resource");
+        LockState state = tables.get(resource);
+        return state != null && state.holders.get(tx) == AccessType.WRITE;
+    }
+
     private static boolean compatible(LockState state, Request request) {
         for (Map.Entry<TxId, AccessType> holder : state.holders.entrySet()) {
             if (holder.getKey().equals(request.tx())) {

@@ -33,6 +33,12 @@ public final class LockBasedProtocol implements Protocol {
 
     /** {@inheritDoc} */
     @Override
+    public boolean holdsWrite(TxId tx, ResourceId resource) {
+        return locks.holdsWrite(tx, resource);
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public void cancelPending(TxId tx) {
         locks.cancelPending(tx);
     }

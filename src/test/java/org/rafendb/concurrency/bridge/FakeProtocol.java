@@ -32,6 +32,11 @@ final class FakeProtocol implements Protocol {
     }
 
     @Override
+    public boolean holdsWrite(TxId tx, ResourceId resource) {
+        return true;
+    }
+
+    @Override
     public void cancelPending(TxId tx) {
         calls.add("cancelPending " + tx + " [" + txns.status(tx) + "]");
     }

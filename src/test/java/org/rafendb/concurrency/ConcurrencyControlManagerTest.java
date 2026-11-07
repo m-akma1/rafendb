@@ -99,6 +99,11 @@ class ConcurrencyControlManagerTest {
         }
 
         @Override
+        public boolean holdsWrite(TxId tx, ResourceId resource) {
+            return true;
+        }
+
+        @Override
         public void cancelPending(TxId tx) {}
 
         @Override

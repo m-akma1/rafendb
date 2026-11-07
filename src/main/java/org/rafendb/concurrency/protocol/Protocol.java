@@ -32,6 +32,9 @@ public interface Protocol {
      */
     Decision requestAccess(TxId tx, long timestamp, AccessType type, ResourceId resource);
 
+    /** Returns whether the transaction currently holds WRITE protection for the table. */
+    boolean holdsWrite(TxId tx, ResourceId resource);
+
     /** Removes a FAILED transaction's queued requests but keeps what it holds. No-op under timestamp.*/
     void cancelPending(TxId tx);
 
