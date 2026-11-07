@@ -3,10 +3,13 @@ package org.rafendb.api.processor;
 import org.rafendb.common.plan.QueryPlan;
 
 /**
- * Proposed translator boundary. Implementations must permit concurrent calls, returning
- * independent executions. Milestone 1 supplies this contract and a dummy implementation;
- * it does not require SQL execution or wiring real worker operators.
- * Real execution context injection is pending QP1/QP5 agreement.
+ * Rancangan batas internal QP untuk menyiapkan eksekusi dari plan QO.
+ * Pemanggilan bersamaan harus menghasilkan objek eksekusi yang independen.
+ * Translator membentuk eksekusi tanpa membuka operator atau mengubah storage.
+ *
+ * <p>Mock lokal tersedia sebagai fixture; keberadaannya bukan persyaratan mock
+ * antarkomponen M1 untuk QP2. Bentuk hasil yang dipakai QP1 dan pemberian context
+ * eksekusi masih perlu diselaraskan dengan QP1/QP5.
  */
 public interface PlanTranslator {
     /**

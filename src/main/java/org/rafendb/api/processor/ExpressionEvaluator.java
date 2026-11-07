@@ -8,11 +8,16 @@ import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 
 /**
- * Mengevaluasi expression dan kondisi berdasarkan row dan schema.
+ * Mengevaluasi expression dan kondisi berdasarkan row dan schema input operator.
  * Urutan schema harus sesuai dengan posisi nilai pada row,
  * dan jumlah kolom schema harus sama dengan jumlah nilai row.
- * Pada milestone 1, implementasi mock mengembalikan hasil konfigurasi;
- * perhitungan SQL dan validasi semantik pada kontrak ini belum diimplementasikan.
+ * Referensi kolom memakai offset yang diisi QO sesuai schema input operator;
+ * evaluator tidak mencari ulang posisi kolom berdasarkan nama tabel atau kolom.
+ * QO menyesuaikan offset jika optimasi mengubah susunan kolom dan menangani
+ * validasi nama, ambiguitas, serta kompatibilitas tipe sebelum plan diteruskan ke QP.
+ *
+ * <p>Implementasi mock hanya mengembalikan hasil konfigurasi, tanpa membaca offset
+ * atau menghitung ekspresi. Implementasi evaluator nyata mengikuti kontrak di atas.
  */
 public interface ExpressionEvaluator {
     /**

@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.processor.ExecutionPlan;
-import org.rafendb.common.expr.ColumnRef;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.schema.ColumnSchema;
@@ -36,7 +35,7 @@ class Qp2ContractTest {
         assertThrows(NullPointerException.class, () -> new QueryPlan(null, 0));
     }
 
-    private final ColumnRef salary = new ColumnRef("pegawai", "salary");
+    private final Expr.ColumnRef salary = new Expr.ColumnRef("pegawai", "salary", 0);
     private final ColumnSchema salarySchema =
             new ColumnSchema(new Expr.ColumnRef("pegawai", "salary"), DataType.INTEGER);
     private final Expr value = new Expr.Literal(Value.ofInt(5000));
@@ -97,6 +96,22 @@ class Qp2ContractTest {
             assertEquals(0, outcome.affectedRows());
             assertTrue(outcome.status().startsWith("MOCK:"));
             assertThrows(IllegalStateException.class, result.action()::execute);
+        }
+    }
+
+    @Test
+    void commandTargetsStillRejectMissingOrBlankColumnNames() {
+        for (String name : new String[] {null, "", " "}) {
+            var column = new Expr.ColumnRef("pegawai", name);
+            Class<? extends RuntimeException> error =
+                    name == null ? NullPointerException.class : IllegalArgumentException.class;
+            assertThrows(
+                    error, () -> new UpdatePlanNode("pegawai", column, value, Optional.empty()));
+            assertThrows(
+                    error,
+                    () ->
+                            new CreateIndexPlanNode(
+                                    "idx", "pegawai", column, CreateIndexPlanNode.IndexKind.BTREE));
         }
     }
 
