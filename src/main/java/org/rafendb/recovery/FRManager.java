@@ -9,8 +9,10 @@ import org.rafendb.api.recovery.LogPayload;
 import org.rafendb.api.recovery.LoggerErrorException;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
+import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
@@ -91,8 +93,49 @@ public class FRManager implements RecoveryManager {
                                     Math.max(0L, (long) idRecord / 1000),
                                     Math.max(0, idRecord % 1000));
                     Optional<Row> rowOpt = Optional.empty();
-                    storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+                    try {
+                        storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+                    } catch (Exception e) {
+                        throw new RuntimeException("StorageManager applyRecovery failed", e);
+                    }
                 });
+    }
+
+    @Override
+    public long writeLog(org.rafendb.common.log.LogPayload payload)
+            throws RecoveryInternalException {
+        if (payload == null) {
+            throw new NullPointerException("payload must not be null");
+        }
+        try {
+            int txId = (int) payload.tx().value();
+            LogType logType = LogType.valueOf(payload.type().name());
+            if (payload.change().isPresent()) {
+                var change = payload.change().get();
+                String table = change.resource().table();
+                int idRecord =
+                        change.resource().rid() != null
+                                ? (int)
+                                        (change.resource().rid().block() * 1000
+                                                + change.resource().rid().slot())
+                                : -1;
+                String beforeStr =
+                        change.beforeImage()
+                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
+                                .orElse(null);
+                String afterStr =
+                        change.afterImage()
+                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
+                                .orElse(null);
+                return logger.logDataChange(
+                        txId, logType, payload.timestamp(), table, idRecord, beforeStr, afterStr);
+            } else {
+                logger.logTransactionEvent(txId, logType);
+                return logger.getCurrentLSN();
+            }
+        } catch (Exception e) {
+            throw new RecoveryInternalException("Failed to write log record", e);
+        }
     }
 
     /**
@@ -106,7 +149,6 @@ public class FRManager implements RecoveryManager {
      * @return nomor LSN yang dialokasikan (positif), atau -1 jika payload null
      * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
      */
-    @Override
     public long writeLog(LogPayload payload) throws LoggerErrorException {
         if (payload == null) {
             return -1;
@@ -264,6 +306,37 @@ public class FRManager implements RecoveryManager {
     }
 
     @Override
+    public boolean beginTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return beginTransaction((int) tx.value());
+    }
+
+    @Override
+    public boolean commitTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return commitTransaction((int) tx.value());
+    }
+
+    @Override
+    public boolean rollbackTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return rollbackTransaction((int) tx.value());
+    }
+
+    @Override
+    public TxStatus getTransactionStatus(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return getTransactionStatus((int) tx.value());
+    }
+
     public TxStatus getTransactionStatus(int idTransaction) {
         TxStatus cached = txStatuses.get(idTransaction);
         if (cached != null) {
@@ -286,8 +359,12 @@ public class FRManager implements RecoveryManager {
     }
 
     @Override
-    public void forceThrough(long lsn) {
-        logger.forceThrough(lsn);
+    public void forceThrough(long lsn) throws RecoveryInternalException {
+        try {
+            logger.forceThrough(lsn);
+        } catch (Exception e) {
+            throw new RecoveryInternalException("Failed to force log through LSN " + lsn, e);
+        }
     }
 
     @Override

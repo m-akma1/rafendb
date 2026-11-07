@@ -1,5 +1,8 @@
 /**
- * Cartesian to join, join reordering, access path, plan choice (QO-11 to QO-14). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Provides join and access path optimization for query plans (QO-11 through QO-14).
+ *
+ * <p>The current implementation contains pass-through placeholders for join
+ * transformation, join reordering, index selection, and plan selection.
  *
  * <p>Owner: G3 Query Optimizer (QO5).
  */

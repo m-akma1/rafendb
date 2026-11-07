@@ -15,7 +15,7 @@ public record AccessResult(Status status, String message) {
         ALLOWED,
         /** Not granted yet; the caller asks again later. */
         WAITING,
-        /** The CCM aborted the transaction; it can no longer be used. */
+        /** Access rejected; the transaction cannot continue. Rollback may still be unfinished. */
         ABORTED
     }
 
@@ -35,7 +35,7 @@ public record AccessResult(Status status, String message) {
         return new AccessResult(Status.WAITING, "");
     }
 
-    /** Returns an {@link Status#ABORTED} result carrying the reason shown to the user. */
+    /** Returns an access rejection with its reason, not confirmation of completed rollback. */
     public static AccessResult aborted(String message) {
         return new AccessResult(Status.ABORTED, message);
     }

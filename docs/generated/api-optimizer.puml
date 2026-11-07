@@ -1,0 +1,20 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.optimizer.QueryOptimizer {
+	{method}  {abstract} +bindAndValidate ( parsed : ParsedQuery ) : void
+	{method}  {abstract} +explain ( plan : QueryPlan ) : String
+	{method}  {abstract} +optimize ( parsed : ParsedQuery ) : QueryPlan
+	{method}  {abstract} +parse ( sql : String ) : ParsedQuery
+}
+
+
+
+
+
+
+@enduml

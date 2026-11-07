@@ -1,0 +1,35 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.log.LogPayload {
+	{method} +change () : Optional
+	{method}  {static} +ofChange ( tx : TxId , type : LogType , change : ChangeRecord ) : LogPayload
+	{method}  {static} +ofEvent ( tx : TxId , type : LogType ) : LogPayload
+	{method} +timestamp () : long
+	{method} +tx () : TxId
+	{method} +type () : LogType
+}
+
+
+enum org.rafendb.common.log.LogType {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +CHECKPOINT_BEGIN
+	{field} +CHECKPOINT_END
+	{field} +COMMIT
+	{field} +DELETE
+	{field} +INSERT
+	{field} +UPDATE
+}
+
+
+
+
+org.rafendb.common.log.LogPayload *--  org.rafendb.common.log.LogType : type
+
+
+@enduml

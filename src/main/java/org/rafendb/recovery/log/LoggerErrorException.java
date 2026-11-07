@@ -4,7 +4,7 @@ package org.rafendb.recovery.log;
  * Dilempar ketika logger gagal menulis atau mem-flush record log. Pemanggil tidak boleh
  * melanjutkan operasi yang mensyaratkan record tersebut sudah tersimpan permanen (aturan WAL).
  */
-public class LoggerErrorException extends org.rafendb.api.recovery.LoggerErrorException {
+public class LoggerErrorException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -24,5 +24,9 @@ public class LoggerErrorException extends org.rafendb.api.recovery.LoggerErrorEx
      */
     public LoggerErrorException(String errMessage, Throwable cause) {
         super(errMessage, cause);
+    }
+
+    public String getErrMessage() {
+        return getMessage();
     }
 }

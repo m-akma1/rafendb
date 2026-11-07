@@ -1,8 +1,8 @@
 /**
- * Failure Recovery Manager (FRM) public contracts and interfaces.
+ * Failure Recovery Manager (FRM) contract: {@link org.rafendb.api.recovery.RecoveryManager}.
  *
  * <p>Exposes transaction logging, rollback, checkpointing, and crash recovery services to other
- * database components.
+ * database components. The log record types it takes are in {@code org.rafendb.common.log}.
  *
  * <p>Owner: G5 Failure Recovery Manager.
  */

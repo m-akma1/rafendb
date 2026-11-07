@@ -1,5 +1,7 @@
 /**
- * Transactions: TxId, TxStatus, AccessType, AccessResult (allowed / wait / aborted). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Transaction types of the CCM contract: {@link TxId}, {@link TxStatus}, {@link TxResult}, {@link
+ * AccessType}, {@link AccessResult}, {@link ResourceId}, {@link ChangeRecord} and {@link
+ * RecoveryInfo}.
  *
  * <p>Owner: Supergroup.
  */
