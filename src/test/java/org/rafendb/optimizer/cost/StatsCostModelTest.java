@@ -10,6 +10,7 @@ import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
+import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.JoinAlgorithm;
 import org.rafendb.common.plan.JoinPlanNode;
@@ -30,7 +31,7 @@ import org.rafendb.optimizer.catalog.StorageManagerCatalog;
 
 class StatsCostModelTest {
     @Test
-    void usesTableStatisticsAndSelectionSelectivity() {
+    void usesTableStatisticsAndSelectionSelectivity() throws Exception {
         StatsCostModel model = new StatsCostModel(MockCatalog.defaults());
         TableScanNode scan = new TableScanNode(null, "mahasiswa");
         assertEquals(100, model.estimateRows(scan));
@@ -57,7 +58,7 @@ class StatsCostModelTest {
     }
 
     @Test
-    void joinAndPushedSelectionCostsAreFinite() {
+    void joinAndPushedSelectionCostsAreFinite() throws Exception {
         StatsCostModel model = new StatsCostModel(MockCatalog.defaults());
         TableScanNode a = new TableScanNode(null, "mahasiswa");
         TableScanNode b = new TableScanNode(null, "prodi");
@@ -82,7 +83,7 @@ class StatsCostModelTest {
     }
 
     @Test
-    void pushedDownSelectionIsNoMoreExpensiveForBothNestedLoopAlgorithms() {
+    void pushedDownSelectionIsNoMoreExpensiveForBothNestedLoopAlgorithms() throws Exception {
         MockCatalog catalog =
                 MockCatalog.builder()
                         .table("a")
@@ -166,7 +167,7 @@ class StatsCostModelTest {
     }
 
     @Test
-    void estimatesCartesianEmptySortAndParallelCalls() {
+    void estimatesCartesianEmptySortAndParallelCalls() throws Exception {
         MockCatalog catalog =
                 MockCatalog.builder()
                         .table("empty")
@@ -182,7 +183,7 @@ class StatsCostModelTest {
         TableScanNode empty = new TableScanNode(null, "empty");
         assertEquals(0, model.estimateRows(empty));
         assertEquals(new Cost(0, 0), model.estimateLocalCost(empty));
-        assertEquals(0, model.estimateRows(new SelectionPlanNode(null, empty)));
+        assertEquals(0, model.estimateRows(new SelectionPlanNode(new Expr.Null(), empty)));
 
         TableScanNode small = new TableScanNode(null, "empty");
         TableScanNode large = new TableScanNode(null, "large");
@@ -205,7 +206,7 @@ class StatsCostModelTest {
     }
 
     @Test
-    void estimatesJoinAlgorithmsAndAvailableIndexMetadata() {
+    void estimatesJoinAlgorithmsAndAvailableIndexMetadata() throws Exception {
         StatsCostModel model = new StatsCostModel(MockCatalog.defaults());
         TableScanNode outer = new TableScanNode(null, "mahasiswa");
         TableScanNode inner = new TableScanNode(null, "prodi");
@@ -229,8 +230,22 @@ class StatsCostModelTest {
                 new Cost(198, 99),
                 model.estimateLocalCost(
                         new JoinPlanNode(JoinAlgorithm.NESTED_LOOP, condition, outer, inner)));
-        assertEquals(new Cost(2, 2), model.estimateLocalCost(new IndexScanNode(null, "mahasiswa")));
-        assertEquals(new Cost(2, 2), model.estimateLocalCost(new IndexScanNode(null, "prodi")));
+        assertEquals(
+                new Cost(2, 2),
+                model.estimateLocalCost(
+                        new IndexScanNode(
+                                null,
+                                "mahasiswa",
+                                new IndexScanDescriptor(
+                                        "mahasiswa_nim_idx", "nim", new Expr.Null()))));
+        assertEquals(
+                new Cost(2, 2),
+                model.estimateLocalCost(
+                        new IndexScanNode(
+                                null,
+                                "prodi",
+                                new IndexScanDescriptor(
+                                        "prodi_kode_idx", "kode", new Expr.Null()))));
 
         TableScanNode shared = new TableScanNode(null, "mahasiswa");
         CartesianPlanNode dag =
@@ -265,7 +280,7 @@ class StatsCostModelTest {
     }
 
     @Test
-    void handlesMissingZeroAndStaleDistinctCounts() {
+    void handlesMissingZeroAndStaleDistinctCounts() throws Exception {
         MockCatalog catalog =
                 MockCatalog.builder()
                         .table("missing_v")
