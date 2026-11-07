@@ -4,16 +4,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.error.ConcurrencyInternalException;
+import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.RecoveryInfo;
+import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.txn.TransactionManager;
 
 class FrmBridgeTest {
+
+    private static final Optional<byte[]> IMAGE = Optional.of(new byte[] {1});
+    private static final Optional<byte[]> NONE = Optional.empty();
 
     private final List<String> calls = new ArrayList<>();
     private TransactionManager txns;
@@ -35,6 +43,10 @@ class FrmBridgeTest {
         TxId tx = txns.begin();
         calls.clear();
         return tx;
+    }
+
+    private static ChangeRecord change(Optional<byte[]> before, Optional<byte[]> after) {
+        return new ChangeRecord(ResourceId.ofRow("users", new Rid(0, 1)), before, after);
     }
 
     @Test
@@ -105,6 +117,100 @@ class FrmBridgeTest {
         frm.beginSucceeds = false;
 
         assertThrows(IllegalStateException.class, () -> bridge.logBegin(tx));
+    }
+
+    @Test
+    void logChangeMapsImagesToLogTypeAndReturnsIncreasingLsn() throws Exception {
+        TxId tx = activeTransaction();
+
+        long insert = bridge.logChange(tx, change(NONE, IMAGE));
+        long update = bridge.logChange(tx, change(IMAGE, IMAGE));
+        long delete = bridge.logChange(tx, change(IMAGE, NONE));
+
+        assertEquals(
+                List.of(
+                        "writeLog T1 INSERT [ACTIVE]",
+                        "writeLog T1 UPDATE [ACTIVE]",
+                        "writeLog T1 DELETE [ACTIVE]"),
+                calls);
+        assertTrue(insert < update && update < delete);
+    }
+
+    @Test
+    void changeIsForwardedUnchanged() throws Exception {
+        TxId tx = activeTransaction();
+        ChangeRecord change = change(IMAGE, IMAGE);
+
+        bridge.logChange(tx, change);
+
+        assertSame(change, frm.lastPayload.change().orElseThrow());
+    }
+
+    @Test
+    void tableResourceIsRejectedWithoutLogging() {
+        TxId tx = activeTransaction();
+        ChangeRecord tableChange = new ChangeRecord(ResourceId.ofTable("users"), NONE, IMAGE);
+
+        assertThrows(IllegalArgumentException.class, () -> bridge.logChange(tx, tableChange));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
+    void changeWithoutImagesIsRejectedWithoutLogging() {
+        TxId tx = activeTransaction();
+
+        assertThrows(
+                IllegalArgumentException.class, () -> bridge.logChange(tx, change(NONE, NONE)));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
+    void logChangeRequiresActiveTransaction() {
+        TxId tx = activeTransaction();
+        txns.transition(tx, TxStatus.FAILED);
+
+        assertThrows(IllegalStateException.class, () -> bridge.logChange(tx, change(NONE, IMAGE)));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
+    void failedLogAbortsTransactionAndKeepsFrmErrorAsCause() {
+        TxId tx = activeTransaction();
+        RecoveryInternalException logFull = new RecoveryInternalException("log full");
+        frm.writeFailure = logFull;
+
+        ConcurrencyInternalException e =
+                assertThrows(
+                        ConcurrencyInternalException.class,
+                        () -> bridge.logChange(tx, change(IMAGE, IMAGE)));
+        assertSame(logFull, e.getCause());
+        assertEquals(TxStatus.ABORTED, txns.status(tx));
+        assertEquals(
+                List.of(
+                        "writeLog T1 UPDATE [ACTIVE]",
+                        "cancelPending T1 [FAILED]",
+                        "rollback T1 [FAILED]",
+                        "release T1 ABORTED [ABORTED]"),
+                calls);
+    }
+
+    @Test
+    void runtimeLogErrorAlsoAbortsTransaction() {
+        TxId tx = activeTransaction();
+        frm.writeError = new IllegalStateException("disk gone");
+
+        assertThrows(
+                ConcurrencyInternalException.class,
+                () -> bridge.logChange(tx, change(NONE, IMAGE)));
+        assertEquals(TxStatus.ABORTED, txns.status(tx));
+    }
+
+    @Test
+    void nullLogChangeArgumentsAreRejected() {
+        TxId tx = activeTransaction();
+
+        assertThrows(NullPointerException.class, () -> bridge.logChange(tx, null));
+        assertThrows(NullPointerException.class, () -> bridge.logChange(null, change(NONE, IMAGE)));
     }
 
     @Test

@@ -1,9 +1,15 @@
 package org.rafendb.concurrency.bridge;
 
 import java.util.Objects;
+import java.util.Optional;
+import org.rafendb.api.concurrency.ConcurrencyLogging;
 import org.rafendb.api.concurrency.ConcurrencyMaintenance;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.common.error.ConcurrencyInternalException;
+import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.log.LogPayload;
+import org.rafendb.common.log.LogType;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.RecoveryInfo;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
@@ -11,16 +17,12 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
 import org.rafendb.concurrency.txn.TransactionManager;
 
-public final class FrmBridge implements ConcurrencyMaintenance {
+public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenance {
     private final RecoveryManager frm;
     private final TransactionManager txns;
     private final Protocol protocol;
     private boolean initialized;
 
-    /**
-     * Creates a bridge. Transactions stay closed until initializeAfterRecovery succeeds
-     * @throws NullPointerException if an argument is null
-     */
     public FrmBridge(RecoveryManager frm, TransactionManager txns, Protocol protocol) {
         this.frm = Objects.requireNonNull(frm, "frm");
         this.txns = Objects.requireNonNull(txns, "txns");
@@ -42,11 +44,6 @@ public final class FrmBridge implements ConcurrencyMaintenance {
         initialized = true;
     }
 
-    /**
-     * Logs BEGIN for a transaction that just began (CC-03).
-     *
-     * @throws IllegalStateException if BEGIN cannot be logged
-     */
     public void logBegin(TxId tx) {
         Objects.requireNonNull(tx, "tx");
         boolean logged;
@@ -60,14 +57,46 @@ public final class FrmBridge implements ConcurrencyMaintenance {
         }
     }
 
-    /**
-     * Commits durably (CC-03). COMMIT reaches the log before COMMITTED is set and protection is
-     * released. If COMMIT cannot be logged, the transaction is aborted.
-     *
-     * @return COMMITTED, or the current status with a reason if tx is not ACTIVE
-     * @throws IllegalArgumentException if tx is unknown
-     * @throws ConcurrencyInternalException if COMMIT cannot be logged
-     */
+    @Override
+    public long logChange(TxId tx, ChangeRecord change) throws ConcurrencyInternalException {
+        Objects.requireNonNull(tx, "tx");
+        LogType type = typeOf(change);
+        TxStatus status = txns.status(tx);
+        if (status != TxStatus.ACTIVE) {
+            throw new IllegalStateException(tx + " is " + status + " and cannot write");
+        }
+        try {
+            return frm.writeLog(LogPayload.ofChange(tx, type, change));
+        } catch (RecoveryInternalException | RuntimeException e) {
+            ConcurrencyInternalException failure =
+                    new ConcurrencyInternalException("change of " + tx + " could not be logged", e);
+            try {
+                abort(tx);
+            } catch (ConcurrencyInternalException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private static LogType typeOf(ChangeRecord change) {
+        Objects.requireNonNull(change, "change");
+        Objects.requireNonNull(change.resource(), "resource");
+        Optional<byte[]> before = Objects.requireNonNull(change.beforeImage(), "beforeImage");
+        Optional<byte[]> after = Objects.requireNonNull(change.afterImage(), "afterImage");
+        if (change.resource().isTable()) {
+            throw new IllegalArgumentException(
+                    "change needs a row, not table " + change.resource().table());
+        }
+        if (before.isEmpty() && after.isEmpty()) {
+            throw new IllegalArgumentException("change has neither a before nor an after image");
+        }
+        if (before.isEmpty()) {
+            return LogType.INSERT;
+        }
+        return after.isEmpty() ? LogType.DELETE : LogType.UPDATE;
+    }
+
     public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
         TxStatus status = txns.status(tx);
@@ -98,15 +127,6 @@ public final class FrmBridge implements ConcurrencyMaintenance {
         return new TxResult(TxStatus.COMMITTED, "");
     }
 
-    /**
-     * Single abort flow for every reason (CC-04). Protection is kept until the FRM rollback
-     * succeeds, aborting an ABORTED transaction does nothing. Synchronized so one transaction is
-     * never rolled back twice at once.
-     *
-     * @return ABORTED, or COMMITTED with a reason if tx already committed
-     * @throws IllegalArgumentException if tx is unknown
-     * @throws ConcurrencyInternalException if rollback fails; tx stays FAILED and protected
-     */
     public synchronized TxResult abort(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
         TxStatus status = txns.status(tx);
