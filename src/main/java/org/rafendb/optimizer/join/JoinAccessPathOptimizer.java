@@ -1,25 +1,34 @@
 package org.rafendb.optimizer.join;
 
+import java.util.Objects;
+import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.QueryPlan;
+import org.rafendb.optimizer.cost.CostModel;
 
-/**
- * Coordinates join and access path optimization.
- *
- * <p>The four internal stages are pass-through placeholders. Instances are stateless
- * and thread-safe.
- */
 public final class JoinAccessPathOptimizer {
-    /** Creates a join and access path optimizer. */
+    private final JoinOptimizer joins = new JoinOptimizer();
+
     public JoinAccessPathOptimizer() {}
 
+    public JoinAccessPathOptimizer(StorageManager storage) {
+        Objects.requireNonNull(storage, "storage");
+    }
+
+    public JoinAccessPathOptimizer(StorageManager storage, CostModel costs) {
+        this(storage);
+        Objects.requireNonNull(costs, "costs");
+    }
+
     /**
-     * Runs the four stages in order, currently preserving the plan, its root, and its cost.
+     * Normalizes a query plan without recalculating its cost.
      *
-     * @param plan the input query plan; must not be {@code null}
-     * @return the same plan instance, including its original root and total cost
-     * @throws NullPointerException if {@code plan} is {@code null}
+     * @param plan the validated query plan
+     * @return the normalized plan, or the original instance if unchanged
      */
     public QueryPlan optimize(QueryPlan plan) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        Objects.requireNonNull(plan, "plan");
+        PlanNode normalized = joins.normalize(plan.root());
+        return normalized == plan.root() ? plan : new QueryPlan(normalized, plan.totalCost());
     }
 }
