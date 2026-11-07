@@ -1,4 +1,4 @@
-package org.rafendb.api.processor;
+package org.rafendb.processor.api;
 
 import org.rafendb.common.txn.TxId;
 
