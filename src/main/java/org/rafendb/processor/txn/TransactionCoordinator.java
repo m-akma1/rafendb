@@ -5,7 +5,6 @@ import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.TxId;
-import org.rafendb.common.txn.TxResult;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 
