@@ -1,7 +1,7 @@
 package org.rafendb.optimizer.parser;
 
 import java.util.List;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.token.Token;
 import org.rafendb.common.token.Token.TokenType;
 

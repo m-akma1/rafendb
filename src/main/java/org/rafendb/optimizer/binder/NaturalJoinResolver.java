@@ -2,7 +2,7 @@ package org.rafendb.optimizer.binder;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.rafendb.common.error.ValidationException;
+import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;

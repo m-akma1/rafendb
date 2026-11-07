@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.rafendb.common.error.ValidationException;
+import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.query.InsertQuery;
 import org.rafendb.common.query.SelectQuery;
@@ -44,7 +44,12 @@ class QueryBinderTest {
                 (SelectQuery)
                         binder.bind(
                                 new SelectQuery(
-                                        "", List.of(), List.of("MAHASISWA"), null, null, List.of()));
+                                        "",
+                                        List.of(),
+                                        List.of("MAHASISWA"),
+                                        null,
+                                        null,
+                                        List.of()));
         assertEquals(4, bound.projection().size());
         assertEquals(new Expr.ColumnRef("mahasiswa", "nim"), bound.projection().get(0));
         assertEquals(bound, binder.bind(bound));
@@ -149,7 +154,12 @@ class QueryBinderTest {
         SelectQuery natural =
                 binder.bind(
                         new SelectQuery(
-                                "", List.of(), List.of("mahasiswa", "prodi"), null, null, List.of()),
+                                "",
+                                List.of(),
+                                List.of("mahasiswa", "prodi"),
+                                null,
+                                null,
+                                List.of()),
                         true);
         assertNotNull(natural.joinCondition());
         assertEquals(5, natural.projection().size());
@@ -168,7 +178,12 @@ class QueryBinderTest {
                 () ->
                         binder.bind(
                                 new SelectQuery(
-                                        "", List.of(), List.of("mahasiswa"), null, bad, List.of())));
+                                        "",
+                                        List.of(),
+                                        List.of("mahasiswa"),
+                                        null,
+                                        bad,
+                                        List.of())));
         Expr arithmetic =
                 new Expr.Binary(
                         Expr.Op.ADD,

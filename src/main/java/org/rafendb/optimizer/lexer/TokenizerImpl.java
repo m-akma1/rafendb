@@ -2,7 +2,7 @@ package org.rafendb.optimizer.lexer;
 
 import java.util.List;
 import java.util.Stack;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.token.SourcePosition;
 import org.rafendb.common.token.Token;
 import org.rafendb.common.token.Token.TokenType;

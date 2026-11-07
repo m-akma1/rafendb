@@ -46,7 +46,9 @@ public final class MockCatalog implements Catalog {
                         64,
                         64,
                         Map.of("nim", 100L, "nama", 100L, "ipk", 50L, "kode_prodi", 8L))
-                .index(new IndexInfo("mahasiswa_nim_idx", "mahasiswa", "nim", IndexType.BTREE))
+                .index(
+                        new IndexInfo(
+                                "mahasiswa_nim_idx", "mahasiswa", "nim", IndexType.B_PLUS_TREE))
                 .done()
                 .table("prodi")
                 .columns(
@@ -96,7 +98,10 @@ public final class MockCatalog implements Catalog {
                                 ReferentialAction.RESTRICT))
                 .index(
                         new IndexInfo(
-                                "idx_orders_customer", "orders", "customer_id", IndexType.BTREE))
+                                "idx_orders_customer",
+                                "orders",
+                                "customer_id",
+                                IndexType.B_PLUS_TREE))
                 .done()
                 .table("order_items")
                 .columns(
@@ -128,7 +133,12 @@ public final class MockCatalog implements Catalog {
                                 "orders",
                                 List.of("order_id"),
                                 ReferentialAction.RESTRICT))
-                .index(new IndexInfo("idx_items_order", "order_items", "order_id", IndexType.BTREE))
+                .index(
+                        new IndexInfo(
+                                "idx_items_order",
+                                "order_items",
+                                "order_id",
+                                IndexType.B_PLUS_TREE))
                 .done()
                 .build();
     }

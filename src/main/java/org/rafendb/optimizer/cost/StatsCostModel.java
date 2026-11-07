@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
-import org.rafendb.common.error.CostEstimationException;
+import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;

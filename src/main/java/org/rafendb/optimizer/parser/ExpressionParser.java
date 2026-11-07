@@ -7,7 +7,7 @@ import static org.rafendb.common.token.Token.TokenType.INTEGER_LITERAL;
 
 import java.util.Map;
 import java.util.function.Supplier;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;

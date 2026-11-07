@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.storage.StorageManager;
-import org.rafendb.common.error.CostEstimationException;
+import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.IndexScanNode;
