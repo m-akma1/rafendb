@@ -1,0 +1,185 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.recovery.RecoveryManager {
+	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
+	{method} +close () : void
+	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
+	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
+	{method}  {abstract} +recoverFromCrash () : boolean
+	{method}  {abstract} +recoverToPointInTime () : boolean
+	{method}  {abstract} +recoverToPointInTime ( targetTimestamp : long ) : boolean
+	{method} +redo () : boolean
+	{method}  {abstract} +rollbackTransaction ( tx : TxId ) : boolean
+	{method} +undo () : boolean
+	{method}  {abstract} +writeLog ( payload : LogPayload ) : long
+}
+
+
+class org.rafendb.recovery.FRManager {
+	{method} +beginTransaction ( tx : TxId ) : boolean
+	{method} +beginTransaction ( idTransaction : int ) : boolean
+	{method} +close () : void
+	{method} +commitTransaction ( tx : TxId ) : boolean
+	{method} +commitTransaction ( idTransaction : int ) : boolean
+	{method} +createCheckpoint () : boolean
+	{method} +forceThrough ( lsn : long ) : void
+	{method} +getTransactionStatus ( tx : TxId ) : TxStatus
+	{method} +getTransactionStatus ( idTransaction : int ) : TxStatus
+	{method} +recoverFromCrash () : boolean
+	{method} +recoverToPointInTime () : boolean
+	{method} +recoverToPointInTime ( targetTimestamp : long ) : boolean
+	{method} +redo () : boolean
+	{method} +rollbackTransaction ( tx : TxId ) : boolean
+	{method} +rollbackTransaction ( idTransaction : int ) : boolean
+	{method} +undo () : boolean
+	{method} +writeLog ( payload : LogPayload ) : long
+	{method} +writeLog ( idTransaction : int , logType : LogType , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+	{method} +writeLog ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+}
+
+
+class org.rafendb.recovery.checkpoint.CheckpointManager {
+	{method} +createCheckpoint () : boolean
+	{method} +getLastCheckpointLsn () : long
+}
+
+
+interface org.rafendb.recovery.log.ILogFlusher {
+	{method}  {abstract} +flushLogUntil ( lsn : long ) : void
+}
+
+
+enum org.rafendb.recovery.log.LogType {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +CHECKPOINT_BEGIN
+	{field} +CHECKPOINT_END
+	{field} +COMMIT
+	{field} +DELETE
+	{field} +INSERT
+	{field} +UPDATE
+}
+
+
+class org.rafendb.recovery.log.Logger {
+	{field} +lastCommittedLSN : long
+	{method} +appendRecord ( record : WALRecord ) : long <<synchronized>> 
+	{method} +close () : void <<synchronized>> 
+	{method} +displayLogs () : void
+	{method} +displayLogsByTransaction ( idTransaction : int ) : void
+	{method} +flush () : void
+	{method} +flushAll () : void <<synchronized>> 
+	{method} +flushLogUntil ( lsn : long ) : void
+	{method} +forceThrough ( lsn : long ) : void
+	{method} +getHighestTransactionId () : int
+	{method} +getLogsByTransaction ( idTransaction : int ) : List
+	{method} +getLogsSorted () : List
+	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , rid : Rid , beforeVal : String , afterVal : String ) : long <<synchronized>> 
+	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long <<synchronized>> 
+	{method} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void <<synchronized>> 
+	{method} +readAllLogs () : List
+}
+
+
+class org.rafendb.recovery.log.LoggerErrorException {
+	{method} +getErrMessage () : String
+}
+
+
+class org.rafendb.recovery.log.WALRecord {
+	{method}  {static} +deserialize ( data : byte[] ) : WALRecord
+	{method} +getAfterImage () : String
+	{method} +getAfterValue () : String
+	{method} +getBeforeImage () : String
+	{method} +getBeforeValue () : String
+	{method} +getTransactionId () : int
+	{method} +getType () : LogType
+	{method} +printWALRecord () : void
+	{method} +printWalRecord () : void
+	{method} +serialize () : byte[]
+	{method} +setAfterValue ( afterVal : String ) : void
+}
+
+
+class org.rafendb.recovery.pitr.PitrManager {
+	{method} +captureSnapshot ( timestamp : long , rows : Map ) : void <<synchronized>> 
+	{method} +getWalRecords () : List <<synchronized>> 
+	{method} +recoverToLatestCommit () : boolean <<synchronized>> 
+	{method} +recoverToTimestamp ( targetTimestamp : long ) : boolean <<synchronized>> 
+	{method} +recoverToTransaction ( transactionId : int ) : boolean <<synchronized>> 
+}
+
+
+class org.rafendb.recovery.restart.CrashRecoveryEngine {
+	{method} +analyze () : AnalysisResult <<synchronized>> 
+	{method} +recoverFromCrash () : boolean <<synchronized>> 
+	{method} +redo () : boolean <<synchronized>> 
+	{method} +undo () : boolean <<synchronized>> 
+}
+
+
+class org.rafendb.recovery.restart.CrashRecoveryEngine$AnalysisResult {
+	{method} +committedTransactions () : Set
+	{method} +highestTransactionId () : int
+	{method} +loserTransactions () : Set
+}
+
+
+interface org.rafendb.recovery.rollback.RollbackLog {
+	{method}  {abstract} +flushAll () : void
+	{method}  {abstract} +getHighestTransactionId () : int
+	{method}  {abstract} +getLogsByTransaction ( idTransaction : int ) : List
+	{method}  {abstract} +getLogsSorted () : List
+	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+	{method}  {abstract} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void
+}
+
+
+class org.rafendb.recovery.rollback.RollbackManager {
+	{method} +recoverToPointInTime ( targetTimestamp : long ) : int
+	{method} +recoverToTransaction ( idTransaction : int ) : int
+	{method} +rollback ( idTransaction : int ) : RollbackStatus
+	{method} +rollbackTransaction ( idTransaction : int ) : boolean
+}
+
+
+enum org.rafendb.recovery.rollback.RollbackStatus {
+	{field} +ALREADY_ABORTED
+	{field} +ALREADY_COMMITTED
+	{field} +ROLLED_BACK
+	{field} +UNKNOWN_TRANSACTION
+}
+
+
+interface org.rafendb.recovery.rollback.UndoStorage {
+	{method}  {abstract} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+}
+
+
+
+
+org.rafendb.recovery.FRManager *--  org.rafendb.recovery.checkpoint.CheckpointManager : checkpointManager
+org.rafendb.recovery.FRManager *--  org.rafendb.recovery.log.Logger : logger
+org.rafendb.recovery.FRManager *--  org.rafendb.recovery.restart.CrashRecoveryEngine : crashRecoveryManager
+org.rafendb.recovery.FRManager *--  org.rafendb.recovery.rollback.RollbackManager : rollbackManager
+org.rafendb.recovery.FRManager ..|>  org.rafendb.api.recovery.RecoveryManager
+org.rafendb.recovery.checkpoint.CheckpointManager *--  org.rafendb.recovery.log.Logger : logger
+org.rafendb.recovery.log.Logger "1" o-- "0..*"  org.rafendb.recovery.log.WALRecord : records
+org.rafendb.recovery.log.Logger ..|>  org.rafendb.recovery.log.ILogFlusher
+org.rafendb.recovery.log.Logger ..|>  org.rafendb.recovery.rollback.RollbackLog
+org.rafendb.recovery.log.WALRecord -->  org.rafendb.recovery.log.LogType : logType
+org.rafendb.recovery.pitr.PitrManager *--  org.rafendb.recovery.log.Logger : logger
+org.rafendb.recovery.restart.CrashRecoveryEngine *--  org.rafendb.recovery.log.Logger : logger
+org.rafendb.recovery.restart.CrashRecoveryEngine *--  org.rafendb.recovery.rollback.UndoStorage : storage
+org.rafendb.recovery.rollback.RollbackManager *--  org.rafendb.recovery.rollback.RollbackLog : logger
+org.rafendb.recovery.rollback.RollbackManager *--  org.rafendb.recovery.rollback.UndoStorage : storage
+
+
+@enduml

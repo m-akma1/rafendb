@@ -1,0 +1,61 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.processor.operator.Operator {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +next () : ResultRow
+	{method}  {abstract} +open () : void
+	{method}  {abstract} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.filter.FilterOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.join.BnlJoinOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.scan.ProjectOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.sort.SortOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+
+
+org.rafendb.processor.operator.filter.FilterOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.filter.FilterOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : inner
+org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : outer
+org.rafendb.processor.operator.join.BnlJoinOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.scan.ProjectOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.scan.ProjectOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.sort.SortOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.sort.SortOp ..|>  org.rafendb.processor.operator.Operator
+
+
+@enduml

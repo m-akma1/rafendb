@@ -1,0 +1,54 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.protocol.LockBasedProtocol {
+	{method} +cancelPending ( tx : TxId ) : void
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean
+	{method} +release ( tx : TxId , outcome : TxStatus ) : void
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+	{method} +reset () : void
+	{method} +selectDeadlockVictim () : Optional
+	{method} +type () : ProtocolType
+}
+
+
+interface org.rafendb.concurrency.protocol.Protocol {
+	{method}  {abstract} +cancelPending ( tx : TxId ) : void
+	{method}  {abstract} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean
+	{method}  {abstract} +release ( tx : TxId , outcome : TxStatus ) : void
+	{method}  {abstract} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+	{method}  {abstract} +reset () : void
+	{method}  {abstract} +selectDeadlockVictim () : Optional
+	{method}  {abstract} +type () : ProtocolType
+}
+
+
+enum org.rafendb.concurrency.protocol.Protocol$Decision {
+	{field} +ABORT_REQUIRED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+class org.rafendb.concurrency.protocol.TimestampBasedProtocol {
+	{method} +cancelPending ( tx : TxId ) : void
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +release ( tx : TxId , outcome : TxStatus ) : void <<synchronized>> 
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision <<synchronized>> 
+	{method} +reset () : void <<synchronized>> 
+	{method} +selectDeadlockVictim () : Optional
+	{method} +type () : ProtocolType
+}
+
+
+
+
+org.rafendb.concurrency.protocol.LockBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
+org.rafendb.concurrency.protocol.TimestampBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
+
+
+@enduml
