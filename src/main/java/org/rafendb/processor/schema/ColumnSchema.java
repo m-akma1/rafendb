@@ -1,4 +1,4 @@
-package org.rafendb.common.schema;
+package org.rafendb.processor.schema;
 
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;

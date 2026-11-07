@@ -1,6 +1,7 @@
-package org.rafendb.api.processor;
+package org.rafendb.processor.plan;
 
 import org.rafendb.common.plan.QueryPlan;
+import org.rafendb.processor.execution.ExecutionPlan;
 
 /**
  * Rancangan batas internal QP untuk menyiapkan eksekusi dari plan QO.

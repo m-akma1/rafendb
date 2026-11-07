@@ -1,8 +1,9 @@
-package org.rafendb.common.plan;
+package org.rafendb.processor.plan.command;
 
 import java.util.List;
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.plan.PlanNode;
 
 /** Local placeholder payload; only the node name and PlanNode boundary were supplied by QO. */
 public record DeletePlanNode(String table, java.util.Optional<Expr> condition) implements PlanNode {

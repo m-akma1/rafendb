@@ -1,8 +1,8 @@
-package org.rafendb.api.processor;
+package org.rafendb.processor.operator;
 
 import java.util.List;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Kontrak pembacaan baris. Setiap objek dipakai untuk satu eksekusi dan tidak aman dipakai bersamaan.

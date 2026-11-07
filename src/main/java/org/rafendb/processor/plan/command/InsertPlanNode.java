@@ -1,7 +1,8 @@
-package org.rafendb.common.plan;
+package org.rafendb.processor.plan.command;
 
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.type.Value;
 
 /** Local placeholder payload; only the node name and PlanNode boundary were supplied by QO. */

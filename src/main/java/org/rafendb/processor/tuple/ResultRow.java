@@ -1,8 +1,9 @@
-package org.rafendb.common.tuple;
+package org.rafendb.processor.tuple;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.type.Value;
 
 /** Nilai baris sesuai urutan schema operator. Rid boleh null untuk hasil tanpa identitas record. */

@@ -1,15 +1,15 @@
 package org.rafendb.processor.plan;
 
 import java.util.List;
-import org.rafendb.api.processor.ExecutionPlan;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.plan.CreateIndexPlanNode;
-import org.rafendb.common.plan.DeletePlanNode;
 import org.rafendb.common.plan.IndexScanNode;
-import org.rafendb.common.plan.InsertPlanNode;
 import org.rafendb.common.plan.TableScanNode;
-import org.rafendb.common.plan.UpdatePlanNode;
+import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.InsertPlanNode;
+import org.rafendb.processor.plan.command.UpdatePlanNode;
 
 /**
  * Membentuk operator dan aksi tanpa menjalankan query atau mengubah storage.

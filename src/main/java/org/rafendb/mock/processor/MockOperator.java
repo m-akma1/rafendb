@@ -1,9 +1,9 @@
 package org.rafendb.mock.processor;
 
 import java.util.List;
-import org.rafendb.api.processor.Operator;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /** Operator mock dengan data di memori untuk integrasi QP4. Belum menjalankan scan, join, atau sort. */
 public final class MockOperator implements Operator {

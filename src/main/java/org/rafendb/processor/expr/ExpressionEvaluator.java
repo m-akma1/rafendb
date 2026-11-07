@@ -1,11 +1,10 @@
-package org.rafendb.api.processor;
+package org.rafendb.processor.expr;
 
 import java.util.List;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
-import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Mengevaluasi expression dan kondisi berdasarkan row dan schema input operator.
