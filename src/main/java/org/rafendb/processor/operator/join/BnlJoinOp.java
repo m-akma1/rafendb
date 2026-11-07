@@ -4,13 +4,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.ExpressionEvaluator;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.expr.ExpressionEvaluator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * An operator that performs a Block Nested Loop Join (BNLJ) between two input operators.
