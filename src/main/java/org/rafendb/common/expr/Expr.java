@@ -24,6 +24,9 @@ public sealed interface Expr {
      */
     record Literal(Value value) implements Expr {}
 
+    /** An untyped SQL NULL literal. */
+    record Null() implements Expr {}
+
     /**
      * A binary operation. {@code AND} chains are left-nested: {@code a AND b AND c} is {@code
      * AND(AND(a, b), c)}.

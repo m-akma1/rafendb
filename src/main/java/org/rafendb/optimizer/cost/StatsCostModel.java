@@ -273,9 +273,18 @@ public final class StatsCostModel implements CostModel {
         }
 
         double selectivity(Expr expr, PlanNode node) {
+            if (expr instanceof Expr.Null) return 0;
             if (!(expr instanceof Expr.Binary binary)) return parameters.defaultEqSelectivity();
             if (binary.op() == Expr.Op.AND)
                 return selectivity(binary.left(), node) * selectivity(binary.right(), node);
+            if (binary.op() == Expr.Op.EQ
+                    || binary.op() == Expr.Op.NE
+                    || binary.op() == Expr.Op.GT
+                    || binary.op() == Expr.Op.GE
+                    || binary.op() == Expr.Op.LT
+                    || binary.op() == Expr.Op.LE) {
+                if (isNullValue(binary.left()) || isNullValue(binary.right())) return 0;
+            }
             if (binary.op() == Expr.Op.GT
                     || binary.op() == Expr.Op.GE
                     || binary.op() == Expr.Op.LT
@@ -283,6 +292,21 @@ public final class StatsCostModel implements CostModel {
             if (binary.op() == Expr.Op.NE) return 1 - equality(binary.left(), binary.right(), node);
             if (binary.op() == Expr.Op.EQ) return equality(binary.left(), binary.right(), node);
             return parameters.defaultEqSelectivity();
+        }
+
+        boolean isNullValue(Expr expr) {
+            if (expr instanceof Expr.Null) return true;
+            if (expr instanceof Expr.Literal literal) return literal.value().isNull();
+            if (expr instanceof Expr.Binary binary) {
+                return binary.op() == Expr.Op.ADD
+                        || binary.op() == Expr.Op.SUB
+                        || binary.op() == Expr.Op.MUL
+                        || binary.op() == Expr.Op.DIV
+                        || binary.op() == Expr.Op.MOD
+                        ? isNullValue(binary.left()) || isNullValue(binary.right())
+                        : false;
+            }
+            return false;
         }
 
         double equality(Expr a, Expr b, PlanNode node) {
