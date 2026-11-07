@@ -36,8 +36,8 @@ public final class FilterOp implements Operator {
     }
 
     /**
-     * Buka child dari awal terus simpen schema-nya. Kalau child gagal dibuka, FilterOp tetap
-     * dianggap belum kebuka (next() lempar ISE).
+     * Buka child dari awal terus simpen schema-nya. Kalau child gagal dibuka, operator ini tetap
+     * ketutup, jadi next() bakal error.
      */
     @Override
     public void open() {

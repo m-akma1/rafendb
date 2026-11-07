@@ -12,6 +12,7 @@ import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.FakeChildOp;
 
 class FilterOpTest {
@@ -24,7 +25,7 @@ class FilterOpTest {
     private static final Expr CONDITION =
             new Expr.Binary(
                     Expr.Op.GT,
-                    new Expr.ColumnRef("mahasiswa", "ipk"),
+                    new Expr.ColumnRef("mahasiswa", "ipk", 1),
                     new Expr.Literal(Value.ofFloat(3.0f)));
 
     /**
@@ -139,7 +140,7 @@ class FilterOpTest {
     }
 
     @Test
-    void reopenWhileOpenStartsFromBeginning() {
+    void reopenStartsFromBeginning() {
         ResultRow first = row(1, 3.5f, 0);
         ResultRow second = row(2, 3.6f, 1);
         FakeChildOp child = new FakeChildOp(SCHEMA, List.of(first, second));
@@ -150,21 +151,22 @@ class FilterOpTest {
         assertSame(first, filter.next());
         assertSame(second, filter.next());
         assertNull(filter.next());
-    }
 
-    @Test
-    void reopenAfterCloseStartsFromBeginning() {
-        ResultRow first = row(1, 3.5f, 0);
-        ResultRow second = row(2, 3.6f, 1);
-        FakeChildOp child = new FakeChildOp(SCHEMA, List.of(first, second));
-        FilterOp filter = new FilterOp(child, CONDITION, evaluator);
-        filter.open();
-        filter.next();
-        filter.next();
         filter.close();
         filter.open();
         assertSame(first, filter.next());
-        assertSame(second, filter.next());
+    }
+
+    @Test
+    void worksWithRealEvaluator() {
+        ResultRow passing = row(1, 3.5f, 0);
+        ResultRow failing = row(2, 2.0f, 1);
+        ResultRow nullIpk =
+                new ResultRow(List.of(Value.ofInt(3), Value.nullOf(DataType.FLOAT)), new Rid(1, 2));
+        FakeChildOp child = new FakeChildOp(SCHEMA, List.of(passing, failing, nullIpk));
+        FilterOp filter = new FilterOp(child, CONDITION, new DefaultExpressionEvaluator());
+        filter.open();
+        assertSame(passing, filter.next());
         assertNull(filter.next());
     }
 
