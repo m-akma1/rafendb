@@ -27,7 +27,7 @@ public final class ConcurrencyControlManager implements ConcurrencyControl, Conc
     private final Protocol protocol;
     private final FrmBridge bridge;
 
-    
+
     public ConcurrencyControlManager(TransactionManager txns, Protocol protocol, RecoveryManager frm) {
             this.txns = Objects.requireNonNull(txns, "txns");
             this.protocol = Objects.requireNonNull(protocol, "protocol");
@@ -42,7 +42,7 @@ public final class ConcurrencyControlManager implements ConcurrencyControl, Conc
     }
 
     @Override
-    public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
+    public synchronized AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(resource, "resource");
         TxStatus status = txns.status(tx);
@@ -57,7 +57,13 @@ public final class ConcurrencyControlManager implements ConcurrencyControl, Conc
         ResourceId table = ResourceId.ofTable(resource.table().strip().toLowerCase(Locale.ROOT));
         return switch (protocol.requestAccess(tx, txns.timestamp(tx), type, table)) {
             case ALLOWED -> AccessResult.allowed();
-            case WAITING -> AccessResult.waiting();
+            case WAITING -> {
+                if (protocol.selectDeadlockVictim().filter(tx::equals).isPresent()) {
+                    abortAfterViolation(tx);
+                    yield AccessResult.aborted(abortedMessage(tx));
+                }
+                yield AccessResult.waiting();
+            }
             case ABORT_REQUIRED -> {
                 abortAfterViolation(tx);
                 yield AccessResult.aborted(abortedMessage(tx));
@@ -78,12 +84,12 @@ public final class ConcurrencyControlManager implements ConcurrencyControl, Conc
     }
 
     @Override
-    public TxResult commit(TxId tx) throws ConcurrencyInternalException {
+    public synchronized TxResult commit(TxId tx) throws ConcurrencyInternalException {
         return bridge.commit(tx);
     }
 
     @Override
-    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
+    public synchronized TxResult abort(TxId tx) throws ConcurrencyInternalException {
         return bridge.abort(tx);
     }
 
