@@ -1,0 +1,12 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+
+
+
+
+@enduml

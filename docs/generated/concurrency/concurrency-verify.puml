@@ -1,0 +1,37 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.verify.PrecedenceGraphVerifier {
+	{method} +verify ( schedule : List , committed : Set ) : Result
+}
+
+
+interface org.rafendb.concurrency.verify.SerializabilityVerifier {
+	{method}  {abstract} +verify ( schedule : List , committed : Set ) : Result
+}
+
+
+class org.rafendb.concurrency.verify.SerializabilityVerifier$Access {
+	{method} +resource () : ResourceId
+	{method} +tx () : TxId
+	{method} +type () : AccessType
+}
+
+
+class org.rafendb.concurrency.verify.SerializabilityVerifier$Result {
+	{method} +graph () : Map
+	{method} +serialOrder () : List
+	{method} +serializable () : boolean
+}
+
+
+
+
+org.rafendb.concurrency.verify.PrecedenceGraphVerifier ..|>  org.rafendb.concurrency.verify.SerializabilityVerifier
+
+
+@enduml

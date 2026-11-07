@@ -1,0 +1,38 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.catalog.CachingCatalog {
+	{method} +getSchema ( table : String ) : TableSchema
+	{method} +listIndexes ( table : String ) : List
+	{method} +listTables () : List
+}
+
+
+interface org.rafendb.optimizer.catalog.Catalog {
+	{method}  {abstract} +getSchema ( table : String ) : TableSchema
+	{method}  {abstract} +getStats ( table : String ) : TableStats
+	{method}  {abstract} +listIndexes ( table : String ) : List
+	{method}  {abstract} +listTables () : List
+}
+
+
+class org.rafendb.optimizer.catalog.StorageManagerCatalog {
+	{method} +getSchema ( table : String ) : TableSchema
+	{method} +getStats ( table : String ) : TableStats
+	{method} +listIndexes ( table : String ) : List
+	{method} +listTables () : List
+}
+
+
+
+
+org.rafendb.optimizer.catalog.CachingCatalog *--  org.rafendb.optimizer.catalog.Catalog : delegate
+org.rafendb.optimizer.catalog.CachingCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
+org.rafendb.optimizer.catalog.StorageManagerCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
+
+
+@enduml

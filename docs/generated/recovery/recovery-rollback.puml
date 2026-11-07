@@ -1,0 +1,45 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.recovery.rollback.RollbackLog {
+	{method}  {abstract} +flushAll () : void
+	{method}  {abstract} +getHighestTransactionId () : int
+	{method}  {abstract} +getLogsByTransaction ( idTransaction : int ) : List
+	{method}  {abstract} +getLogsSorted () : List
+	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+	{method}  {abstract} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void
+}
+
+
+class org.rafendb.recovery.rollback.RollbackManager {
+	{method} +recoverToPointInTime ( targetTimestamp : long ) : int
+	{method} +recoverToTransaction ( idTransaction : int ) : int
+	{method} +rollback ( idTransaction : int ) : RollbackStatus
+	{method} +rollbackTransaction ( idTransaction : int ) : boolean
+}
+
+
+enum org.rafendb.recovery.rollback.RollbackStatus {
+	{field} +ALREADY_ABORTED
+	{field} +ALREADY_COMMITTED
+	{field} +ROLLED_BACK
+	{field} +UNKNOWN_TRANSACTION
+}
+
+
+interface org.rafendb.recovery.rollback.UndoStorage {
+	{method}  {abstract} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+}
+
+
+
+
+org.rafendb.recovery.rollback.RollbackManager *--  org.rafendb.recovery.rollback.RollbackLog : logger
+org.rafendb.recovery.rollback.RollbackManager *--  org.rafendb.recovery.rollback.UndoStorage : storage
+
+
+@enduml

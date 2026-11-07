@@ -1,0 +1,33 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.expr.DefaultExpressionEvaluator {
+	{method} +evaluate ( expression : Expr , row : ResultRow , schema : List ) : Value
+	{method} +evaluateCondition ( condition : Expr , row : ResultRow , schema : List ) : TruthValue
+}
+
+
+interface org.rafendb.processor.expr.ExpressionEvaluator {
+	{method}  {abstract} +evaluate ( expression : Expr , row : ResultRow , schema : List ) : Value
+	{method}  {abstract} +evaluateCondition ( condition : Expr , row : ResultRow , schema : List ) : TruthValue
+	{method} +test ( condition : Expr , row : ResultRow , schema : List ) : boolean
+}
+
+
+enum org.rafendb.processor.expr.TruthValue {
+	{field} +FALSE
+	{field} +TRUE
+	{field} +UNKNOWN
+}
+
+
+
+
+org.rafendb.processor.expr.DefaultExpressionEvaluator ..|>  org.rafendb.processor.expr.ExpressionEvaluator
+
+
+@enduml
