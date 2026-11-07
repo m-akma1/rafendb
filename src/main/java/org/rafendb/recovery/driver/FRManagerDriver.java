@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import org.rafendb.api.recovery.LogPayload;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
@@ -115,9 +114,7 @@ public class FRManagerDriver {
 
         // Record awal
         storage.put("account", 101, "Alice:100");
-        frm.writeLog(
-                LogPayload.ofDataChange(
-                        tx1, LogType.UPDATE, "account", 101, "Alice:100", "Alice:250"));
+        frm.writeLog(tx1, LogType.UPDATE, "account", 101, "Alice:100", "Alice:250");
         storage.put("account", 101, "Alice:250");
 
         // Rollback Tx1
@@ -148,17 +145,13 @@ public class FRManagerDriver {
 
         // 1. Transaksi 1 committed
         frm.beginTransaction(1);
-        frm.writeLog(
-                LogPayload.ofDataChange(
-                        1, LogType.INSERT, "accounts", 101, null, "User1-Committed"));
+        frm.writeLog(1, LogType.INSERT, "accounts", 101, null, "User1-Committed");
         storage.put("accounts", 101, "User1-Committed");
         frm.commitTransaction(1);
 
         // 2. Transaksi 2 belum commit saat crash
         frm.beginTransaction(2);
-        frm.writeLog(
-                LogPayload.ofDataChange(
-                        2, LogType.UPDATE, "accounts", 101, "User1-Committed", "User1-Dirty"));
+        frm.writeLog(2, LogType.UPDATE, "accounts", 101, "User1-Committed", "User1-Dirty");
         storage.put("accounts", 101, "User1-Dirty");
 
         // 3. Simulasi crash mendadak dan restart dari disk
@@ -187,18 +180,18 @@ public class FRManagerDriver {
         frm.beginTransaction(3);
 
         // T1 write
-        frm.writeLog(LogPayload.ofDataChange(1, LogType.INSERT, "ledger", 10, null, "Val-T1"));
+        frm.writeLog(1, LogType.INSERT, "ledger", 10, null, "Val-T1");
         storage.put("ledger", 10, "Val-T1");
 
         // T2 write (interleaved)
-        frm.writeLog(LogPayload.ofDataChange(2, LogType.INSERT, "ledger", 20, null, "Val-T2"));
+        frm.writeLog(2, LogType.INSERT, "ledger", 20, null, "Val-T2");
         storage.put("ledger", 20, "Val-T2");
 
         // T1 commit
         boolean t1Commit = frm.commitTransaction(1);
 
         // T3 write
-        frm.writeLog(LogPayload.ofDataChange(3, LogType.INSERT, "ledger", 30, null, "Val-T3"));
+        frm.writeLog(3, LogType.INSERT, "ledger", 30, null, "Val-T3");
         storage.put("ledger", 30, "Val-T3");
 
         // T3 commit
@@ -221,7 +214,7 @@ public class FRManagerDriver {
         initNewEnvironment();
 
         frm.beginTransaction(1);
-        frm.writeLog(LogPayload.ofDataChange(1, LogType.INSERT, "docs", 1, null, "Version1"));
+        frm.writeLog(1, LogType.INSERT, "docs", 1, null, "Version1");
         storage.put("docs", 1, "Version1");
         frm.commitTransaction(1);
 
@@ -232,7 +225,7 @@ public class FRManagerDriver {
         }
 
         frm.beginTransaction(2);
-        frm.writeLog(LogPayload.ofDataChange(2, LogType.UPDATE, "docs", 1, "Version1", "Version2"));
+        frm.writeLog(2, LogType.UPDATE, "docs", 1, "Version1", "Version2");
         storage.put("docs", 1, "Version2");
         frm.commitTransaction(2);
 

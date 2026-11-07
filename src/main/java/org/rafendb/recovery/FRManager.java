@@ -1,22 +1,25 @@
 package org.rafendb.recovery;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import org.rafendb.api.recovery.LogPayload;
-import org.rafendb.api.recovery.LoggerErrorException;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
+import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
 import org.rafendb.recovery.restart.CrashRecoveryEngine;
 import org.rafendb.recovery.rollback.RollbackManager;
@@ -139,38 +142,77 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Menuliskan record ke log WAL sesuai payload yang diberikan.
+     * Overload praktis untuk mencatat perubahan data langsung ke WAL logger dengan timestamp saat ini.
      *
-     * <p>Meneruskan pencatatan ke {@link Logger}. Mengembalikan nomor urut LSN yang dialokasikan,
-     * atau melempar {@link LoggerErrorException} jika penulisan gagal, sehingga komponen pemanggil
-     * (CCM/QP) dapat menempelkan LSN ke dirty page dan membatalkan operasi sesuai aturan WAL.
-     *
-     * @param payload payload data perubahan atau peristiwa transaksi
-     * @return nomor LSN yang dialokasikan (positif), atau -1 jika payload null
+     * @param idTransaction id transaksi
+     * @param logType jenis operasi
+     * @param tableName nama tabel
+     * @param idRecord id record
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
      * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
      */
-    public long writeLog(LogPayload payload) throws LoggerErrorException {
-        if (payload == null) {
-            return -1;
-        }
+    public long writeLog(
+            int idTransaction,
+            LogType logType,
+            String tableName,
+            int idRecord,
+            String beforeVal,
+            String afterVal) {
+        return writeLog(
+                idTransaction,
+                logType,
+                System.currentTimeMillis(),
+                tableName,
+                idRecord,
+                beforeVal,
+                afterVal);
+    }
+
+    /**
+     * Overload praktis untuk mencatat perubahan data langsung ke WAL logger dengan timestamp tertentu.
+     *
+     * @param idTransaction id transaksi
+     * @param logType jenis operasi
+     * @param timestamp timestamp epoch milidetik
+     * @param tableName nama tabel
+     * @param idRecord id record
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
+     * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
+     */
+    public long writeLog(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            int idRecord,
+            String beforeVal,
+            String afterVal) {
+        Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
+        ChangeRecord change =
+                new ChangeRecord(
+                        rid != null
+                                ? ResourceId.ofRow(tableName, rid)
+                                : ResourceId.ofTable(tableName),
+                        Optional.ofNullable(
+                                beforeVal != null
+                                        ? beforeVal.getBytes(StandardCharsets.UTF_8)
+                                        : null),
+                        Optional.ofNullable(
+                                afterVal != null
+                                        ? afterVal.getBytes(StandardCharsets.UTF_8)
+                                        : null));
+        org.rafendb.common.log.LogType commonType =
+                org.rafendb.common.log.LogType.valueOf(logType.name());
+        LogPayload payload =
+                new LogPayload(new TxId(idTransaction), commonType, timestamp, Optional.of(change));
         try {
-            if (payload.opType().isDataChange()) {
-                return logger.logDataChange(
-                        payload.idTransaction(),
-                        payload.opType(),
-                        payload.timestamp(),
-                        payload.tableName(),
-                        payload.idRecord(),
-                        payload.beforeVal(),
-                        payload.afterVal());
-            } else {
-                logger.logTransactionEvent(payload.idTransaction(), payload.opType());
-                return logger.getCurrentLSN();
-            }
-        } catch (LoggerErrorException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new LoggerErrorException("Failed to write log record", e);
+            return writeLog(payload);
+        } catch (RecoveryInternalException e) {
+            throw new LoggerErrorException("Failed to write log", e);
         }
     }
 

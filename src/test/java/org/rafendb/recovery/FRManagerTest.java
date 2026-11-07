@@ -10,8 +10,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.rafendb.api.recovery.LogPayload;
+import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.ResourceId;
+import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
@@ -59,22 +62,24 @@ class FRManagerTest {
     void testBeginAndWriteLogAndCommit() {
         assertTrue(frm.beginTransaction(1));
 
-        LogPayload payload =
-                LogPayload.ofDataChange(1, LogType.INSERT, "customers", 10, null, "Bob");
-        long lsn = frm.writeLog(payload);
+        long lsn = frm.writeLog(1, LogType.INSERT, "customers", 10, null, "Bob");
         assertTrue(lsn > 0);
 
         assertTrue(frm.commitTransaction(1));
     }
 
     @Test
-    void testWriteLogWithRidAndRow() {
+    void testWriteLogWithRidAndRow() throws Exception {
         assertTrue(frm.beginTransaction(5));
 
         Rid rid = new Rid(1, 2);
+        ChangeRecord change =
+                new ChangeRecord(
+                        ResourceId.ofRow("accounts", rid),
+                        Optional.empty(),
+                        Optional.of(new byte[] {1, 2, 3}));
         LogPayload payload =
-                LogPayload.ofDataChange(
-                        5, LogType.INSERT, "accounts", rid, Optional.empty(), Optional.empty());
+                LogPayload.ofChange(new TxId(5), org.rafendb.common.log.LogType.INSERT, change);
         long lsn = frm.writeLog(payload);
         assertTrue(lsn > 0);
         assertTrue(frm.commitTransaction(5));
@@ -85,10 +90,7 @@ class FRManagerTest {
         assertTrue(frm.beginTransaction(2));
         storage.data.put("customers#20", "Charlie-Old");
 
-        LogPayload payload =
-                LogPayload.ofDataChange(
-                        2, LogType.UPDATE, "customers", 20, "Charlie-Old", "Charlie-New");
-        long lsn = frm.writeLog(payload);
+        long lsn = frm.writeLog(2, LogType.UPDATE, "customers", 20, "Charlie-Old", "Charlie-New");
         assertTrue(lsn > 0);
         storage.data.put("customers#20", "Charlie-New");
 
@@ -104,7 +106,7 @@ class FRManagerTest {
     @Test
     void testRecoverToPointInTime() {
         frm.beginTransaction(1);
-        frm.writeLog(LogPayload.ofDataChange(1, LogType.INSERT, "users", 1, null, "Alice"));
+        frm.writeLog(1, LogType.INSERT, "users", 1, null, "Alice");
         storage.data.put("users#1", "Alice");
         frm.commitTransaction(1);
 
@@ -115,8 +117,7 @@ class FRManagerTest {
         }
 
         frm.beginTransaction(2);
-        frm.writeLog(
-                LogPayload.ofDataChange(2, LogType.UPDATE, "users", 1, "Alice", "Alice-Modified"));
+        frm.writeLog(2, LogType.UPDATE, "users", 1, "Alice", "Alice-Modified");
         storage.data.put("users#1", "Alice-Modified");
         frm.commitTransaction(2);
 
@@ -128,7 +129,7 @@ class FRManagerTest {
     void testPitrExcludesOldChangeFromTransactionCommittedAfterTarget()
             throws InterruptedException {
         frm.beginTransaction(1);
-        frm.writeLog(LogPayload.ofDataChange(1, LogType.INSERT, "users", 1, null, "Alice"));
+        frm.writeLog(1, LogType.INSERT, "users", 1, null, "Alice");
         storage.data.put("users#1", "Alice");
         frm.commitTransaction(1);
         long targetTimestamp =
@@ -143,8 +144,7 @@ class FRManagerTest {
             Thread.sleep(1);
         }
         frm.beginTransaction(2);
-        frm.writeLog(
-                new LogPayload(2, LogType.INSERT, targetTimestamp - 1, "users", 2, null, "Bob"));
+        frm.writeLog(2, LogType.INSERT, targetTimestamp - 1, "users", 2, null, "Bob");
         storage.data.put("users#2", "Bob");
         frm.commitTransaction(2);
 
@@ -163,15 +163,7 @@ class FRManagerTest {
     @Test
     void testWalSyncForceThrough() {
         frm.beginTransaction(1);
-        LogPayload payload =
-                LogPayload.ofDataChange(
-                        1,
-                        LogType.INSERT,
-                        "products",
-                        new Rid(2, 5),
-                        Optional.empty(),
-                        Optional.empty());
-        long lsn = frm.writeLog(payload);
+        long lsn = frm.writeLog(1, LogType.INSERT, "products", 2005, null, "Item1");
         assertTrue(lsn > 0);
 
         assertDoesNotThrow(() -> frm.forceThrough(lsn));
