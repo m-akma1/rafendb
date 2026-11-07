@@ -23,6 +23,8 @@ import org.rafendb.concurrency.txn.TransactionManager;
 
 public final class ConcurrencyControlManager
         implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
+    private static final System.Logger LOGGER =
+            System.getLogger(ConcurrencyControlManager.class.getName());
     private final TransactionManager txns;
     private final Protocol protocol;
     private final FrmBridge bridge;
@@ -53,7 +55,7 @@ public final class ConcurrencyControlManager
             switch (status) {
                 case ACTIVE -> {}
                 case FAILED, ABORTED -> {
-                    return AccessResult.aborted(abortedMessage(tx));
+                    return AccessResult.aborted(rejectedMessage(tx, status));
                 }
                 case PARTIALLY_COMMITTED, COMMITTED ->
                         throw new IllegalStateException(tx + " is already " + status);
@@ -76,7 +78,7 @@ public final class ConcurrencyControlManager
             abortAfterViolation(victim);
         }
         if (tx.equals(victim)) {
-            return AccessResult.aborted(abortedMessage(tx));
+            return AccessResult.aborted(rejectedMessage(tx, txns.status(tx)));
         }
         return switch (decision) {
             case ALLOWED -> AccessResult.allowed();
@@ -89,12 +91,14 @@ public final class ConcurrencyControlManager
         try {
             bridge.abort(tx);
         } catch (ConcurrencyInternalException e) {
-
+            LOGGER.log(System.Logger.Level.ERROR, "Rollback failed for " + tx, e);
         }
     }
 
-    private static String abortedMessage(TxId tx) {
-        return tx + " has been aborted";
+    private static String rejectedMessage(TxId tx, TxStatus status) {
+        return status == TxStatus.FAILED
+                ? tx + " cannot continue; rollback is incomplete, retry abort"
+                : tx + " has been aborted";
     }
 
     @Override
