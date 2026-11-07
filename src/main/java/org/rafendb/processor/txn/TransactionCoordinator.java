@@ -69,11 +69,11 @@ public class TransactionCoordinator {
         if (this.execContext.getSContext().getCurrentTxId() != null) {
             throw new IllegalStateException("The session already have running transaction");
         }
+
         TxId newTxId = this.execContext.getConcurrencyControl().begin();
         if (newTxId != null) {
             this.execContext.getSContext().setCurrentTxId(newTxId);
         }
-
 
     }
 
