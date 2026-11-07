@@ -9,26 +9,22 @@ import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
+import org.rafendb.concurrency.txn.TransactionManager;
 
 public final class FrmBridge implements ConcurrencyMaintenance {
     private final RecoveryManager frm;
-    private final TransactionStates states;
+    private final TransactionManager txns;
     private final Protocol protocol;
-    private volatile boolean admitting;
+    private boolean initialized;
 
     /**
-     * Creates a bridge with admission closed
+     * Creates a bridge. Transactions stay closed until initializeAfterRecovery succeeds
      * @throws NullPointerException if an argument is null
      */
-    public FrmBridge(RecoveryManager frm, TransactionStates states, Protocol protocol) {
+    public FrmBridge(RecoveryManager frm, TransactionManager txns, Protocol protocol) {
         this.frm = Objects.requireNonNull(frm, "frm");
-        this.states = Objects.requireNonNull(states, "states");
+        this.txns = Objects.requireNonNull(txns, "txns");
         this.protocol = Objects.requireNonNull(protocol, "protocol");
-    }
-
-    /** Returns true once initializeAfterRecovery has succeeded. */
-    public boolean isAdmitting() {
-        return admitting;
     }
 
     @Override
@@ -38,24 +34,21 @@ public final class FrmBridge implements ConcurrencyMaintenance {
             throw new IllegalArgumentException(
                     "high-water marks must not be negative: " + recovery);
         }
-        if (admitting) {
+        if (initialized) {
             throw new IllegalStateException("CCM is already initialized after recovery");
         }
-        states.resetAbove(Math.max(recovery.maxTransactionId(), recovery.maxTimestamp()));
         protocol.reset();
-        admitting = true;
+        txns.open(Math.max(recovery.maxTransactionId(), recovery.maxTimestamp()));
+        initialized = true;
     }
 
     /**
-     * Logs BEGIN for a new transaction (CC-03).
+     * Logs BEGIN for a transaction that just began (CC-03).
      *
-     * @throws IllegalStateException if admission is closed or BEGIN cannot be logged
+     * @throws IllegalStateException if BEGIN cannot be logged
      */
     public void logBegin(TxId tx) {
         Objects.requireNonNull(tx, "tx");
-        if (!admitting) {
-            throw new IllegalStateException("CCM is not accepting transactions before recovery");
-        }
         boolean logged;
         try {
             logged = frm.beginTransaction(tx);
@@ -77,11 +70,11 @@ public final class FrmBridge implements ConcurrencyMaintenance {
      */
     public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
-        TxStatus status = states.status(tx);
+        TxStatus status = txns.status(tx);
         if (status != TxStatus.ACTIVE) {
             return new TxResult(status, tx + " is " + status + " and cannot commit");
         }
-        states.setStatus(tx, TxStatus.PARTIALLY_COMMITTED);
+        txns.transition(tx, TxStatus.PARTIALLY_COMMITTED);
         boolean durable = false;
         RuntimeException error = null;
         try {
@@ -100,7 +93,7 @@ public final class FrmBridge implements ConcurrencyMaintenance {
             }
             throw failure;
         }
-        states.setStatus(tx, TxStatus.COMMITTED);
+        txns.transition(tx, TxStatus.COMMITTED);
         protocol.release(tx, TxStatus.COMMITTED);
         return new TxResult(TxStatus.COMMITTED, "");
     }
@@ -116,7 +109,7 @@ public final class FrmBridge implements ConcurrencyMaintenance {
      */
     public synchronized TxResult abort(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
-        TxStatus status = states.status(tx);
+        TxStatus status = txns.status(tx);
         if (status == TxStatus.ABORTED) {
             return new TxResult(TxStatus.ABORTED, "");
         }
@@ -124,7 +117,7 @@ public final class FrmBridge implements ConcurrencyMaintenance {
             return new TxResult(TxStatus.COMMITTED, tx + " is committed and cannot be aborted");
         }
         if (status != TxStatus.FAILED) {
-            states.setStatus(tx, TxStatus.FAILED);
+            txns.transition(tx, TxStatus.FAILED);
         }
         protocol.cancelPending(tx);
         boolean rolledBack;
@@ -136,7 +129,7 @@ public final class FrmBridge implements ConcurrencyMaintenance {
         if (!rolledBack) {
             throw new ConcurrencyInternalException("rollback of " + tx + " failed");
         }
-        states.setStatus(tx, TxStatus.ABORTED);
+        txns.transition(tx, TxStatus.ABORTED);
         protocol.release(tx, TxStatus.ABORTED);
         return new TxResult(TxStatus.ABORTED, "");
     }

@@ -1,10 +1,9 @@
 /**
  * FRM bridge (CC-03 to CC-05): forwarding to FRM under WAL through {@link
  * org.rafendb.api.recovery.RecoveryManager}, the single abort flow, and post-recovery
- * initialization. Protection is released through the active {@link
- * org.rafendb.concurrency.protocol.Protocol}. {@link
- * org.rafendb.concurrency.bridge.TransactionStates} stands in for the coordinator's transaction
- * table until CC1's code exists.
+ * initialization. Status changes go through {@link
+ * org.rafendb.concurrency.txn.TransactionManager}, and protection is released through the active
+ * {@link org.rafendb.concurrency.protocol.Protocol}.
  *
  * <p>Owner: G2 Concurrency Control Manager (CC3).
  */

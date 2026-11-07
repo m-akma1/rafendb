@@ -11,46 +11,54 @@ import org.rafendb.common.txn.RecoveryInfo;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
+import org.rafendb.concurrency.txn.TransactionManager;
 
 class FrmBridgeTest {
 
-    private static final TxId T1 = new TxId(1);
-
     private final List<String> calls = new ArrayList<>();
+    private TransactionManager txns;
     private RecordingRecoveryManager frm;
-    private FakeTransactionStates states;
     private FakeProtocol protocol;
     private FrmBridge bridge;
 
     @BeforeEach
     void setUp() {
-        frm = new RecordingRecoveryManager(calls);
-        states = new FakeTransactionStates(calls);
-        protocol = new FakeProtocol(calls);
-        bridge = new FrmBridge(frm, states, protocol);
+        txns = new TransactionManager();
+        frm = new RecordingRecoveryManager(calls, txns);
+        protocol = new FakeProtocol(calls, txns);
+        bridge = new FrmBridge(frm, txns, protocol);
+    }
+
+    /** Opens the CCM, begins one transaction, and clears the call list. */
+    private TxId activeTransaction() {
+        bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
+        TxId tx = txns.begin();
+        calls.clear();
+        return tx;
     }
 
     @Test
-    void admissionStartsClosed() {
-        assertFalse(bridge.isAdmitting());
+    void transactionsStayClosedUntilInitialization() {
+        assertThrows(IllegalStateException.class, txns::begin);
     }
 
     @Test
-    void initializationResetsAboveLargerHighWaterMarkThenOpensAdmission() {
+    void initializationResetsProtocolThenOpensAboveLargerHighWaterMark() {
         bridge.initializeAfterRecovery(new RecoveryInfo(100, 120));
 
-        assertEquals(List.of("resetAbove 120", "reset"), calls);
-        assertTrue(bridge.isAdmitting());
+        assertEquals(List.of("reset"), calls);
+        assertEquals(121, txns.begin().value());
     }
 
     @Test
-    void secondInitializationIsRejected() {
+    void secondInitializationIsRejectedBeforeAnyReset() {
         bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
+        calls.clear();
 
         assertThrows(
                 IllegalStateException.class,
                 () -> bridge.initializeAfterRecovery(new RecoveryInfo(5, 5)));
-        assertEquals(List.of("resetAbove 0", "reset"), calls);
+        assertTrue(calls.isEmpty());
     }
 
     @Test
@@ -58,118 +66,106 @@ class FrmBridgeTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> bridge.initializeAfterRecovery(new RecoveryInfo(-1, 0)));
-        assertFalse(bridge.isAdmitting());
         assertTrue(calls.isEmpty());
+        assertThrows(IllegalStateException.class, txns::begin);
     }
 
     @Test
-    void failedResetLeavesAdmissionClosedAndCanBeRetried() {
+    void failedResetLeavesTransactionsClosedAndCanBeRetried() {
         protocol.failReset = true;
 
         assertThrows(
                 IllegalStateException.class,
                 () -> bridge.initializeAfterRecovery(new RecoveryInfo(3, 3)));
-        assertFalse(bridge.isAdmitting());
+        assertThrows(IllegalStateException.class, txns::begin);
 
         protocol.failReset = false;
         bridge.initializeAfterRecovery(new RecoveryInfo(3, 3));
-        assertTrue(bridge.isAdmitting());
+        assertEquals(4, txns.begin().value());
     }
 
     @Test
     void nullArgumentsAreRejected() {
         assertThrows(NullPointerException.class, () -> bridge.initializeAfterRecovery(null));
-        assertThrows(NullPointerException.class, () -> new FrmBridge(null, states, protocol));
+        assertThrows(NullPointerException.class, () -> new FrmBridge(null, txns, protocol));
     }
 
     @Test
-    void beginIsRefusedWhileAdmissionIsClosed() {
-        assertThrows(IllegalStateException.class, () -> bridge.logBegin(T1));
-        assertTrue(calls.isEmpty());
-    }
+    void beginIsLogged() {
+        TxId tx = activeTransaction();
 
-    @Test
-    void beginIsLoggedAfterInitialization() {
-        bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
-        calls.clear();
+        bridge.logBegin(tx);
 
-        bridge.logBegin(T1);
-
-        assertEquals(List.of("begin T1"), calls);
+        assertEquals(List.of("begin T1 [ACTIVE]"), calls);
     }
 
     @Test
     void failedBeginLogIsRejected() {
-        bridge.initializeAfterRecovery(new RecoveryInfo(0, 0));
+        TxId tx = activeTransaction();
         frm.beginSucceeds = false;
 
-        assertThrows(IllegalStateException.class, () -> bridge.logBegin(T1));
+        assertThrows(IllegalStateException.class, () -> bridge.logBegin(tx));
     }
 
     @Test
     void commitLogsCommitBeforeReleasingProtection() throws Exception {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
 
-        TxResult result = bridge.commit(T1);
+        TxResult result = bridge.commit(tx);
 
         assertEquals(TxStatus.COMMITTED, result.status());
         assertEquals(
-                List.of(
-                        "T1 PARTIALLY_COMMITTED",
-                        "commit T1",
-                        "T1 COMMITTED",
-                        "release T1 COMMITTED"),
+                List.of("commit T1 [PARTIALLY_COMMITTED]", "release T1 COMMITTED [COMMITTED]"),
                 calls);
     }
 
     @Test
     void failedCommitLogAbortsTransaction() {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         frm.commitSucceeds = false;
 
-        assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
-        assertEquals(TxStatus.ABORTED, states.status(T1));
+        assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(tx));
+        assertEquals(TxStatus.ABORTED, txns.status(tx));
         assertEquals(
                 List.of(
-                        "T1 PARTIALLY_COMMITTED",
-                        "commit T1",
-                        "T1 FAILED",
-                        "cancelPending T1",
-                        "rollback T1",
-                        "T1 ABORTED",
-                        "release T1 ABORTED"),
+                        "commit T1 [PARTIALLY_COMMITTED]",
+                        "cancelPending T1 [FAILED]",
+                        "rollback T1 [FAILED]",
+                        "release T1 ABORTED [ABORTED]"),
                 calls);
     }
 
     @Test
     void commitErrorIsKeptAsCause() {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         IllegalStateException fsyncFailed = new IllegalStateException("fsync failed");
         frm.commitError = fsyncFailed;
 
         ConcurrencyInternalException e =
-                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
+                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(tx));
         assertSame(fsyncFailed, e.getCause());
     }
 
     @Test
     void failedRollbackAfterFailedCommitKeepsTransactionFailed() {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         frm.commitSucceeds = false;
         frm.rollbackSucceeds = false;
 
         ConcurrencyInternalException e =
-                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(T1));
+                assertThrows(ConcurrencyInternalException.class, () -> bridge.commit(tx));
         assertEquals(1, e.getSuppressed().length);
-        assertEquals(TxStatus.FAILED, states.status(T1));
+        assertEquals(TxStatus.FAILED, txns.status(tx));
         assertFalse(calls.stream().anyMatch(call -> call.startsWith("release")));
     }
 
     @Test
     void commitOnAbortedTransactionIsRejectedWithoutLogging() throws Exception {
-        states.put(T1, TxStatus.ABORTED);
+        TxId tx = activeTransaction();
+        txns.transition(tx, TxStatus.FAILED);
+        txns.transition(tx, TxStatus.ABORTED);
 
-        TxResult result = bridge.commit(T1);
+        TxResult result = bridge.commit(tx);
 
         assertEquals(TxStatus.ABORTED, result.status());
         assertFalse(result.message().isEmpty());
@@ -178,28 +174,26 @@ class FrmBridgeTest {
 
     @Test
     void abortKeepsProtectionUntilRollbackFinishes() throws Exception {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
 
-        TxResult result = bridge.abort(T1);
+        TxResult result = bridge.abort(tx);
 
         assertEquals(TxStatus.ABORTED, result.status());
         assertEquals(
                 List.of(
-                        "T1 FAILED",
-                        "cancelPending T1",
-                        "rollback T1",
-                        "T1 ABORTED",
-                        "release T1 ABORTED"),
+                        "cancelPending T1 [FAILED]",
+                        "rollback T1 [FAILED]",
+                        "release T1 ABORTED [ABORTED]"),
                 calls);
     }
 
     @Test
     void abortingAnAbortedTransactionChangesNothing() throws Exception {
-        states.put(T1, TxStatus.ACTIVE);
-        bridge.abort(T1);
+        TxId tx = activeTransaction();
+        bridge.abort(tx);
         calls.clear();
 
-        TxResult again = bridge.abort(T1);
+        TxResult again = bridge.abort(tx);
 
         assertEquals(TxStatus.ABORTED, again.status());
         assertTrue(calls.isEmpty());
@@ -207,47 +201,52 @@ class FrmBridgeTest {
 
     @Test
     void failedRollbackKeepsTransactionFailedAndProtected() {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         frm.rollbackSucceeds = false;
 
-        assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(T1));
-        assertEquals(TxStatus.FAILED, states.status(T1));
-        assertFalse(calls.contains("release T1 ABORTED"));
+        assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(tx));
+        assertEquals(TxStatus.FAILED, txns.status(tx));
+        assertFalse(calls.stream().anyMatch(call -> call.startsWith("release")));
     }
 
     @Test
     void rollbackErrorIsKeptAsCause() {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         IllegalStateException diskFull = new IllegalStateException("disk full");
         frm.rollbackError = diskFull;
 
         ConcurrencyInternalException e =
-                assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(T1));
+                assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(tx));
         assertSame(diskFull, e.getCause());
-        assertEquals(TxStatus.FAILED, states.status(T1));
+        assertEquals(TxStatus.FAILED, txns.status(tx));
     }
 
     @Test
     void abortCanBeRetriedAfterFailedRollback() throws Exception {
-        states.put(T1, TxStatus.ACTIVE);
+        TxId tx = activeTransaction();
         frm.rollbackSucceeds = false;
-        assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(T1));
+        assertThrows(ConcurrencyInternalException.class, () -> bridge.abort(tx));
         frm.rollbackSucceeds = true;
         calls.clear();
 
-        TxResult result = bridge.abort(T1);
+        TxResult result = bridge.abort(tx);
 
         assertEquals(TxStatus.ABORTED, result.status());
         assertEquals(
-                List.of("cancelPending T1", "rollback T1", "T1 ABORTED", "release T1 ABORTED"),
+                List.of(
+                        "cancelPending T1 [FAILED]",
+                        "rollback T1 [FAILED]",
+                        "release T1 ABORTED [ABORTED]"),
                 calls);
     }
 
     @Test
     void committedTransactionCannotBeAborted() throws Exception {
-        states.put(T1, TxStatus.COMMITTED);
+        TxId tx = activeTransaction();
+        txns.transition(tx, TxStatus.PARTIALLY_COMMITTED);
+        txns.transition(tx, TxStatus.COMMITTED);
 
-        TxResult result = bridge.abort(T1);
+        TxResult result = bridge.abort(tx);
 
         assertEquals(TxStatus.COMMITTED, result.status());
         assertFalse(result.message().isEmpty());

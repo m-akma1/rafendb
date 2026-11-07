@@ -8,14 +8,17 @@ import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
+import org.rafendb.concurrency.txn.TransactionManager;
 
-/** Test protocol that logs protection calls to a shared call list. */
+/** Test protocol that logs protection calls, with the status at call time, to a shared list. */
 final class FakeProtocol implements Protocol {
     private final List<String> calls;
+    private final TransactionManager txns;
     boolean failReset;
 
-    FakeProtocol(List<String> calls) {
+    FakeProtocol(List<String> calls, TransactionManager txns) {
         this.calls = calls;
+        this.txns = txns;
     }
 
     @Override
@@ -30,12 +33,12 @@ final class FakeProtocol implements Protocol {
 
     @Override
     public void cancelPending(TxId tx) {
-        calls.add("cancelPending " + tx);
+        calls.add("cancelPending " + tx + " [" + txns.status(tx) + "]");
     }
 
     @Override
     public void release(TxId tx, TxStatus outcome) {
-        calls.add("release " + tx + " " + outcome);
+        calls.add("release " + tx + " " + outcome + " [" + txns.status(tx) + "]");
     }
 
     @Override
