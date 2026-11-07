@@ -201,7 +201,13 @@ class StatsCostModelTest {
         assertEquals(
                 expected,
                 java.util.concurrent.CompletableFuture.supplyAsync(
-                                () -> model.estimateTotalCost(large))
+                                () -> {
+                                    try {
+                                        return model.estimateTotalCost(large);
+                                    } catch (CostEstimationException e) {
+                                        throw new java.util.concurrent.CompletionException(e);
+                                    }
+                                })
                         .join());
     }
 
