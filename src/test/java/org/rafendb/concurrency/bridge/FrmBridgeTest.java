@@ -224,7 +224,10 @@ class FrmBridgeTest {
 
         assertEquals(TxStatus.COMMITTED, result.status());
         assertEquals(
-                List.of("commit T1 [PARTIALLY_COMMITTED]", "release T1 COMMITTED [COMMITTED]"),
+                List.of(
+                        "cancelPending T1 [PARTIALLY_COMMITTED]",
+                        "commit T1 [PARTIALLY_COMMITTED]",
+                        "release T1 COMMITTED [COMMITTED]"),
                 calls);
     }
 
@@ -237,6 +240,7 @@ class FrmBridgeTest {
         assertEquals(TxStatus.ABORTED, txns.status(tx));
         assertEquals(
                 List.of(
+                        "cancelPending T1 [PARTIALLY_COMMITTED]",
                         "commit T1 [PARTIALLY_COMMITTED]",
                         "cancelPending T1 [FAILED]",
                         "rollback T1 [FAILED]",

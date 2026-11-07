@@ -41,33 +41,47 @@ public final class ConcurrencyControlManager
         return tx;
     }
 
+    /** Detects cycles when a request waits; rollback duration depends on FRM. */
     @Override
-    public synchronized AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
+    public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(resource, "resource");
-        TxStatus status = txns.status(tx);
-        switch (status) {
-            case ACTIVE -> {}
-            case FAILED, ABORTED -> {
-                return AccessResult.aborted(abortedMessage(tx));
-            }
-            case PARTIALLY_COMMITTED, COMMITTED ->
-                    throw new IllegalStateException(tx + " is already " + status);
-        }
-        ResourceId table = ResourceId.ofTable(resource.table().strip().toLowerCase(Locale.ROOT));
-        return switch (protocol.requestAccess(tx, txns.timestamp(tx), type, table)) {
-            case ALLOWED -> AccessResult.allowed();
-            case WAITING -> {
-                if (protocol.selectDeadlockVictim().filter(tx::equals).isPresent()) {
-                    abortAfterViolation(tx);
-                    yield AccessResult.aborted(abortedMessage(tx));
+        TxId victim = null;
+        Protocol.Decision decision;
+        synchronized (txns) {
+            TxStatus status = txns.status(tx);
+            switch (status) {
+                case ACTIVE -> {}
+                case FAILED, ABORTED -> {
+                    return AccessResult.aborted(abortedMessage(tx));
                 }
-                yield AccessResult.waiting();
+                case PARTIALLY_COMMITTED, COMMITTED ->
+                        throw new IllegalStateException(tx + " is already " + status);
             }
-            case ABORT_REQUIRED -> {
-                abortAfterViolation(tx);
-                yield AccessResult.aborted(abortedMessage(tx));
+            ResourceId table =
+                    ResourceId.ofTable(resource.table().strip().toLowerCase(Locale.ROOT));
+            decision = protocol.requestAccess(tx, txns.timestamp(tx), type, table);
+            if (decision == Protocol.Decision.ABORT_REQUIRED) {
+                victim = tx;
+            } else if (decision == Protocol.Decision.WAITING) {
+                victim = protocol.selectDeadlockVictim().orElse(null);
             }
+            if (victim != null) {
+                // Stop new accesses while the wait-for snapshot is still valid.
+                txns.transition(victim, TxStatus.FAILED);
+                protocol.cancelPending(victim);
+            }
+        }
+        if (victim != null) {
+            abortAfterViolation(victim);
+        }
+        if (tx.equals(victim)) {
+            return AccessResult.aborted(abortedMessage(tx));
+        }
+        return switch (decision) {
+            case ALLOWED -> AccessResult.allowed();
+            case WAITING -> AccessResult.waiting();
+            case ABORT_REQUIRED -> throw new IllegalStateException("missing abort victim");
         };
     }
 
@@ -84,12 +98,12 @@ public final class ConcurrencyControlManager
     }
 
     @Override
-    public synchronized TxResult commit(TxId tx) throws ConcurrencyInternalException {
+    public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         return bridge.commit(tx);
     }
 
     @Override
-    public synchronized TxResult abort(TxId tx) throws ConcurrencyInternalException {
+    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
         return bridge.abort(tx);
     }
 

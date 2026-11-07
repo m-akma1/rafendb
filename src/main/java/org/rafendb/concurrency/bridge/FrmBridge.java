@@ -3,6 +3,7 @@ package org.rafendb.concurrency.bridge;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
 import org.rafendb.api.concurrency.ConcurrencyMaintenance;
 import org.rafendb.api.recovery.RecoveryManager;
@@ -23,6 +24,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
     private final RecoveryManager frm;
     private final TransactionManager txns;
     private final Protocol protocol;
+    private final ConcurrentHashMap<TxId, Object> rollbackLocks = new ConcurrentHashMap<>();
     private boolean initialized;
 
     public FrmBridge(RecoveryManager frm, TransactionManager txns, Protocol protocol) {
@@ -109,11 +111,15 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
 
     public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
-        TxStatus status = txns.status(tx);
-        if (status != TxStatus.ACTIVE) {
-            return new TxResult(status, tx + " is " + status + " and cannot commit");
+        synchronized (txns) {
+            TxStatus status = txns.status(tx);
+            if (status != TxStatus.ACTIVE) {
+                return new TxResult(status, tx + " is " + status + " and cannot commit");
+            }
+            txns.transition(tx, TxStatus.PARTIALLY_COMMITTED);
+            // A committing transaction must not remain a deadlock victim.
+            protocol.cancelPending(tx);
         }
-        txns.transition(tx, TxStatus.PARTIALLY_COMMITTED);
         boolean durable = false;
         RuntimeException error = null;
         try {
@@ -137,30 +143,39 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         return new TxResult(TxStatus.COMMITTED, "");
     }
 
-    public synchronized TxResult abort(TxId tx) throws ConcurrencyInternalException {
+    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
-        TxStatus status = txns.status(tx);
-        if (status == TxStatus.ABORTED) {
+        Object rollbackLock = rollbackLocks.computeIfAbsent(tx, ignored -> new Object());
+        synchronized (rollbackLock) {
+            synchronized (txns) {
+                TxStatus status = txns.status(tx);
+                if (status == TxStatus.ABORTED) {
+                    rollbackLocks.remove(tx, rollbackLock);
+                    return new TxResult(TxStatus.ABORTED, "");
+                }
+                if (status == TxStatus.COMMITTED) {
+                    rollbackLocks.remove(tx, rollbackLock);
+                    return new TxResult(
+                            TxStatus.COMMITTED, tx + " is committed and cannot be aborted");
+                }
+                if (status != TxStatus.FAILED) {
+                    txns.transition(tx, TxStatus.FAILED);
+                }
+                protocol.cancelPending(tx);
+            }
+            boolean rolledBack;
+            try {
+                rolledBack = frm.rollbackTransaction(tx);
+            } catch (RuntimeException e) {
+                throw new ConcurrencyInternalException("rollback of " + tx + " failed", e);
+            }
+            if (!rolledBack) {
+                throw new ConcurrencyInternalException("rollback of " + tx + " failed");
+            }
+            txns.transition(tx, TxStatus.ABORTED);
+            protocol.release(tx, TxStatus.ABORTED);
+            rollbackLocks.remove(tx, rollbackLock);
             return new TxResult(TxStatus.ABORTED, "");
         }
-        if (status == TxStatus.COMMITTED) {
-            return new TxResult(TxStatus.COMMITTED, tx + " is committed and cannot be aborted");
-        }
-        if (status != TxStatus.FAILED) {
-            txns.transition(tx, TxStatus.FAILED);
-        }
-        protocol.cancelPending(tx);
-        boolean rolledBack;
-        try {
-            rolledBack = frm.rollbackTransaction(tx);
-        } catch (RuntimeException e) {
-            throw new ConcurrencyInternalException("rollback of " + tx + " failed", e);
-        }
-        if (!rolledBack) {
-            throw new ConcurrencyInternalException("rollback of " + tx + " failed");
-        }
-        txns.transition(tx, TxStatus.ABORTED);
-        protocol.release(tx, TxStatus.ABORTED);
-        return new TxResult(TxStatus.ABORTED, "");
     }
 }
