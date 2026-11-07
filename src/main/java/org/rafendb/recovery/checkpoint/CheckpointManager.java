@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 
@@ -130,7 +131,7 @@ public final class CheckpointManager {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
-            } catch (RuntimeException | IOException e) {
+            } catch (StorageInternalException | IOException | RuntimeException e) {
                 return false;
             } finally {
                 if (paused) {
