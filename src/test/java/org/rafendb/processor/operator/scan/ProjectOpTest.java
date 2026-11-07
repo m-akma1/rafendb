@@ -77,7 +77,7 @@ class ProjectOpTest {
     }
 
     @Test
-    void writtenQualifierIsKept() {
+    void qualifierFromBindingIsKept() {
         FakeChildOp child = new FakeChildOp(SCHEMA, List.of());
         Expr withAlias = new Expr.ColumnRef("m", "nim", 0);
         Expr withoutPrefix = new Expr.ColumnRef(null, "ipk", 2);

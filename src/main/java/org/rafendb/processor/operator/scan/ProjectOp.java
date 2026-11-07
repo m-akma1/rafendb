@@ -10,8 +10,9 @@ import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.Value;
 
 /**
- * Operator SELECT kolom (QP-05). Ngambil nilai kolom child sesuai urutan yang ditulis user,
- * hasilnya ga bawa RID. Posisi kolom dibaca dari offset ColumnRef yang udah diisi QO.
+ * Operator SELECT kolom (QP-05). Ngambil nilai kolom child sesuai urutan hasil binding QO,
+ * hasilnya ga bawa RID. Posisi kolom dibaca dari offset ColumnRef, qualifier di schema output juga
+ * ikut hasil binding QO (alias atau nama tabel).
  *
  * <p>Ga thread-safe, satu instance buat satu eksekusi.
  */
