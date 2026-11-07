@@ -6,7 +6,10 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.zip.CRC32;
+import org.rafendb.common.tuple.Rid;
 
 /**
  * Satu record write-ahead log, sesuai class diagram FRM.
@@ -25,11 +28,13 @@ public final class WALRecord {
     private final long timestamp;
     private final String tableName;
     private final int idRecord;
+    private final Rid rid;
     private final String beforeVal;
     private String afterVal;
+    private final long checksum;
 
     /**
-     * Membuat record.
+     * Membuat record dengan idRecord numerik (kompatibilitas pengujian).
      *
      * @param lsn nomor urut log (LSN), unik dan terus naik
      * @param idTransaction transaksi yang menulis record ini
@@ -56,8 +61,62 @@ public final class WALRecord {
         this.timestamp = timestamp;
         this.tableName = tableName;
         this.idRecord = idRecord;
+        this.rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
         this.beforeVal = beforeVal;
         this.afterVal = afterVal;
+        this.checksum = calculateChecksum();
+    }
+
+    /**
+     * Membuat record dengan {@link Rid} (representasi standar baris fisik RafenDB).
+     *
+     * @param lsn nomor urut log (LSN)
+     * @param idTransaction id transaksi
+     * @param logType tipe record log
+     * @param timestamp waktu penulisan log
+     * @param tableName nama tabel
+     * @param rid alamat slot baris pada tabel
+     * @param beforeVal isi sebelum perubahan
+     * @param afterVal isi sesudah perubahan
+     */
+    public WALRecord(
+            long lsn,
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            Rid rid,
+            String beforeVal,
+            String afterVal) {
+        this.lsn = lsn;
+        this.idTransaction = idTransaction;
+        this.logType = Objects.requireNonNull(logType, "logType");
+        this.timestamp = timestamp;
+        this.tableName = tableName;
+        this.rid = rid;
+        this.idRecord = rid != null ? (int) (rid.block() * 1000 + rid.slot()) : -1;
+        this.beforeVal = beforeVal;
+        this.afterVal = afterVal;
+        this.checksum = calculateChecksum();
+    }
+
+    private long calculateChecksum() {
+        CRC32 crc = new CRC32();
+        crc.update((int) (lsn ^ (lsn >>> 32)));
+        crc.update(idTransaction);
+        crc.update(logType.ordinal());
+        crc.update((int) (timestamp ^ (timestamp >>> 32)));
+        if (tableName != null) {
+            crc.update(tableName.getBytes(StandardCharsets.UTF_8));
+        }
+        crc.update(idRecord);
+        if (beforeVal != null) {
+            crc.update(beforeVal.getBytes(StandardCharsets.UTF_8));
+        }
+        if (afterVal != null) {
+            crc.update(afterVal.getBytes(StandardCharsets.UTF_8));
+        }
+        return crc.getValue();
     }
 
     /** @return nomor urut log (LSN) */
@@ -79,8 +138,26 @@ public final class WALRecord {
         return idTransaction;
     }
 
+    /**
+     * Alias getter untuk diagram kelas.
+     *
+     * @return id transaksi
+     */
+    public int getTransactionId() {
+        return idTransaction;
+    }
+
     /** @return jenis record, tidak pernah null */
     public LogType getLogType() {
+        return logType;
+    }
+
+    /**
+     * Alias getter tipe log.
+     *
+     * @return jenis record
+     */
+    public LogType getType() {
         return logType;
     }
 
@@ -97,6 +174,16 @@ public final class WALRecord {
     /** @return id record yang diubah, atau {@code -1} jika bukan perubahan data */
     public int getIdRecord() {
         return idRecord;
+    }
+
+    /** @return alamat slot record (Rid) atau {@code null} jika bukan perubahan data */
+    public Rid getRid() {
+        return rid;
+    }
+
+    /** @return nilai checksum integritas record */
+    public long getChecksum() {
+        return checksum;
     }
 
     /**
@@ -119,6 +206,15 @@ public final class WALRecord {
     }
 
     /**
+     * Alias getter untuk diagram kelas FRM.
+     *
+     * @return nilai sebelum
+     */
+    public String getBeforeImage() {
+        return beforeVal;
+    }
+
+    /**
      * Mengembalikan isi record sesudah perubahan. Belum ada di class diagram; dibutuhkan untuk
      * redo.
      *
@@ -134,6 +230,15 @@ public final class WALRecord {
      * @return nilai sesudah
      */
     public String getAfterVal() {
+        return afterVal;
+    }
+
+    /**
+     * Alias getter untuk diagram kelas FRM.
+     *
+     * @return nilai sesudah
+     */
+    public String getAfterImage() {
         return afterVal;
     }
 
@@ -159,6 +264,11 @@ public final class WALRecord {
     /** Mencetak record ini dalam satu baris ke standard output. */
     public void printWALRecord() {
         System.out.println(this);
+    }
+
+    /** Alias printWALRecord untuk diagram kelas FRM. */
+    public void printWalRecord() {
+        printWALRecord();
     }
 
     /**

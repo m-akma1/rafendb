@@ -36,10 +36,22 @@ public class CrashRecoveryEngine {
     private int highestTransactionId = 0;
 
     /**
+     * Hasil analisis fasa Analysis pada pemulihan crash ARIES.
+     *
+     * @param committedTransactions kumpulan ID transaksi yang berhasil commit
+     * @param loserTransactions kumpulan ID transaksi yang belum selesai (harus di-undo)
+     * @param highestTransactionId id transaksi tertinggi yang tercatat di log
+     */
+    public record AnalysisResult(
+            Set<Integer> committedTransactions,
+            Set<Integer> loserTransactions,
+            int highestTransactionId) {}
+
+    /**
      * Konstruktor default CrashRecoveryEngine tanpa dependensi (mode in-memory mandiri).
      */
     public CrashRecoveryEngine() {
-        this(null, null);
+        this(null, (UndoStorage) null);
     }
 
     /**
@@ -51,6 +63,47 @@ public class CrashRecoveryEngine {
     public CrashRecoveryEngine(Logger logger, UndoStorage storage) {
         this.logger = logger;
         this.storage = storage;
+    }
+
+    /**
+     * Membuat instance CrashRecoveryEngine langsung dengan StorageManager.
+     *
+     * @param logger logger WAL
+     * @param storageManager interface manajer storage
+     */
+    public CrashRecoveryEngine(
+            Logger logger, org.rafendb.api.storage.StorageManager storageManager) {
+        this(
+                logger,
+                storageManager != null
+                        ? (tableName, idRecord, image, lsn) -> {
+                            try {
+                                org.rafendb.common.tuple.Rid rid =
+                                        idRecord >= 0
+                                                ? new org.rafendb.common.tuple.Rid(
+                                                        (long) idRecord / 1000, idRecord % 1000)
+                                                : null;
+                                java.util.Optional<org.rafendb.common.tuple.Row> row =
+                                        java.util.Optional.empty();
+                                storageManager.applyRecovery(tableName, rid, row, lsn);
+                            } catch (Exception e) {
+                                throw new RuntimeException(
+                                        "StorageManager applyRecovery failed", e);
+                            }
+                        }
+                        : null);
+    }
+
+    /**
+     * Menjalankan analisis log ARIES (Analysis Pass) dan mengembalikan hasilnya.
+     *
+     * @return {@link AnalysisResult} berisi transaksi committed, loser, dan id transaksi tertinggi
+     */
+    public synchronized AnalysisResult analyze() {
+        List<WALRecord> allLogs = logger != null ? logger.getLogsSorted() : List.of();
+        performAnalysisPass(allLogs);
+        return new AnalysisResult(
+                getCommittedTransactions(), getLoserTransactions(), getHighestTransactionId());
     }
 
     /**

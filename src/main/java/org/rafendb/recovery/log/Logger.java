@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.rafendb.api.storage.WalSync;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.rollback.RollbackLog;
 
 /**
@@ -246,6 +247,37 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         }
     }
 
+    /**
+     * Alias untuk {@link #getLogsSorted()} sesuai konvensi class diagram FRM.
+     *
+     * @return daftar seluruh record log terurut LSN
+     */
+    public List<WALRecord> readAllLogs() {
+        return getLogsSorted();
+    }
+
+    /**
+     * Menambahkan record WAL secara langsung ke log buffer dan disk.
+     *
+     * @param record record yang akan ditambahkan
+     * @return nomor LSN record
+     * @throws LoggerErrorException jika terjadi kegagalan penulisan log
+     */
+    public synchronized long appendRecord(WALRecord record) throws LoggerErrorException {
+        if (record == null) {
+            return -1L;
+        }
+        records.add(record);
+        if (record.getLsn() > currentLSN.get()) {
+            currentLSN.set(record.getLsn());
+        }
+        if (record.getLogType() == LogType.COMMIT) {
+            lastCommittedLSN = record.getLsn();
+        }
+        writeRecordToDisk(record);
+        return record.getLsn();
+    }
+
     @Override
     public List<WALRecord> getLogsByTransaction(int idTransaction) {
         synchronized (records) {
@@ -263,6 +295,42 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             lastCommittedLSN = lsn;
         }
         writeRecordToDisk(record);
+    }
+
+    /**
+     * Mencatat perubahan data menggunakan {@link Rid}.
+     *
+     * @param idTransaction id transaksi
+     * @param logType tipe operasi
+     * @param timestamp waktu pencatatan
+     * @param tableName nama tabel
+     * @param rid alamat baris pada tabel
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
+     */
+    public synchronized long logDataChange(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            Rid rid,
+            String beforeVal,
+            String afterVal) {
+        long lsn = currentLSN.incrementAndGet();
+        WALRecord record =
+                new WALRecord(
+                        lsn,
+                        idTransaction,
+                        logType,
+                        timestamp,
+                        tableName,
+                        rid,
+                        beforeVal,
+                        afterVal);
+        records.add(record);
+        writeRecordToDisk(record);
+        return lsn;
     }
 
     @Override
