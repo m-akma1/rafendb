@@ -43,8 +43,10 @@
     <!-- Bundles PlantUML 1.2025.0. Don't override it: newer PlantUML breaks this plugin without any error. -->
     <plantuml-maven-plugin.version>0.2.13</plantuml-maven-plugin.version>
 
-    <!-- Where -Pdiagrams writes the class diagrams (.puml, .svg, .png). -->
+    <!-- Where -Pdiagrams writes the class diagrams (.puml, .svg, .png). One folder per package group. -->
     <diagrams.outputDirectory>${project.basedir}/docs/generated</diagrams.outputDirectory>
+    <diagrams.apiDirectory>${diagrams.outputDirectory}/api</diagrams.apiDirectory>
+    <diagrams.commonDirectory>${diagrams.outputDirectory}/common</diagrams.commonDirectory>
   </properties>
 
   <dependencyManagement>
@@ -240,7 +242,7 @@
     <!--
       Class diagrams of the module contracts (api.*) and shared types (common).
       Run: ./mvnw -Pdiagrams process-classes
-      Writes .puml, .svg and .png per diagram to docs/generated. Rendering needs Graphviz (dot) on PATH.
+      Writes .puml, .svg and .png per diagram to docs/generated/api and docs/generated/common. Rendering needs Graphviz (dot) on PATH.
     -->
     <profile>
       <id>diagrams</id>
@@ -250,7 +252,7 @@
             <groupId>de.elnarion.maven</groupId>
             <artifactId>plantuml-generator-maven-plugin</artifactId>
             <configuration>
-              <outputDirectory>${diagrams.outputDirectory}</outputDirectory>
+              <!-- Each execution sets its own outputDirectory (api/ or common/). -->
               <!-- Public contract only: drops private helpers, serialVersionUID and record backing fields. -->
               <maxVisibilityFields>PUBLIC</maxVisibilityFields>
               <maxVisibilityMethods>PUBLIC</maxVisibilityMethods>
@@ -274,6 +276,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api</scanPackage>
@@ -288,6 +291,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-with-common.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api</scanPackage>
@@ -303,6 +307,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-storage.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api.storage</scanPackage>
@@ -316,6 +321,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-concurrency.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api.concurrency</scanPackage>
@@ -329,6 +335,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-optimizer.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api.optimizer</scanPackage>
@@ -342,6 +349,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-processor.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api.processor</scanPackage>
@@ -355,6 +363,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
                   <outputFilename>api-recovery.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.api.recovery</scanPackage>
@@ -368,6 +377,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common</scanPackage>
@@ -382,6 +392,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-error.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.error</scanPackage>
@@ -395,6 +406,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-expr.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.expr</scanPackage>
@@ -408,6 +420,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-log.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.log</scanPackage>
@@ -421,6 +434,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-plan.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.plan</scanPackage>
@@ -434,6 +448,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-query.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.query</scanPackage>
@@ -447,6 +462,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-schema.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.schema</scanPackage>
@@ -460,6 +476,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-tuple.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.tuple</scanPackage>
@@ -473,6 +490,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-txn.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.txn</scanPackage>
@@ -486,6 +504,7 @@
                   <goal>generate</goal>
                 </goals>
                 <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <outputFilename>common-type.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.common.type</scanPackage>
@@ -499,20 +518,43 @@
             <groupId>com.github.davidmoten</groupId>
             <artifactId>plantuml-maven-plugin</artifactId>
             <executions>
+              <!-- One run per folder, so images land next to their .puml. -->
               <execution>
-                <id>render-diagrams</id>
+                <id>render-api-diagrams</id>
                 <phase>process-classes</phase>
                 <goals>
                   <goal>generate</goal>
                 </goals>
                 <configuration>
                   <sources>
-                    <directory>${diagrams.outputDirectory}</directory>
+                    <directory>${diagrams.apiDirectory}</directory>
                     <includes>
                       <include>*.puml</include>
                     </includes>
                   </sources>
-                  <outputDirectory>${diagrams.outputDirectory}</outputDirectory>
+                  <outputDirectory>${diagrams.apiDirectory}</outputDirectory>
+                  <formats>
+                    <format>svg</format>
+                    <format>png</format>
+                  </formats>
+                  <!-- No embedded source/version metadata, so images only change when the diagram does. -->
+                  <metadata>false</metadata>
+                </configuration>
+              </execution>
+              <execution>
+                <id>render-common-diagrams</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <sources>
+                    <directory>${diagrams.commonDirectory}</directory>
+                    <includes>
+                      <include>*.puml</include>
+                    </includes>
+                  </sources>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
                   <formats>
                     <format>svg</format>
                     <format>png</format>
