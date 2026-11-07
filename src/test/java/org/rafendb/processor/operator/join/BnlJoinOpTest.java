@@ -6,15 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.processor.ExpressionEvaluator;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.DataType;
-import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.expr.ExpressionEvaluator;
+import org.rafendb.processor.expr.TruthValue;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 class BnlJoinOpTest {
     private static final Expr CONDITION =

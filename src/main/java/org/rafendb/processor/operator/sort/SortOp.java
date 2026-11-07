@@ -4,12 +4,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.processor.operator.Operator;
 import org.rafendb.common.plan.SortPlanNode.Direction;
-import org.rafendb.processor.schema.ColumnSchema;
-import org.rafendb.processor.tuple.ResultRow;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * An operator that sorts the rows of its child by a single key column.
