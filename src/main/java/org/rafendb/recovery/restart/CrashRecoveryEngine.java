@@ -1,6 +1,8 @@
 package org.rafendb.recovery.restart;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.rafendb.recovery.log.LogType;
@@ -9,10 +11,17 @@ import org.rafendb.recovery.log.WALRecord;
 import org.rafendb.recovery.rollback.UndoStorage;
 
 /**
- * Mock Crash Recovery Engine untuk Milestone 1 (FR-07) sesuai diagram kelas FRM.
+ * Crash Recovery Engine berbasis protokol ARIES (FR-07) sesuai diagram kelas Failure Recovery Manager (FRM).
  *
- * <p>Menyediakan implementasi mock in-memory untuk fase Redo dan Undo pada prosedur pemulihan kegagalan (crash recovery),
- * sebelum implementasi protokol ARIES penuh dengan fuzzy checkpointing diintegrasikan pada milestone berikutnya.
+ * <p>Menjalankan pemulihan basis data saat startup setelah crash atau penghentian abnormal:
+ * <ol>
+ *   <li><b>Analysis Pass:</b> Memindai WAL untuk mengidentifikasi transaksi aktif, transaksi committed,
+ *       transaksi yang sudah abort, dan transaksi tidak lengkap (loser transactions).</li>
+ *   <li><b>Redo Pass:</b> Mengulangi (redo) perubahan data milik transaksi yang telah commit untuk
+ *       menjamin durabilitas (ACID Durability).</li>
+ *   <li><b>Undo Pass:</b> Membatalkan (undo) perubahan data dari transaksi yang belum commit (loser transactions)
+ *       secara terbalik (reverse LSN order), mencatat record ABORT, dan mem-flush log ke disk (ACID Atomicity).</li>
+ * </ol>
  */
 public class CrashRecoveryEngine {
 
@@ -22,18 +31,22 @@ public class CrashRecoveryEngine {
     private boolean redoExecuted = false;
     private boolean undoExecuted = false;
 
+    private final Set<Integer> committedTransactions = new HashSet<>();
+    private final Set<Integer> loserTransactions = new LinkedHashSet<>();
+    private int highestTransactionId = 0;
+
     /**
-     * Konstruktor default mock CrashRecoveryEngine tanpa dependensi.
+     * Konstruktor default CrashRecoveryEngine tanpa dependensi (mode in-memory mandiri).
      */
     public CrashRecoveryEngine() {
         this(null, null);
     }
 
     /**
-     * Membuat instance mock CrashRecoveryEngine dengan logger dan storage adapter.
+     * Membuat instance CrashRecoveryEngine dengan logger WAL dan storage adapter.
      *
-     * @param logger logger WAL mock
-     * @param storage storage adapter untuk menerapkan perubahan data
+     * @param logger logger WAL
+     * @param storage storage adapter untuk menerapkan perubahan data pada buffer/storage
      */
     public CrashRecoveryEngine(Logger logger, UndoStorage storage) {
         this.logger = logger;
@@ -41,26 +54,65 @@ public class CrashRecoveryEngine {
     }
 
     /**
-     * Mock eksekusi prosedur crash recovery (menjalankan fase Redo lalu Undo).
-     *
-     * @return true jika pemulihan crash berhasil
+     * Menjalankan analisis log (Analysis Pass) ARIES untuk mengklasifikasi status transaksi.
      */
-    public boolean recoverFromCrash() {
-        boolean r = redo();
-        boolean u = undo();
-        this.crashRecovered = r && u;
-        return this.crashRecovered;
+    private synchronized void performAnalysisPass(List<WALRecord> allLogs) {
+        committedTransactions.clear();
+        loserTransactions.clear();
+        highestTransactionId = 0;
+
+        Set<Integer> allTxs = new LinkedHashSet<>();
+        Set<Integer> abortedTxs = new HashSet<>();
+
+        for (WALRecord rec : allLogs) {
+            int txId = rec.getIdTransaction();
+            if (txId > highestTransactionId) {
+                highestTransactionId = txId;
+            }
+            if (txId > 0) {
+                allTxs.add(txId);
+            }
+            if (rec.getLogType() == LogType.COMMIT) {
+                committedTransactions.add(txId);
+            } else if (rec.getLogType() == LogType.ABORT) {
+                abortedTxs.add(txId);
+            }
+        }
+
+        // Loser transactions: transaksi yang dimulai namun belum commit dan belum abort saat crash
+        loserTransactions.addAll(allTxs);
+        loserTransactions.removeAll(committedTransactions);
+        loserTransactions.removeAll(abortedTxs);
     }
 
     /**
-     * Mock eksekusi fase Redo.
+     * Eksekusi prosedur pemulihan kegagalan sistem (Crash Recovery).
      *
-     * <p>Mengulangi (redo) perubahan dari transaksi yang telah committed untuk memastikan
-     * persistensi data.
+     * <p>Melakukan fase Analysis, Redo, lalu Undo untuk mengembalikan keadaan basis data ke konsistensi penuh.
+     *
+     * @return true jika seluruh tahapan pemulihan crash berhasil
+     */
+    public synchronized boolean recoverFromCrash() {
+        try {
+            boolean r = redo();
+            boolean u = undo();
+            this.crashRecovered = r && u;
+            return this.crashRecovered;
+        } catch (Exception e) {
+            this.crashRecovered = false;
+            return false;
+        }
+    }
+
+    /**
+     * Eksekusi fase Redo.
+     *
+     * <p>Mengulangi (redo) perubahan dari transaksi yang telah committed dalam urutan LSN
+     * untuk memastikan persistensi data.
      *
      * @return true jika fase Redo berhasil
      */
-    public boolean redo() {
+    public synchronized boolean redo() {
         this.redoExecuted = true;
         if (logger == null || storage == null) {
             return true;
@@ -68,16 +120,11 @@ public class CrashRecoveryEngine {
 
         try {
             List<WALRecord> allLogs = logger.getLogsSorted();
-            Set<Integer> committedTxs = new HashSet<>();
-            for (WALRecord rec : allLogs) {
-                if (rec.getLogType() == LogType.COMMIT) {
-                    committedTxs.add(rec.getIdTransaction());
-                }
-            }
+            performAnalysisPass(allLogs);
 
             for (WALRecord rec : allLogs) {
                 if (rec.getLogType().isDataChange()
-                        && committedTxs.contains(rec.getIdTransaction())) {
+                        && committedTransactions.contains(rec.getIdTransaction())) {
                     storage.applyUndo(
                             rec.getTableName(), rec.getIdRecord(), rec.getAfterVal(), rec.getLSN());
                 }
@@ -89,14 +136,14 @@ public class CrashRecoveryEngine {
     }
 
     /**
-     * Mock eksekusi fase Undo.
+     * Eksekusi fase Undo.
      *
      * <p>Membatalkan (undo) perubahan dari transaksi yang belum committed (loser transactions)
-     * saat crash terjadi.
+     * dalam urutan terbalik dari LSN terbaru, menuliskan record ABORT, dan mem-flush WAL.
      *
      * @return true jika fase Undo berhasil
      */
-    public boolean undo() {
+    public synchronized boolean undo() {
         this.undoExecuted = true;
         if (logger == null || storage == null) {
             return true;
@@ -104,22 +151,13 @@ public class CrashRecoveryEngine {
 
         try {
             List<WALRecord> allLogs = logger.getLogsSorted();
-            Set<Integer> committedTxs = new HashSet<>();
-            Set<Integer> allTxs = new HashSet<>();
-            for (WALRecord rec : allLogs) {
-                allTxs.add(rec.getIdTransaction());
-                if (rec.getLogType() == LogType.COMMIT) {
-                    committedTxs.add(rec.getIdTransaction());
-                }
-            }
+            performAnalysisPass(allLogs);
 
-            Set<Integer> uncommittedTxs = new HashSet<>(allTxs);
-            uncommittedTxs.removeAll(committedTxs);
-
+            // Batalkan data change transaksi loser secara terbalik (reverse LSN order)
             for (int i = allLogs.size() - 1; i >= 0; i--) {
                 WALRecord rec = allLogs.get(i);
                 if (rec.getLogType().isDataChange()
-                        && uncommittedTxs.contains(rec.getIdTransaction())) {
+                        && loserTransactions.contains(rec.getIdTransaction())) {
                     storage.applyUndo(
                             rec.getTableName(),
                             rec.getIdRecord(),
@@ -127,6 +165,14 @@ public class CrashRecoveryEngine {
                             rec.getLSN());
                 }
             }
+
+            // Catat ABORT untuk setiap transaksi loser yang telah berhasil dibatalkan dan flush ke
+            // disk
+            for (int loserTx : loserTransactions) {
+                logger.logTransactionEvent(loserTx, LogType.ABORT);
+            }
+            logger.flushAll();
+
             return true;
         } catch (Exception e) {
             return false;
@@ -134,7 +180,7 @@ public class CrashRecoveryEngine {
     }
 
     /**
-     * @return true jika recoverFromCrash telah dieksekusi
+     * @return true jika recoverFromCrash telah berhasil dieksekusi
      */
     public boolean isCrashRecovered() {
         return crashRecovered;
@@ -152,5 +198,26 @@ public class CrashRecoveryEngine {
      */
     public boolean isUndoExecuted() {
         return undoExecuted;
+    }
+
+    /**
+     * @return kumpulan ID transaksi committed yang ditemukan saat recovery
+     */
+    public Set<Integer> getCommittedTransactions() {
+        return Collections.unmodifiableSet(committedTransactions);
+    }
+
+    /**
+     * @return kumpulan ID transaksi tidak lengkap (loser transactions) yang dibatalkan
+     */
+    public Set<Integer> getLoserTransactions() {
+        return Collections.unmodifiableSet(loserTransactions);
+    }
+
+    /**
+     * @return nomor transaksi tertinggi yang tercatat pada log WAL
+     */
+    public int getHighestTransactionId() {
+        return highestTransactionId;
     }
 }

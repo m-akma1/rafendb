@@ -85,7 +85,7 @@ public class FRManagerDriver {
 
     /**
      * Mensimulasikan crash sistem secara mendadak dan restart basis data.
-     * Menutup logger tanpa buffer flush tambahan, lalu menginisialisasi FRManager baru dari file log yang ada.
+     * Menutup logger tanpa buffer flush tambahan, lalu menginisialisasi FRManager baru dari file log yang ada di disk.
      */
     public void simulateCrashAndRestart() {
         try {
@@ -136,11 +136,39 @@ public class FRManagerDriver {
     }
 
     /**
-     * Menguji skenario crash recovery.
+     * Menguji skenario crash recovery dengan persistensi log nyata ke disk.
+     * Mensimulasikan:
+     * - T1 menulis data dan berhasil COMMIT.
+     * - T2 menulis perubahan kotor (dirty data) namun sistem mengalami CRASH sebelum COMMIT.
+     * - Sistem restart dari file WAL dan menjalankan recoverFromCrash (Redo T1, Undo T2).
      */
     public boolean testRecovery() {
+        storage.clear();
         initNewEnvironment();
-        return frm.recoverFromCrash();
+
+        // 1. Transaksi 1 committed
+        frm.beginTransaction(1);
+        frm.writeLog(
+                LogPayload.ofDataChange(
+                        1, LogType.INSERT, "accounts", 101, null, "User1-Committed"));
+        storage.put("accounts", 101, "User1-Committed");
+        frm.commitTransaction(1);
+
+        // 2. Transaksi 2 belum commit saat crash
+        frm.beginTransaction(2);
+        frm.writeLog(
+                LogPayload.ofDataChange(
+                        2, LogType.UPDATE, "accounts", 101, "User1-Committed", "User1-Dirty"));
+        storage.put("accounts", 101, "User1-Dirty");
+
+        // 3. Simulasi crash mendadak dan restart dari disk
+        simulateCrashAndRestart();
+
+        // 4. Jalankan prosedur crash recovery
+        boolean recoveryOk = frm.recoverFromCrash();
+        String valAfterRecovery = storage.get("accounts", 101);
+
+        return recoveryOk && "User1-Committed".equals(valAfterRecovery);
     }
 
     /**
@@ -217,8 +245,10 @@ public class FRManagerDriver {
 
     /**
      * Menjalankan seluruh rangkaian tes driver dan menampilkan laporan hasil.
+     *
+     * @return true jika seluruh pengujian berhasil
      */
-    public void runAllTests() {
+    public boolean runAllTests() {
         System.out.println("==================================================");
         System.out.println("       RUNNING FRM INTEGRATION TEST SUITE         ");
         System.out.println("==================================================");
@@ -245,6 +275,19 @@ public class FRManagerDriver {
         System.out.println(
                 "TOTAL RESULT: " + (allPassed ? "ALL TESTS PASSED!" : "SOME TESTS FAILED"));
         System.out.println("==================================================");
+        return allPassed;
+    }
+
+    public FRManager getFRManager() {
+        return frm;
+    }
+
+    public Path getCurrentLogFile() {
+        return currentLogFile;
+    }
+
+    public MockStorage getStorage() {
+        return storage;
     }
 
     public static void main(String[] args) {

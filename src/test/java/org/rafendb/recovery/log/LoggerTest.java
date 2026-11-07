@@ -68,4 +68,27 @@ class LoggerTest {
             assertDoesNotThrow(() -> logger.displayLogsByTransaction(1));
         }
     }
+
+    @Test
+    void testPersistenceAndReloadFromFile() throws Exception {
+        try (Logger logger1 = new Logger(logPath)) {
+            logger1.logTransactionEvent(1, LogType.BEGIN);
+            logger1.logDataChange(1, LogType.INSERT, 1000L, "tbl", 10, null, "v1");
+            logger1.logTransactionEvent(1, LogType.COMMIT);
+            logger1.flushAll();
+        }
+
+        // Buka logger baru dari file yang sama di disk
+        try (Logger logger2 = new Logger(logPath)) {
+            assertEquals(3, logger2.getLogsSorted().size());
+            assertEquals(3L, logger2.getCurrentLSN());
+            assertEquals(3L, logger2.getLastCommittedLSN());
+            assertEquals(1, logger2.getHighestTransactionId());
+
+            // Tambahkan record baru setelah restart
+            logger2.logTransactionEvent(2, LogType.BEGIN);
+            assertEquals(4L, logger2.getCurrentLSN());
+            assertEquals(4, logger2.getLogsSorted().size());
+        }
+    }
 }

@@ -96,4 +96,31 @@ class CrashRecoveryEngineTest {
         assertTrue(engine.undo());
         assertEquals("Order-10", storage.data.get("orders#100"));
     }
+
+    @Test
+    void testRecoveryHandlesAbortedAndLoserTransactions() {
+        // Tx 1: Committed
+        logger.logTransactionEvent(1, LogType.BEGIN);
+        logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
+        logger.logTransactionEvent(1, LogType.COMMIT);
+
+        // Tx 2: Aborted before crash
+        logger.logTransactionEvent(2, LogType.BEGIN);
+        logger.logDataChange(2, LogType.INSERT, 1500L, "users", 2, null, "Bob");
+        logger.logTransactionEvent(2, LogType.ABORT);
+
+        // Tx 3: Incomplete loser transaction (crash happens while active)
+        logger.logTransactionEvent(3, LogType.BEGIN);
+        logger.logDataChange(3, LogType.INSERT, 2000L, "users", 3, null, "Charlie");
+        storage.data.put("users#3", "Charlie");
+
+        storage.data.remove("users#1"); // Simulate need to redo
+
+        assertTrue(engine.recoverFromCrash());
+        assertEquals("Alice", storage.data.get("users#1"));
+        assertNull(storage.data.get("users#3"));
+        assertTrue(engine.getLoserTransactions().contains(3));
+        assertFalse(engine.getLoserTransactions().contains(2)); // Tx 2 was already aborted
+        assertTrue(engine.getCommittedTransactions().contains(1));
+    }
 }

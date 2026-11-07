@@ -1,6 +1,15 @@
 package org.rafendb.recovery.log;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -10,10 +19,14 @@ import org.rafendb.api.storage.WalSync;
 import org.rafendb.recovery.rollback.RollbackLog;
 
 /**
- * Mock WAL Logger untuk Milestone 1 (FR-02) sesuai diagram kelas FRM.
+ * Write-Ahead Logging (WAL) Logger sesuai diagram kelas Failure Recovery Manager (FRM).
  *
- * <p>Menyediakan implementasi in-memory mock untuk komponen WAL Logger tanpa operasi I/O disk nyata,
- * sehingga modul lain (Rollback, Checkpoint, Facade) dapat beroperasi secara independen pada Milestone 1.
+ * <p>Mencatat seluruh peristiwa transaksi (BEGIN, COMMIT, ABORT) dan perubahan data (INSERT, UPDATE, DELETE)
+ * secara sekuensial dengan penomoran LSN monotonik. Menjamin aturan Write-Ahead Logging (WAL) dan ketahanan
+ * (durability) data dengan mendukung persistensi ke file log dan pemaksaan buffer ke media penyimpanan stabil
+ * (force log / sync) sebelum halaman kotor ditulis ke disk.
+ *
+ * <p>Thread-safe.
  */
 public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable {
 
@@ -22,29 +35,126 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     private volatile long lastCommittedLSN = 0;
     private final String logFilePath;
 
+    private FileOutputStream fileOutputStream;
+    private FileChannel fileChannel;
+    private DataOutputStream dataOutputStream;
+
     /**
-     * Konstruktor default mock Logger.
+     * Konstruktor default Logger (hanya in-memory tanpa path file).
      */
     public Logger() {
         this("");
     }
 
     /**
-     * Membuat mock Logger dengan path file log.
+     * Membuat Logger dengan path file log.
      *
-     * @param logFilePath path ke file log
+     * <p>Jika file log telah ada sebelumnya di disk, seluruh record WAL yang tersimpan akan dimuat
+     * kembali ke memori dan LSN disesuaikan ke nomor tertinggi.
+     *
+     * @param logFilePath path ke file log di disk
      */
     public Logger(String logFilePath) {
         this.logFilePath = logFilePath != null ? logFilePath : "";
+        if (!this.logFilePath.isEmpty()) {
+            loadExistingLogsFromFile();
+        }
     }
 
     /**
-     * Membuat mock Logger dengan path objek {@link Path}.
+     * Membuat Logger dengan objek {@link Path}.
      *
      * @param logPath path ke file log
      */
     public Logger(Path logPath) {
         this(logPath != null ? logPath.toString() : "");
+    }
+
+    /**
+     * Memuat record WAL yang telah tersimpan dari file log di disk jika ada.
+     * Mampu mendeteksi dan menangani torn-tail record yang belum selesai ditulis saat crash.
+     */
+    private synchronized void loadExistingLogsFromFile() {
+        File file = new File(logFilePath);
+        if (!file.exists() || !file.isFile() || file.length() == 0) {
+            return;
+        }
+
+        try (DataInputStream in =
+                new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
+            long maxLsn = 0;
+            long lastCommit = 0;
+            while (true) {
+                int length;
+                try {
+                    length = in.readInt();
+                } catch (EOFException e) {
+                    break;
+                }
+                if (length <= 0) {
+                    break;
+                }
+                byte[] buffer = in.readNBytes(length);
+                if (buffer.length < length) {
+                    // Torn record pada akhir file akibat crash sistem mendadak
+                    break;
+                }
+                try {
+                    WALRecord record = WALRecord.deserialize(buffer);
+                    records.add(record);
+                    if (record.getLSN() > maxLsn) {
+                        maxLsn = record.getLSN();
+                    }
+                    if (record.getLogType() == LogType.COMMIT) {
+                        lastCommit = record.getLSN();
+                    }
+                } catch (IllegalArgumentException e) {
+                    // Record terdistorsi di batas akhir log
+                    break;
+                }
+            }
+            currentLSN.set(maxLsn);
+            this.lastCommittedLSN = lastCommit;
+        } catch (IOException e) {
+            throw new LoggerErrorException(
+                    "Failed to load existing WAL records from: " + logFilePath, e);
+        }
+    }
+
+    /**
+     * Membuka output stream ke file log jika belum terbuka.
+     */
+    private synchronized void ensureOutputStreamOpen() throws IOException {
+        if (dataOutputStream != null) {
+            return;
+        }
+        File file = new File(logFilePath);
+        File parent = file.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        this.fileOutputStream = new FileOutputStream(file, true);
+        this.fileChannel = fileOutputStream.getChannel();
+        this.dataOutputStream = new DataOutputStream(new BufferedOutputStream(fileOutputStream));
+    }
+
+    /**
+     * Menuliskan record WAL ke disk secara persisten.
+     */
+    private synchronized void writeRecordToDisk(WALRecord record) {
+        if (logFilePath.isEmpty()) {
+            return;
+        }
+        try {
+            ensureOutputStreamOpen();
+            byte[] serialized = record.serialize();
+            dataOutputStream.writeInt(serialized.length);
+            dataOutputStream.write(serialized);
+            dataOutputStream.flush();
+        } catch (IOException e) {
+            throw new LoggerErrorException(
+                    "Failed to append WAL record to disk: " + logFilePath, e);
+        }
     }
 
     /**
@@ -82,18 +192,52 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     /**
-     * Mock flush log buffer ke stable storage.
+     * Mem-flush buffer log ke stable storage.
      */
-    public void flush() {}
+    public void flush() {
+        flushAll();
+    }
 
+    /**
+     * Menyimpan permanen seluruh record log yang berada di buffer memori ke penyimpanan fisik stabil.
+     */
     @Override
-    public void flushAll() {}
+    public synchronized void flushAll() {
+        if (dataOutputStream != null) {
+            try {
+                dataOutputStream.flush();
+                if (fileChannel != null) {
+                    fileChannel.force(false);
+                } else if (fileOutputStream != null) {
+                    fileOutputStream.getFD().sync();
+                }
+            } catch (IOException e) {
+                throw new LoggerErrorException(
+                        "Failed to flush WAL records to disk: " + logFilePath, e);
+            }
+        }
+    }
 
+    /**
+     * Mem-flush semua record log sampai dengan LSN yang ditentukan ke stable storage.
+     *
+     * @param lsn batas nomor urut log yang harus dipastikan sudah permanen di disk
+     * @throws LoggerErrorException jika terjadi kegagalan I/O saat melakukan flush
+     */
     @Override
-    public void flushLogUntil(long lsn) {}
+    public void flushLogUntil(long lsn) throws LoggerErrorException {
+        flushAll();
+    }
 
+    /**
+     * Sinkronisasi paksa record log sampai dengan LSN tertentu ke disk (implementasi {@link WalSync}).
+     *
+     * @param lsn batas LSN log
+     */
     @Override
-    public void forceThrough(long lsn) {}
+    public void forceThrough(long lsn) {
+        flushAll();
+    }
 
     @Override
     public List<WALRecord> getLogsSorted() {
@@ -110,17 +254,19 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     @Override
-    public void logTransactionEvent(int idTransaction, LogType logType) {
+    public synchronized void logTransactionEvent(int idTransaction, LogType logType) {
         long lsn = currentLSN.incrementAndGet();
         long now = System.currentTimeMillis();
-        records.add(new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null));
+        WALRecord record = new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null);
+        records.add(record);
         if (logType == LogType.COMMIT) {
             lastCommittedLSN = lsn;
         }
+        writeRecordToDisk(record);
     }
 
     @Override
-    public long logDataChange(
+    public synchronized long logDataChange(
             int idTransaction,
             LogType logType,
             long timestamp,
@@ -129,7 +275,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             String beforeVal,
             String afterVal) {
         long lsn = currentLSN.incrementAndGet();
-        records.add(
+        WALRecord record =
                 new WALRecord(
                         lsn,
                         idTransaction,
@@ -138,7 +284,9 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                         tableName,
                         idRecord,
                         beforeVal,
-                        afterVal));
+                        afterVal);
+        records.add(record);
+        writeRecordToDisk(record);
         return lsn;
     }
 
@@ -156,7 +304,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     /**
-     * Menampilkan semua log ke standard output.
+     * Menampilkan semua log ke standard output dalam urutan LSN.
      */
     public void displayLogs() {
         List<WALRecord> logs = getLogsSorted();
@@ -192,5 +340,19 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     @Override
-    public void close() throws IOException {}
+    public synchronized void close() throws IOException {
+        if (dataOutputStream != null) {
+            try {
+                flushAll();
+            } finally {
+                try {
+                    dataOutputStream.close();
+                } finally {
+                    dataOutputStream = null;
+                    fileOutputStream = null;
+                    fileChannel = null;
+                }
+            }
+        }
+    }
 }

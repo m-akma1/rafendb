@@ -88,7 +88,7 @@ public class FRManager implements RecoveryManager {
                 (tableName, idRecord, image, lsn) -> {
                     Rid rid =
                             new Rid(
-                                    Math.max(0, (long) (idRecord / 1000)),
+                                    Math.max(0L, (long) idRecord / 1000),
                                     Math.max(0, idRecord % 1000));
                     Optional<Row> rowOpt = Optional.empty();
                     storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
@@ -157,6 +157,7 @@ public class FRManager implements RecoveryManager {
     public boolean commitTransaction(int idTransaction) {
         try {
             logger.logTransactionEvent(idTransaction, LogType.COMMIT);
+            logger.flushAll();
             txStatuses.put(idTransaction, TxStatus.COMMITTED);
             return true;
         } catch (Exception e) {
