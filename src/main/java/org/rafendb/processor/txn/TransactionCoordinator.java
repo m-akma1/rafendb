@@ -1,10 +1,10 @@
 package org.rafendb.processor.txn;
 
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.processor.ExecutionContext;
-import org.rafendb.api.processor.SessionContext;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionContext;
 
 /**
  * Coordinates transaction-related operations within a client session.
