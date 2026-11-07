@@ -1,10 +1,11 @@
 package org.rafendb.common.token;
 
+import java.io.Serializable;
 import java.util.Objects;
 import java.util.Set;
 
 // why is it in common? bcs SyntaxException later uses this (also in common)
-public record Token(TokenType type, String text, SourcePosition position) {
+public record Token(TokenType type, String text, SourcePosition position) implements Serializable {
     /** Unique identifier for serialization. */
     private static final long serialVersionUID = 1L;
 
