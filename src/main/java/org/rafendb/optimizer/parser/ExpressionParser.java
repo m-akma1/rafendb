@@ -117,10 +117,11 @@ final class ExpressionParser {
                 if (t.text().equalsIgnoreCase("NULL")) {
                     yield new Null();
                 }
-                if (in.acceptPunct(".")) {
-                    yield new ColumnRef(t.text(), in.expectIdentifier("column name"));
-                }
-                yield new ColumnRef(null, t.text());
+                // The Tokenizer returns table.column as a single identifier token.
+                int dot = t.text().indexOf('.');
+                yield dot < 0
+                        ? new ColumnRef(null, t.text())
+                        : new ColumnRef(t.text().substring(0, dot), t.text().substring(dot + 1));
             }
             case ARITHMETIC_OPERATOR -> {
                 Token n = in.peek();
