@@ -1,20 +1,20 @@
-package org.rafendb.common.plan;
+package org.rafendb.processor.plan.command;
 
 import java.util.List;
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.plan.PlanNode;
 
-/** Node UPDATE sementara QP2; target memakai Expr.ColumnRef bersama, bukan payload final QO. */
-public record UpdatePlanNode(
-        String table, Expr.ColumnRef column, Expr value, java.util.Optional<Expr> condition)
+/** Node CREATE INDEX sementara QP2; target memakai Expr.ColumnRef bersama, bukan payload final QO. */
+public record CreateIndexPlanNode(String name, String table, Expr.ColumnRef column, IndexKind kind)
         implements PlanNode {
-    public UpdatePlanNode {
+    public CreateIndexPlanNode {
+        Objects.requireNonNull(name, "name");
         Objects.requireNonNull(table, "table");
         Objects.requireNonNull(column, "column");
         Objects.requireNonNull(column.column(), "column name");
         if (column.column().isBlank()) throw new IllegalArgumentException("Column name is blank");
-        Objects.requireNonNull(value, "value");
-        Objects.requireNonNull(condition, "condition");
+        Objects.requireNonNull(kind, "kind");
     }
 
     @Override
@@ -24,6 +24,11 @@ public record UpdatePlanNode(
 
     @Override
     public String describe() {
-        return "UpdatePlanNode";
+        return "CreateIndexPlanNode";
+    }
+
+    public enum IndexKind {
+        BTREE,
+        HASH
     }
 }

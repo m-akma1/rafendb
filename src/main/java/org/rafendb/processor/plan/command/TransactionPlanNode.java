@@ -1,7 +1,8 @@
-package org.rafendb.common.plan;
+package org.rafendb.processor.plan.command;
 
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.plan.PlanNode;
 
 /** Local placeholder only: QO supplied the class name but not the command representation. */
 public record TransactionPlanNode(Action action) implements PlanNode {

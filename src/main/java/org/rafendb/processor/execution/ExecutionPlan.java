@@ -1,8 +1,9 @@
-package org.rafendb.api.processor;
+package org.rafendb.processor.execution;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.common.schema.ColumnSchema;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
 
 /** Hasil persiapan translator berupa pembacaan baris atau perintah yang siap dijalankan. */
 public sealed interface ExecutionPlan {

@@ -1,4 +1,4 @@
-package org.rafendb.common.type;
+package org.rafendb.processor.expr;
 
 /** Proposed predicate result pending QO2 agreement; only TRUE passes a filter or join. */
 public enum TruthValue {

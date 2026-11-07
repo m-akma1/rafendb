@@ -2,13 +2,11 @@ package org.rafendb.processor.expr;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.ExpressionEvaluator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.type.DataType;
-import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Evaluator QP-04 tanpa state, aman dipakai beberapa sesi bersamaan.

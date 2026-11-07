@@ -2,12 +2,12 @@ package org.rafendb.mock.processor;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.ExpressionEvaluator;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
-import org.rafendb.common.type.TruthValue;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.expr.ExpressionEvaluator;
+import org.rafendb.processor.expr.TruthValue;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 public final class MockExpressionEvaluator implements ExpressionEvaluator {
     private final Value value;

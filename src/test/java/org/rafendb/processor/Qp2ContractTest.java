@@ -6,17 +6,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.processor.ExecutionPlan;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
-import org.rafendb.common.schema.ColumnSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.processor.MockExpressionEvaluator;
 import org.rafendb.mock.processor.MockPlanTranslator;
+import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.InsertPlanNode;
+import org.rafendb.processor.plan.command.TransactionPlanNode;
+import org.rafendb.processor.plan.command.UpdatePlanNode;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 class Qp2ContractTest {
     @Test

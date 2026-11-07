@@ -2,10 +2,15 @@ package org.rafendb.mock.processor;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.ExecutionPlan;
-import org.rafendb.api.processor.PlanTranslator;
 import org.rafendb.common.plan.*;
-import org.rafendb.common.schema.ColumnSchema;
+import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.plan.PlanTranslator;
+import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.InsertPlanNode;
+import org.rafendb.processor.plan.command.TransactionPlanNode;
+import org.rafendb.processor.plan.command.UpdatePlanNode;
+import org.rafendb.processor.schema.ColumnSchema;
 
 /**
  * Translator mock yang aman dipakai bersamaan. Hasil baris memakai kolom konfigurasi tanpa data.
