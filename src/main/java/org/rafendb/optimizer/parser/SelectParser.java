@@ -33,7 +33,6 @@ final class SelectParser {
                 in.next();
                 columns.add(new Expr.ColumnRef(null, "*"));
             } else if (t.type() == Token.TokenType.IDENTIFIER) {
-                in.next();
                 columns.add(column(in, true));
             } else {
                 throw in.error(t, "column name or '*'");
@@ -48,7 +47,8 @@ final class SelectParser {
             Token t = in.peek();
             String tableName = in.expectIdentifier("table name");
             if (tableName.indexOf('.') != -1) {
-                throw in.error(t, "table name cannot contain '.'");
+                throw TokenCursor.syntaxError(
+                        "Table name must not contain a dot: '" + tableName + "'", t);
             }
             tables.add(tableName);
         } while (in.acceptPunct(","));
@@ -71,6 +71,8 @@ final class SelectParser {
                 boolean ascending = true;
                 if (in.acceptKeyword("DESC")) {
                     ascending = false;
+                } else {
+                    in.acceptKeyword("ASC");
                 }
                 orderBy.add(new OrderByItem(columnName, ascending));
             } while (in.acceptPunct(","));
