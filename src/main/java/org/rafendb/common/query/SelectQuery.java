@@ -8,8 +8,7 @@ import org.rafendb.common.expr.Expr;
 public record SelectQuery(
         String originalSql,
         List<Expr> projection,
-        List<String> sourceTables,
-        Expr joinCondition,
+        FromItem from,
         Expr whereCondition,
         List<OrderByItem> orderBy)
         implements ParsedQuery {
@@ -17,6 +16,10 @@ public record SelectQuery(
     public SelectQuery {
         Objects.requireNonNull(originalSql, "originalSql must not be null");
         Objects.requireNonNull(projection, "projection must not be null");
-        Objects.requireNonNull(sourceTables, "sourceTables must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+    }
+
+    public List<String> sourceTables() {
+        return from.tables();
     }
 }
