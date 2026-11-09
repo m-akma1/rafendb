@@ -3,6 +3,7 @@ package org.rafendb.optimizer.parser;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.FromItem.TableRef;
+import org.rafendb.common.token.Token;
 
 final class FromParser {
     private final TokenCursor in;
@@ -23,19 +24,34 @@ final class FromParser {
      * @throws SyntaxException if a table, ON, or condition is missing or malformed
      */
     FromItem parse() {
-        // TODO (QO-02, QO-03): see the steps in the class comment.
-        throw new UnsupportedOperationException("TODO QO-03: FromParser.parse");
+        FromItem left = table();
+        while (true) {
+            if (in.acceptPunct(",")) {
+                left = new FromItem.CartesianProduct(left, table());
+            }
+            else if(in.acceptKeyword("JOIN")){
+                FromItem right = table();
+                in.expectKeyword("ON");
+                left = new FromItem.Join(left, right, new ExpressionParser(in).parseCondition());
+            }
+            else if(in.acceptKeyword("NATURAL")){
+                in.expectKeyword("JOIN");
+                FromItem right = table();
+                left = new FromItem.NaturalJoin(left, right);
+            }
+            else{
+                break;
+            }
+        }
+        return left;
     }
 
-    /**
-     * Reads one table name.
-     *
-     * <p>TODO: {@code in.expectIdentifier("table name")}. The Tokenizer returns {@code a.b} as one
-     * identifier, so reject a name containing '.' with {@code TokenCursor.syntaxError("Table name
-     * cannot contain '.': '" + name + "'", token)}; this check moves here from {@code
-     * SelectParser.fromTables}.
-     */
     private TableRef table() {
-        throw new UnsupportedOperationException("TODO QO-02: FromParser.table");
+        Token t = in.peek();
+        String name = in.expectIdentifier("table name");
+        if(name.indexOf('.') >= 0) {
+            throw TokenCursor.syntaxError("Table name cannot contain '.': '" + name + "'", t);
+        }
+        return new TableRef(name);
     }
 }
