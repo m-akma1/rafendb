@@ -4,10 +4,11 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
-import org.rafendb.common.error.CostEstimationException;
+import org.rafendb.common.error.OptimizerInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
+import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.JoinAlgorithm;
 import org.rafendb.common.plan.JoinPlanNode;
@@ -55,13 +56,15 @@ public final class StatsCostModel implements CostModel {
 
     /** {@inheritDoc} */
     @Override
-    public long estimateRows(PlanNode node) {
+    public long estimateRows(PlanNode node)
+            throws OptimizerInternalException.CostEstimationException {
         return new Context().rows(node);
     }
 
     /** {@inheritDoc} */
     @Override
-    public Cost estimateLocalCost(PlanNode node) {
+    public Cost estimateLocalCost(PlanNode node)
+            throws OptimizerInternalException.CostEstimationException {
         Context c = new Context();
         c.rows(node);
         return c.local(node);
@@ -69,7 +72,8 @@ public final class StatsCostModel implements CostModel {
 
     /** {@inheritDoc} */
     @Override
-    public Cost estimateTotalCost(PlanNode node) {
+    public Cost estimateTotalCost(PlanNode node)
+            throws OptimizerInternalException.CostEstimationException {
         Context c = new Context();
         c.rows(node);
         Set<PlanNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -84,7 +88,7 @@ public final class StatsCostModel implements CostModel {
         final Map<PlanNode, Cost> locals = new IdentityHashMap<>();
         final Map<PlanNode, Cost> totals = new IdentityHashMap<>();
 
-        TableStats stats(String table) {
+        TableStats stats(String table) throws OptimizerInternalException.CostEstimationException {
             String key = table;
             TableStats cached = stats.get(key);
             if (cached != null) return cached;
@@ -93,18 +97,18 @@ public final class StatsCostModel implements CostModel {
                 stats.put(key, loaded);
                 return loaded;
             } catch (StorageInternalException e) {
-                throw new CostEstimationException(
+                throw new OptimizerInternalException.CostEstimationException(
                         "Could not read statistics for table " + table, e);
             }
         }
 
-        long rows(PlanNode node) {
+        long rows(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             if (node == null) throw fail("null plan node");
             Long saved = rows.get(node);
             if (saved != null) return saved;
             long n;
-            if (node instanceof TableScanNode scan) n = stats(scan.getTable()).recordCount();
-            else if (node instanceof IndexScanNode scan) n = stats(scan.getTable()).recordCount();
+            if (node instanceof TableScanNode scan) n = stats(scan.table()).recordCount();
+            else if (node instanceof IndexScanNode scan) n = indexRows(scan);
             else if (node instanceof SelectionPlanNode selection)
                 n =
                         selected(
@@ -121,18 +125,18 @@ public final class StatsCostModel implements CostModel {
             return n;
         }
 
-        long blocks(PlanNode node) {
+        long blocks(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             Long saved = blocks.get(node);
             if (saved != null) return saved;
             rows(node);
             long b;
-            if (node instanceof TableScanNode scan) b = stats(scan.getTable()).blockCount();
+            if (node instanceof TableScanNode scan) b = stats(scan.table()).blockCount();
             else if (node instanceof IndexScanNode scan)
                 b =
                         rows(node) == 0
                                 ? 0
                                 : Math.min(
-                                        stats(scan.getTable()).blockCount(),
+                                        stats(scan.table()).blockCount(),
                                         ceil(rows(node) / factor(node)));
             else if (node instanceof JoinPlanNode join) b = packed(rows(node), size(node));
             else if (node instanceof CartesianPlanNode cartesian)
@@ -145,12 +149,12 @@ public final class StatsCostModel implements CostModel {
             return b;
         }
 
-        double size(PlanNode node) {
+        double size(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             Double saved = sizes.get(node);
             if (saved != null) return saved;
             double s;
-            if (node instanceof TableScanNode scan) s = recordSize(scan.getTable());
-            else if (node instanceof IndexScanNode scan) s = recordSize(scan.getTable());
+            if (node instanceof TableScanNode scan) s = recordSize(scan.table());
+            else if (node instanceof IndexScanNode scan) s = recordSize(scan.table());
             else if (node instanceof SelectionPlanNode selection || node instanceof SortPlanNode)
                 s = size(node.children().get(0));
             else if (node instanceof ProjectionPlanNode projection) {
@@ -170,7 +174,8 @@ public final class StatsCostModel implements CostModel {
             return s;
         }
 
-        Cost total(PlanNode node, Set<PlanNode> seen) {
+        Cost total(PlanNode node, Set<PlanNode> seen)
+                throws OptimizerInternalException.CostEstimationException {
             if (!seen.add(node)) return new Cost(0, 0);
             Cost cost = local(node);
             for (PlanNode child : node.children()) cost = add(cost, total(child, seen));
@@ -178,48 +183,22 @@ public final class StatsCostModel implements CostModel {
             return cost;
         }
 
-        Cost totalSubtree(PlanNode node) {
+        Cost totalSubtree(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             Cost known = totals.get(node);
             if (known != null) return known;
             return total(node, Collections.newSetFromMap(new IdentityHashMap<>()));
         }
 
-        Cost local(PlanNode node) {
+        Cost local(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             Cost saved = locals.get(node);
             if (saved != null) return saved;
             rows(node);
             Cost result;
             if (node instanceof TableScanNode scan) {
-                long b = stats(scan.getTable()).blockCount();
+                long b = stats(scan.table()).blockCount();
                 result = new Cost(b > 0 ? 1 : 0, b);
             } else if (node instanceof IndexScanNode scan) {
-                TableStats t = stats(scan.getTable());
-                // TODO(contract): IndexScanNode currently has no descriptor or predicate.
-                IndexInfo index =
-                        catalog.listIndexes(scan.getTable()).stream().findFirst().orElse(null);
-                if (index == null) result = new Cost(t.blockCount() > 0 ? 1 : 0, t.blockCount());
-                else {
-                    if (index.type() == IndexType.HASH)
-                        result =
-                                new Cost(
-                                        1 + Math.min(rows(node), Math.max(1, t.blockCount())),
-                                        1 + Math.min(rows(node), Math.max(1, t.blockCount())));
-                    else {
-                        double keySize = columnSize(scan.getTable(), index.column());
-                        double fanout =
-                                Math.max(
-                                        2, Math.floor(parameters.blockSizeBytes() / (keySize + 8)));
-                        long height =
-                                Math.max(
-                                        1,
-                                        (long)
-                                                Math.ceil(
-                                                        Math.log(Math.max(1, t.recordCount()))
-                                                                / Math.log(fanout)));
-                        long fetched = Math.min(rows(node), Math.max(1, t.blockCount()));
-                        result = cost(height + fetched, height + fetched);
-                    }
-                }
+                result = indexScanCost(scan);
             } else if (node instanceof SelectionPlanNode || node instanceof ProjectionPlanNode)
                 result = new Cost(0, 0);
             else if (node instanceof SortPlanNode sort) result = sortCost(blocks(sort.child()));
@@ -232,7 +211,127 @@ public final class StatsCostModel implements CostModel {
             return result;
         }
 
-        Cost joinCost(JoinAlgorithm algorithm, PlanNode left, PlanNode right) {
+        /** Index scans whose row estimate is being computed; guards the distinct-count cap. */
+        final Set<PlanNode> computing = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        long indexRows(IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            long total = stats(scan.table()).recordCount();
+            computing.add(scan);
+            try {
+                return selected(total, selectivity(scan.descriptor().condition(), scan));
+            } finally {
+                computing.remove(scan);
+            }
+        }
+
+        /** How the conjuncts of an index condition use the indexed column. */
+        record IndexUse(boolean equality, boolean range) {}
+
+        IndexUse indexUse(Expr condition, IndexInfo index, IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            if (condition instanceof Expr.Binary and && and.op() == Expr.Op.AND) {
+                IndexUse l = indexUse(and.left(), index, scan);
+                IndexUse r = indexUse(and.right(), index, scan);
+                return new IndexUse(l.equality() || r.equality(), l.range() || r.range());
+            }
+            if (!(condition instanceof Expr.Binary cmp)
+                    || cmp.op() == Expr.Op.NE
+                    || cmp.op() == Expr.Op.AND
+                    || cmp.op() == Expr.Op.ADD
+                    || cmp.op() == Expr.Op.SUB
+                    || cmp.op() == Expr.Op.MUL
+                    || cmp.op() == Expr.Op.DIV
+                    || cmp.op() == Expr.Op.MOD)
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " can only answer =, >, >=, < and <= on its column, got "
+                                + condition);
+            Expr.ColumnRef col =
+                    cmp.left() instanceof Expr.ColumnRef l
+                            ? l
+                            : cmp.right() instanceof Expr.ColumnRef r ? r : null;
+            Expr other = col == cmp.left() ? cmp.right() : cmp.left();
+            if (col == null
+                    || !col.column().equalsIgnoreCase(index.column())
+                    || (col.table() != null && !refersTo(scan, col.table()))
+                    || other instanceof Expr.ColumnRef
+                    || mentionsColumn(other))
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " on column "
+                                + index.column()
+                                + " cannot answer condition "
+                                + condition);
+            return cmp.op() == Expr.Op.EQ ? new IndexUse(true, false) : new IndexUse(false, true);
+        }
+
+        boolean refersTo(IndexScanNode scan, String name) {
+            return scan.table().equalsIgnoreCase(name)
+                    || scan.alias() != null && scan.alias().equalsIgnoreCase(name);
+        }
+
+        boolean mentionsColumn(Expr expr) {
+            return expr instanceof Expr.ColumnRef
+                    || expr instanceof Expr.Binary b
+                            && (mentionsColumn(b.left()) || mentionsColumn(b.right()));
+        }
+
+        /**
+         * Cost of reading through the index the descriptor names, assuming a secondary
+         * (non-clustering) index: the lookup path plus one block fetch per matching row, never more
+         * fetches than the table has blocks. A hash index costs one bucket access and answers only
+         * equality; a B+Tree costs its height and answers equality and ranges.
+         */
+        Cost indexScanCost(IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            TableStats t = stats(scan.table());
+            IndexScanDescriptor descriptor = scan.descriptor();
+            IndexInfo index =
+                    catalog.listIndexes(scan.table()).stream()
+                            .filter(i -> i.name().equalsIgnoreCase(descriptor.indexName()))
+                            .findFirst()
+                            .orElseThrow(
+                                    () ->
+                                            fail(
+                                                    "Index "
+                                                            + descriptor.indexName()
+                                                            + " does not exist on table "
+                                                            + scan.table()));
+            if (!index.column().equalsIgnoreCase(descriptor.column()))
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " is on column "
+                                + index.column()
+                                + " but the scan names column "
+                                + descriptor.column());
+            IndexUse use = indexUse(descriptor.condition(), index, scan);
+            if (index.type() == IndexType.HASH && use.range())
+                throw fail(
+                        "Hash index "
+                                + index.name()
+                                + " answers only equality, got "
+                                + descriptor.condition());
+            if (t.recordCount() == 0) return new Cost(0, 0);
+            long fetched = Math.min(rows(scan), Math.max(1, t.blockCount()));
+            if (index.type() == IndexType.HASH) return cost(1 + fetched, 1 + fetched);
+            double keySize = columnSize(scan.table(), index.column());
+            double fanout = Math.max(2, Math.floor(parameters.blockSizeBytes() / (keySize + 8)));
+            long height =
+                    Math.max(
+                            1,
+                            (long)
+                                    Math.ceil(
+                                            Math.log(Math.max(1, t.recordCount()))
+                                                    / Math.log(fanout)));
+            return cost(height + fetched, height + fetched);
+        }
+
+        Cost joinCost(JoinAlgorithm algorithm, PlanNode left, PlanNode right)
+                throws OptimizerInternalException.CostEstimationException {
             double bo = blocks(left), bi = blocks(right);
             long no = rows(left);
             if (bo == 0 || bi == 0) return new Cost(0, 0);
@@ -260,7 +359,8 @@ public final class StatsCostModel implements CostModel {
             };
         }
 
-        Cost sortCostIfNeeded(PlanNode node) {
+        Cost sortCostIfNeeded(PlanNode node)
+                throws OptimizerInternalException.CostEstimationException {
             return node instanceof SortPlanNode ? new Cost(0, 0) : sortCost(blocks(node));
         }
 
@@ -272,7 +372,8 @@ public final class StatsCostModel implements CostModel {
             return cost(2 * runs + b * (2 * passes - 1), 2 * passes * b);
         }
 
-        double selectivity(Expr expr, PlanNode node) {
+        double selectivity(Expr expr, PlanNode node)
+                throws OptimizerInternalException.CostEstimationException {
             if (expr instanceof Expr.Null) return 0;
             if (!(expr instanceof Expr.Binary binary)) return parameters.defaultEqSelectivity();
             if (binary.op() == Expr.Op.AND)
@@ -299,17 +400,18 @@ public final class StatsCostModel implements CostModel {
             if (expr instanceof Expr.Literal literal) return literal.value().isNull();
             if (expr instanceof Expr.Binary binary) {
                 return binary.op() == Expr.Op.ADD
-                        || binary.op() == Expr.Op.SUB
-                        || binary.op() == Expr.Op.MUL
-                        || binary.op() == Expr.Op.DIV
-                        || binary.op() == Expr.Op.MOD
+                                || binary.op() == Expr.Op.SUB
+                                || binary.op() == Expr.Op.MUL
+                                || binary.op() == Expr.Op.DIV
+                                || binary.op() == Expr.Op.MOD
                         ? isNullValue(binary.left()) || isNullValue(binary.right())
                         : false;
             }
             return false;
         }
 
-        double equality(Expr a, Expr b, PlanNode node) {
+        double equality(Expr a, Expr b, PlanNode node)
+                throws OptimizerInternalException.CostEstimationException {
             if (a instanceof Expr.ColumnRef col && b instanceof Expr.ColumnRef other)
                 return 1.0 / Math.max(distinct(col, node), distinct(other, node));
             if (a instanceof Expr.ColumnRef col) return 1.0 / distinct(col, node);
@@ -317,7 +419,8 @@ public final class StatsCostModel implements CostModel {
             return parameters.defaultEqSelectivity();
         }
 
-        long distinct(Expr.ColumnRef column, PlanNode node) {
+        long distinct(Expr.ColumnRef column, PlanNode node)
+                throws OptimizerInternalException.CostEstimationException {
             String table = findTable(node, column.table());
             TableStats t = stats(table);
             Long exact = t.distinctValues().get(column.column());
@@ -330,44 +433,47 @@ public final class StatsCostModel implements CostModel {
                                     .orElse(1L)
                             : exact;
             PlanNode relation = relationNode(node, table);
-            return Math.max(1, Math.min(v, Math.max(1, rows(relation))));
+            long available = computing.contains(relation) ? t.recordCount() : rows(relation);
+            return Math.max(1, Math.min(v, Math.max(1, available)));
         }
 
         boolean hasTable(PlanNode node, String name) {
             if (node instanceof TableScanNode s)
-                return s.getTable().equalsIgnoreCase(name)
-                        || s.getAlias() != null && s.getAlias().equalsIgnoreCase(name);
+                return s.table().equalsIgnoreCase(name)
+                        || s.alias() != null && s.alias().equalsIgnoreCase(name);
             if (node instanceof IndexScanNode s)
-                return s.getTable().equalsIgnoreCase(name)
-                        || s.getAlias() != null && s.getAlias().equalsIgnoreCase(name);
+                return s.table().equalsIgnoreCase(name)
+                        || s.alias() != null && s.alias().equalsIgnoreCase(name);
             for (PlanNode child : node.children()) if (hasTable(child, name)) return true;
             return false;
         }
 
-        String findTable(PlanNode node, String name) {
+        String findTable(PlanNode node, String name)
+                throws OptimizerInternalException.CostEstimationException {
             if (node instanceof TableScanNode s
                     && (name == null
-                            || s.getTable().equalsIgnoreCase(name)
-                            || s.getAlias() != null && s.getAlias().equalsIgnoreCase(name)))
-                return s.getTable();
+                            || s.table().equalsIgnoreCase(name)
+                            || s.alias() != null && s.alias().equalsIgnoreCase(name)))
+                return s.table();
             if (node instanceof IndexScanNode s
                     && (name == null
-                            || s.getTable().equalsIgnoreCase(name)
-                            || s.getAlias() != null && s.getAlias().equalsIgnoreCase(name)))
-                return s.getTable();
+                            || s.table().equalsIgnoreCase(name)
+                            || s.alias() != null && s.alias().equalsIgnoreCase(name)))
+                return s.table();
             for (PlanNode child : node.children()) {
                 try {
                     return findTable(child, name);
-                } catch (CostEstimationException ignored) {
+                } catch (OptimizerInternalException.CostEstimationException ignored) {
                 }
             }
             throw fail("Cannot resolve table " + name + " in " + node.getClass().getName());
         }
 
-        PlanNode relationNode(PlanNode node, String table) {
-            if (node instanceof TableScanNode scan && scan.getTable().equalsIgnoreCase(table))
+        PlanNode relationNode(PlanNode node, String table)
+                throws OptimizerInternalException.CostEstimationException {
+            if (node instanceof TableScanNode scan && scan.table().equalsIgnoreCase(table))
                 return node;
-            if (node instanceof IndexScanNode scan && scan.getTable().equalsIgnoreCase(table))
+            if (node instanceof IndexScanNode scan && scan.table().equalsIgnoreCase(table))
                 return node;
             if (node instanceof SelectionPlanNode selection && hasTable(selection.child(), table))
                 return node;
@@ -377,19 +483,20 @@ public final class StatsCostModel implements CostModel {
             throw fail("Cannot find relation for table " + table);
         }
 
-        String firstTable(PlanNode node) {
-            if (node instanceof TableScanNode s) return s.getTable();
-            if (node instanceof IndexScanNode s) return s.getTable();
+        String firstTable(PlanNode node) throws OptimizerInternalException.CostEstimationException {
+            if (node instanceof TableScanNode s) return s.table();
+            if (node instanceof IndexScanNode s) return s.table();
             for (PlanNode child : node.children()) {
                 try {
                     return firstTable(child);
-                } catch (CostEstimationException ignored) {
+                } catch (OptimizerInternalException.CostEstimationException ignored) {
                 }
             }
             throw fail("Cannot resolve column table for " + node.getClass().getName());
         }
 
-        long joined(long l, long r, Expr condition, PlanNode scope) {
+        long joined(long l, long r, Expr condition, PlanNode scope)
+                throws OptimizerInternalException.CostEstimationException {
             long product = safeMultiply(l, r);
             if (condition == null) return product;
             return Math.max(
@@ -407,19 +514,19 @@ public final class StatsCostModel implements CostModel {
             return ceil(n / f);
         }
 
-        double factor(PlanNode node) {
+        double factor(PlanNode node) throws OptimizerInternalException.CostEstimationException {
             if (node instanceof TableScanNode scan) {
-                double factor = stats(scan.getTable()).blockingFactor();
+                double factor = stats(scan.table()).blockingFactor();
                 if (factor > 0) return factor;
             }
             if (node instanceof IndexScanNode scan) {
-                double factor = stats(scan.getTable()).blockingFactor();
+                double factor = stats(scan.table()).blockingFactor();
                 if (factor > 0) return factor;
             }
             return Math.max(1, Math.floor(parameters.blockSizeBytes() / Math.max(1, size(node))));
         }
 
-        double recordSize(String table) {
+        double recordSize(String table) throws OptimizerInternalException.CostEstimationException {
             TableStats t = stats(table);
             if (t.averageRecordSize() > 0) return t.averageRecordSize();
             return catalog.getSchema(table).columns().stream()
@@ -427,7 +534,8 @@ public final class StatsCostModel implements CostModel {
                     .sum();
         }
 
-        double columnSize(String table, String name) {
+        double columnSize(String table, String name)
+                throws OptimizerInternalException.CostEstimationException {
             Column c =
                     catalog.getSchema(table).columns().stream()
                             .filter(x -> x.name().equalsIgnoreCase(name))
@@ -466,7 +574,7 @@ public final class StatsCostModel implements CostModel {
         return Math.max(0, (long) Math.ceil(value));
     }
 
-    private static CostEstimationException fail(String message) {
-        return new CostEstimationException(message);
+    private static OptimizerInternalException.CostEstimationException fail(String message) {
+        return new OptimizerInternalException.CostEstimationException(message);
     }
 }
