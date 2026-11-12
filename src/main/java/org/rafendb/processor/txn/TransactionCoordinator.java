@@ -111,11 +111,13 @@ public class TransactionCoordinator {
                 throw new TransactionAbortedException(
                         "Commit transaction with id "
                                 + txId.toString()
-                                + " has been aborted by CCM. Rollback is not confirmed");
+                                + " has been aborted by CCM");
             }
             case FAILED -> {
                 throw new TransactionAbortedException(
-                        "Commit transaction with id " + txId.toString() + " has been failed");
+                        "Commit transaction with id "
+                                + txId.toString()
+                                + " has been failed. Rollback is not confirmed.");
             }
             case PARTIALLY_COMMITTED -> {
                 throw new ConcurrencyInternalException(commitRes.message());
@@ -154,7 +156,7 @@ public class TransactionCoordinator {
             }
             case FAILED -> {
                 throw new ConcurrencyInternalException(
-                        "Failed to abort transaction with id: " + txId);
+                        "Failed to abort transaction with id: " + txId + ". Rollback is not confirmed");
             }
             case COMMITTED -> {
                 this.getExecutionContext().getSContext().setCurrentTxId(null);
