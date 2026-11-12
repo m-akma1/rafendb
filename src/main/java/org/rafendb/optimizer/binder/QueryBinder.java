@@ -3,13 +3,15 @@ package org.rafendb.optimizer.binder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.error.StorageRuntimeException;
-import org.rafendb.common.error.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.DeleteQuery;
+import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.InsertQuery;
+import org.rafendb.common.query.OrderByItem;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.query.TransactionQuery;
@@ -47,7 +49,8 @@ public final class QueryBinder implements Binder {
      */
     @Override
     public ParsedQuery bind(ParsedQuery parsed) {
-        if (parsed instanceof SelectQuery select) return bind(select, false);
+        Objects.requireNonNull(parsed, "parsed");
+        if (parsed instanceof SelectQuery select) return bind(select);
         if (parsed instanceof InsertQuery insert) return bindInsert(insert);
         if (parsed instanceof UpdateQuery update) return bindUpdate(update);
         if (parsed instanceof DeleteQuery delete) return bindDelete(delete);
@@ -57,42 +60,45 @@ public final class QueryBinder implements Binder {
     }
 
     /**
-     * Binds a SELECT with an explicit natural-join marker until that marker is part of SelectQuery.
+     * Binds a SELECT.
+     *
+     * <p>The FROM tree keeps its shape except that every NATURAL JOIN becomes a {@code Join} with
+     * the equality condition derived from the catalog (or a {@code CartesianProduct} when the two
+     * sides share no column). {@code SELECT *} is expanded, dropping the right-hand copy of each
+     * column a NATURAL JOIN merged.
+     *
+     * <p>Every {@code ColumnRef} gets its {@code offset}: the position of the column in the row
+     * that the unoptimized plan feeds to the node holding the expression. For a join condition
+     * that is the join's own input row (left tables then right tables); for WHERE, the projection
+     * and ORDER BY it is the concatenation of all FROM tables in FROM order. A condition may only
+     * name tables joined at or below its own join.
      *
      * @param query non-null SELECT query
-     * @param natural whether shared columns should form a natural join
      * @return the validated, canonical SELECT
      * @throws NullPointerException if {@code query} is {@code null}
-     * @throws ValidationException if catalog names, expressions, or natural-join types are invalid
+     * @throws ValidationException if catalog names, expressions, or join types are invalid
      */
-    public SelectQuery bind(SelectQuery query, boolean natural) {
-        // TODO(contract): replace this hook when SelectQuery carries join kinds.
+    public SelectQuery bind(SelectQuery query) {
         Objects.requireNonNull(query, "query");
-        Scope scope = new Scope(catalog, query.sourceTables());
-        Expr join = query.joinCondition();
-        if (natural && join == null) {
-            Expr generated = NaturalJoinResolver.resolve(scope);
-            join = generated;
-        }
+        Scope all = new Scope(catalog, query.sourceTables());
+        FromBinder fromBinder = new FromBinder(all);
+        FromItem from = fromBinder.bind(query.from());
+        Scope scope = all.withHidden(fromBinder.merged());
         ExprBinder binder = new ExprBinder(scope);
-        if (join != null) {
-            binder.requireBoolean(join, "JOIN");
-            join = binder.bind(join).expr();
-        }
-        Expr where = query.whereCondition();
-        if (where != null) {
-            binder.requireBoolean(where, "WHERE");
-            where = binder.bind(where).expr();
-        }
-        List<Expr> projection = StarExpander.expand(query.projection(), scope, natural);
+        Expr where = binder.condition(query.whereCondition(), "WHERE");
         List<Expr> boundProjection = new ArrayList<>();
-        for (Expr expression : projection) boundProjection.add(binder.bind(expression).expr());
+        for (Expr expression : StarExpander.expand(query.projection(), scope))
+            boundProjection.add(binder.bind(expression).expr());
+        List<OrderByItem> orderBy = new ArrayList<>();
+        for (OrderByItem item : query.orderBy()) {
+            orderBy.add(new OrderByItem(binder.bind(item.expression()).expr(), item.ascending()));
+        }
         return new SelectQuery(
                 query.originalSql(),
                 List.copyOf(boundProjection),
-                scope.tables().stream().map(Scope.Table::name).toList(),
-                join,
-                where);
+                from,
+                where,
+                List.copyOf(orderBy));
     }
 
     private ParsedQuery bindInsert(InsertQuery query) {
@@ -127,22 +133,15 @@ public final class QueryBinder implements Binder {
         Scope scope = new Scope(catalog, List.of(schema.table()));
         ExprBinder binder = new ExprBinder(scope);
         Expr value = binder.assign(query.value(), target, schema.table());
-        Expr where = query.where();
-        if (where != null) {
-            binder.requireBoolean(where, "WHERE");
-            where = binder.bind(where).expr();
-        }
+        Expr where = binder.condition(query.where(), "WHERE");
         return new UpdateQuery(query.originalSql(), schema.table(), target.name(), value, where);
     }
 
     private ParsedQuery bindDelete(DeleteQuery query) {
         TableSchema schema = schema(query.table());
-        Expr where = query.where();
-        if (where != null) {
-            ExprBinder binder = new ExprBinder(new Scope(catalog, List.of(schema.table())));
-            binder.requireBoolean(where, "WHERE");
-            where = binder.bind(where).expr();
-        }
+        Expr where =
+                new ExprBinder(new Scope(catalog, List.of(schema.table())))
+                        .condition(query.where(), "WHERE");
         return new DeleteQuery(query.originalSql(), schema.table(), where);
     }
 

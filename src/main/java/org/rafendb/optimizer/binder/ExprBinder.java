@@ -1,6 +1,6 @@
 package org.rafendb.optimizer.binder;
 
-import org.rafendb.common.error.ValidationException;
+import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;
@@ -29,7 +29,6 @@ final class ExprBinder {
 
     Typed bind(Expr expr) {
         if (expr instanceof ColumnRef ref) {
-            // TODO(contract): Expr.ColumnRef in this snapshot has no offset field to bind.
             Scope.Resolved r = scope.resolve(ref.table(), ref.column());
             Column c = r.column();
             Kind kind =
@@ -37,7 +36,7 @@ final class ExprBinder {
                             ? (c.type() == DataType.INTEGER ? Kind.INTEGER : Kind.FLOAT)
                             : Kind.TEXT;
             return new Typed(
-                    new ColumnRef(r.table().name(), c.name()),
+                    new ColumnRef(r.table().name(), c.name(), r.offset()),
                     kind,
                     c.type(),
                     "column '" + r.table().name() + "." + c.name() + "'");
@@ -111,17 +110,27 @@ final class ExprBinder {
         throw new ValidationException("Unsupported operator: " + op);
     }
 
-    void requireBoolean(Expr expression, String clause) {
-        if (expression == null) return;
+    /**
+     * Binds a condition and checks that it is boolean.
+     *
+     * @param expression the condition, or {@code null} for "no condition"
+     * @param clause clause name for error messages, e.g. {@code WHERE}
+     * @return the bound condition with every column offset set, or {@code null} if none was given
+     * @throws ValidationException if a name or type is invalid, or the condition is not boolean
+     */
+    Expr condition(Expr expression, String clause) {
+        if (expression == null) return null;
         Typed typed = bind(expression);
         if (typed.kind() != Kind.BOOLEAN && typed.kind() != Kind.NULL)
             throw new ValidationException(clause + " condition must be a boolean expression");
+        return typed.expr();
     }
 
     Expr assign(Expr expr, Column target, String table) {
         Typed typed = bind(expr);
         DataType expected = target.type();
-        if (expr instanceof Expr.Null || expr instanceof Literal literal && literal.value().isNull()) {
+        if (expr instanceof Expr.Null
+                || expr instanceof Literal literal && literal.value().isNull()) {
             if (!target.nullable())
                 throw new ValidationException(
                         "NULL is not allowed for column '" + table + "." + target.name() + "'");
