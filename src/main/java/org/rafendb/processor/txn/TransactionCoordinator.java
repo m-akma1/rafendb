@@ -156,7 +156,9 @@ public class TransactionCoordinator {
             }
             case FAILED -> {
                 throw new ConcurrencyInternalException(
-                        "Failed to abort transaction with id: " + txId + ". Rollback is not confirmed");
+                        "Failed to abort transaction with id: "
+                                + txId
+                                + ". Rollback is not confirmed");
             }
             case COMMITTED -> {
                 this.getExecutionContext().getSContext().setCurrentTxId(null);
