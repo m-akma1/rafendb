@@ -62,7 +62,7 @@ public class TransactionCoordinator {
      * control component.
      * </p>
      */
-    public void beginTx() throws ConcurrencyInternalException{
+    public void beginTx() throws ConcurrencyInternalException {
         if (!this.getExecutionContext().getSContext().isValid()) {
             throw new IllegalStateException("The session is not valid");
         }
@@ -115,9 +115,7 @@ public class TransactionCoordinator {
             }
             case FAILED -> {
                 throw new TransactionAbortedException(
-                        "Commit transaction with id "
-                            + txId.toString()
-                            + " has been failed");
+                        "Commit transaction with id " + txId.toString() + " has been failed");
             }
             case PARTIALLY_COMMITTED -> {
                 throw new ConcurrencyInternalException(commitRes.message());
@@ -155,14 +153,19 @@ public class TransactionCoordinator {
                 this.getExecutionContext().getSContext().setCurrentTxId(null);
             }
             case FAILED -> {
-                throw new ConcurrencyInternalException("Failed to abort transaction with id: " + txId);
+                throw new ConcurrencyInternalException(
+                        "Failed to abort transaction with id: " + txId);
             }
             case COMMITTED -> {
                 this.getExecutionContext().getSContext().setCurrentTxId(null);
-                throw new IllegalStateException("The transaction with id: " + txId + " cannot be Aborted, because it has been COMMITTED.");
+                throw new IllegalStateException(
+                        "The transaction with id: "
+                                + txId
+                                + " cannot be Aborted, because it has been COMMITTED.");
             }
             default -> {
-                throw new TransactionAbortedException("The state shouldn't be " + abortRes.status());
+                throw new TransactionAbortedException(
+                        "The state shouldn't be " + abortRes.status());
             }
         }
     }
