@@ -2,7 +2,6 @@ package org.rafendb.processor.txn;
 
 import java.util.Objects;
 import java.util.function.Supplier;
-
 import org.rafendb.common.error.ConcurrencyInternalException;
 
 /**
