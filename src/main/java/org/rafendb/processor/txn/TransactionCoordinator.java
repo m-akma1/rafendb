@@ -5,8 +5,10 @@ import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.TxId;
+import org.rafendb.common.txn.TxResult;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
+import org.rafendb.processor.error.TransactionAbortedException;
 
 /**
  * Coordinates transaction-related operations within a client session.
@@ -60,8 +62,8 @@ public class TransactionCoordinator {
      * control component.
      * </p>
      */
-    public void beginTx() {
-        if (this.getExecutionContext().getSContext().isValid()) {
+    public void beginTx() throws ConcurrencyInternalException{
+        if (!this.getExecutionContext().getSContext().isValid()) {
             throw new IllegalStateException("The session is not valid");
         }
 
@@ -70,9 +72,12 @@ public class TransactionCoordinator {
         }
 
         TxId newTxId = this.execContext.getConcurrencyControl().begin();
-        if (newTxId != null) {
-            this.execContext.getSContext().setCurrentTxId(newTxId);
+
+        if (newTxId == null) {
+            throw new ConcurrencyInternalException("CCM failed to provide new transaction Id");
         }
+
+        this.execContext.getSContext().setCurrentTxId(newTxId);
     }
 
     /**
@@ -84,12 +89,43 @@ public class TransactionCoordinator {
      * </p>
      */
     public void commitTx() throws ConcurrencyInternalException {
-        // TxResult commitRes =
-        //         this.execContext
-        //                 .getConcurrencyControl()
-        //                 .commit(this.execContext.getSContext().getCurrentTxId());
+        if (!this.getExecutionContext().getSContext().isValid()) {
+            throw new IllegalStateException("The session is not valid");
+        }
 
-        // TO-Do = change currenttx id and handle if tx status is aborted.
+        TxId txId = this.getExecutionContext().getSContext().getCurrentTxId();
+
+        if (txId == null) {
+            throw new IllegalStateException(
+                    "No running transaction in this session, no commit target.");
+        }
+
+        TxResult commitRes = this.execContext.getConcurrencyControl().commit(txId);
+
+        switch (commitRes.status()) {
+            case COMMITTED -> {
+                this.getExecutionContext().getSContext().setCurrentTxId(null);
+            }
+            case ABORTED -> {
+                this.getExecutionContext().getSContext().setCurrentTxId(null);
+                throw new TransactionAbortedException(
+                        "Commit transaction with id "
+                                + txId.toString()
+                                + " has been aborted by CCM. Rollback is not confirmed");
+            }
+            case FAILED -> {
+                throw new TransactionAbortedException(
+                        "Commit transaction with id "
+                            + txId.toString()
+                            + " has been failed");
+            }
+            case PARTIALLY_COMMITTED -> {
+                throw new ConcurrencyInternalException(commitRes.message());
+            }
+            default -> {
+                throw new IllegalStateException("The state shouldn't be " + commitRes.status());
+            }
+        }
     }
 
     /**
@@ -102,10 +138,32 @@ public class TransactionCoordinator {
      * </p>
      */
     public void abortTx() throws ConcurrencyInternalException {
-        // TxResult abortRes =
-        //         this.execContext
-        //                 .getConcurrencyControl()
-        //                 .abort(this.execContext.getSContext().getCurrentTxId());
-        // TO-Do = change currenttx id and handle if aborted is failed
+        if (!this.getExecutionContext().getSContext().isValid()) {
+            throw new IllegalStateException("The session is not valid");
+        }
+
+        if (this.getExecutionContext().getSContext().getCurrentTxId() == null) {
+            return;
+        }
+
+        TxId txId = this.execContext.getSContext().getCurrentTxId();
+
+        TxResult abortRes = this.execContext.getConcurrencyControl().abort(txId);
+
+        switch (abortRes.status()) {
+            case ABORTED -> {
+                this.getExecutionContext().getSContext().setCurrentTxId(null);
+            }
+            case FAILED -> {
+                throw new ConcurrencyInternalException("Failed to abort transaction with id: " + txId);
+            }
+            case COMMITTED -> {
+                this.getExecutionContext().getSContext().setCurrentTxId(null);
+                throw new IllegalStateException("The transaction with id: " + txId + " cannot be Aborted, because it has been COMMITTED.");
+            }
+            default -> {
+                throw new TransactionAbortedException("The state shouldn't be " + abortRes.status());
+            }
+        }
     }
 }
