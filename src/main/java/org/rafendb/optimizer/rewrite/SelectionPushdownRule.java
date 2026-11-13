@@ -18,7 +18,7 @@ public final class SelectionPushdownRule implements RewriteRule {
     public static final Comparator<Expr> KEEP_ORDER = (a, b) -> 0;
     public static final Comparator<Expr> SELECTIVE_FIRST =
             Comparator.comparingInt(SelectionPushdownRule::selectivityRank);
-        
+
     private final PlanLayout layout;
     private final Comparator<Expr> order;
 
@@ -39,7 +39,6 @@ public final class SelectionPushdownRule implements RewriteRule {
 
     private PlanNode rewrite(PlanNode node) {
         if (node instanceof SelectionPlanNode) {
-            // Collect the whole chain top to bottom, then flip it into execution order.
             List<Expr> conditions = new ArrayList<>();
             PlanNode base = node;
             while (base instanceof SelectionPlanNode sel) {
