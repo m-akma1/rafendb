@@ -1,5 +1,5 @@
 /**
- * CCM facade and protocol selection. Implements api.concurrency. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * CCM facade and protocol selection. Implements api.concurrency.
  *
  * <p>Owner: G2 Concurrency Control Manager (CC1).
  */

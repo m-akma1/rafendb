@@ -1,0 +1,72 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.recovery.log.ILogFlusher {
+	{method}  {abstract} +flushLogUntil ( lsn : long ) : void
+}
+
+
+enum org.rafendb.recovery.log.LogType {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +CHECKPOINT_BEGIN
+	{field} +CHECKPOINT_END
+	{field} +COMMIT
+	{field} +DELETE
+	{field} +INSERT
+	{field} +UPDATE
+}
+
+
+class org.rafendb.recovery.log.Logger {
+	{field} +lastCommittedLSN : long
+	{method} +appendRecord ( record : WALRecord ) : long <<synchronized>> 
+	{method} +close () : void <<synchronized>> 
+	{method} +displayLogs () : void
+	{method} +displayLogsByTransaction ( idTransaction : int ) : void
+	{method} +flush () : void
+	{method} +flushAll () : void <<synchronized>> 
+	{method} +flushLogUntil ( lsn : long ) : void
+	{method} +forceThrough ( lsn : long ) : void
+	{method} +getHighestTransactionId () : int
+	{method} +getLogsByTransaction ( idTransaction : int ) : List
+	{method} +getLogsSorted () : List
+	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , rid : Rid , beforeVal : String , afterVal : String ) : long <<synchronized>> 
+	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long <<synchronized>> 
+	{method} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void <<synchronized>> 
+	{method} +readAllLogs () : List
+}
+
+
+class org.rafendb.recovery.log.LoggerErrorException {
+	{method} +getErrMessage () : String
+}
+
+
+class org.rafendb.recovery.log.WALRecord {
+	{method}  {static} +deserialize ( data : byte[] ) : WALRecord
+	{method} +getAfterImage () : String
+	{method} +getAfterValue () : String
+	{method} +getBeforeImage () : String
+	{method} +getBeforeValue () : String
+	{method} +getTransactionId () : int
+	{method} +getType () : LogType
+	{method} +printWALRecord () : void
+	{method} +printWalRecord () : void
+	{method} +serialize () : byte[]
+	{method} +setAfterValue ( afterVal : String ) : void
+}
+
+
+
+
+org.rafendb.recovery.log.Logger "1" o-- "0..*"  org.rafendb.recovery.log.WALRecord : records
+org.rafendb.recovery.log.Logger ..|>  org.rafendb.recovery.log.ILogFlusher
+org.rafendb.recovery.log.WALRecord -->  org.rafendb.recovery.log.LogType : logType
+
+
+@enduml

@@ -1,0 +1,53 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.storage.record.RecordSerializer {
+	{method} +decodeValue ( bytes : ByteBuffer , column : Column ) : Value
+	{method} +deserialize ( bytes : ByteBuffer , schema : TableSchema ) : Row
+	{method} +encodeValue ( value : Value , column : Column ) : byte[]
+	{method} +encodedSize ( row : Row , schema : TableSchema ) : int
+	{method} +serialize ( row : Row , schema : TableSchema ) : byte[]
+}
+
+
+class org.rafendb.storage.record.SlottedPage {
+	{method} +cancelReservation ( slot : int ) : void
+	{method} +delete ( slot : int ) : boolean
+	{method} +freeSpace () : int
+	{method} +initialize () : void
+	{method} +insert ( slot : int , record : byte[] ) : void
+	{method} +isFormatted () : boolean
+	{method} +liveSlots () : List
+	{method} +maxRecordSize () : int
+	{method} +read ( slot : int ) : Optional
+	{method} +reserve ( recordBytes : int ) : int
+	{method} +reserve ( recordBytes : int , firstUnusedSlot : int ) : int
+	{method} +restore ( slot : int , record : byte[] ) : void
+	{method} +slotStatus ( slot : int ) : SlotStatus
+	{method} +update ( slot : int , record : byte[] ) : void
+}
+
+
+enum org.rafendb.storage.record.SlottedPage$SlotStatus {
+	{field} +FREE
+	{field} +LIVE
+	{field} +RESERVED
+}
+
+
+class org.rafendb.storage.record.TableScan {
+	{method} +close () : void
+	{method} +next () : StoredRow
+}
+
+
+
+
+org.rafendb.storage.record.TableScan *--  org.rafendb.storage.record.RecordSerializer : serializer
+
+
+@enduml

@@ -1,0 +1,33 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.timestamp.StrictTimestampProtocol {
+	{method} +checkWrite ( tx : TxId , timestamp : long , resource : ResourceId ) : Decision
+	{method} +complete ( tx : TxId , status : TxStatus ) : void
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+}
+
+
+interface org.rafendb.concurrency.timestamp.TimestampProtocol {
+	{method}  {abstract} +complete ( tx : TxId , status : TxStatus ) : void
+	{method}  {abstract} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+}
+
+
+enum org.rafendb.concurrency.timestamp.TimestampProtocol$Decision {
+	{field} +ABORT_REQUIRED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+
+
+org.rafendb.concurrency.timestamp.StrictTimestampProtocol ..|>  org.rafendb.concurrency.timestamp.TimestampProtocol
+
+
+@enduml

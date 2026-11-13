@@ -1,0 +1,32 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.storage.file.BlockId {
+	{method} +fileName () : String
+	{method} +number () : long
+}
+
+
+class org.rafendb.storage.file.BlockManager {
+	{method} +append ( fileName : String ) : BlockId <<synchronized>> 
+	{method} +blockSize () : int
+	{method} +close () : void <<synchronized>> 
+	{method} +closeFiles () : void <<synchronized>> 
+	{method} +create ( fileName : String ) : void <<synchronized>> 
+	{method} +delete ( fileName : String ) : void <<synchronized>> 
+	{method} +force ( fileName : String ) : void <<synchronized>> 
+	{method} +read ( block : BlockId ) : ByteBuffer <<synchronized>> 
+	{method} +size ( fileName : String ) : long <<synchronized>> 
+	{method} +write ( block : BlockId , contents : ByteBuffer ) : void <<synchronized>> 
+}
+
+
+
+
+
+
+@enduml

@@ -1,5 +1,8 @@
 package org.rafendb.common.token;
 
+import java.io.Serializable;
+import java.util.Objects;
+
 /**
  * A position in the original SQL source text, used to report syntax errors
  * with a precise location (QO-01).
@@ -8,15 +11,9 @@ package org.rafendb.common.token;
  * are provided as well. Instances are mutable, but callers are expected to
  * treat them as value objects and not mutate them after publication.</p>
  */
-public class SourcePosition {
-    /** Zero-based character offset from the start of the source. */
-    public int offset;
-
-    /** One-based line number. */
-    public int line;
-
-    /** One-based column number within the line. */
-    public int column;
+public record SourcePosition(int offset, int line, int column) implements Serializable {
+    /** Unique identifier for serialization. */
+    private static final long serialVersionUID = 1L;
 
     /** The position at the start of any source: offset 0, line 1, column 1. */
     public static final SourcePosition START = new SourcePosition(0, 1, 1);
@@ -28,37 +25,10 @@ public class SourcePosition {
      * @param line   one-based line number
      * @param column one-based column number
      */
-    public SourcePosition(int offset, int line, int column) {
-        this.offset = offset;
-        this.line = line;
-        this.column = column;
-    }
-
-    /**
-     * Returns the zero-based character offset.
-     *
-     * @return the offset
-     */
-    public int getOffset() {
-        return offset;
-    }
-
-    /**
-     * Returns the one-based line number.
-     *
-     * @return the line
-     */
-    public int getLine() {
-        return line;
-    }
-
-    /**
-     * Returns the one-based column number.
-     *
-     * @return the column
-     */
-    public int getColumn() {
-        return column;
+    public SourcePosition {
+        Objects.requireNonNull(offset, "offset");
+        Objects.requireNonNull(line, "line");
+        Objects.requireNonNull(column, "column");
     }
 
     /**

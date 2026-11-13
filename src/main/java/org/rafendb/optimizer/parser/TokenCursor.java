@@ -1,9 +1,9 @@
 package org.rafendb.optimizer.parser;
 
 import java.util.List;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.token.Token;
-import org.rafendb.common.token.TokenType;
+import org.rafendb.common.token.Token.TokenType;
 
 /**
  * Read position over the token list from the Tokenizer, shared by the parsers in this package.
@@ -62,9 +62,8 @@ final class TokenCursor {
      */
     boolean acceptWord(String word) {
         Token t = peek();
-        boolean wordLike =
-                t.getType() == TokenType.KEYWORD || t.getType() == TokenType.IDENTIFIER;
-        if (!wordLike || !t.getText().equalsIgnoreCase(word)) {
+        boolean wordLike = t.type() == TokenType.KEYWORD || t.type() == TokenType.IDENTIFIER;
+        if (!wordLike || !t.text().equalsIgnoreCase(word)) {
             return false;
         }
         pos++;
@@ -88,7 +87,7 @@ final class TokenCursor {
     /** Consumes the given comparison operator (e.g. "=") or throws {@link SyntaxException}. */
     void expectComparison(String symbol) {
         Token t = peek();
-        if (t.getType() != TokenType.OPERATOR_COMPARISON || !t.getText().equals(symbol)) {
+        if (t.type() != TokenType.COMPARISON_OPERATOR || !t.text().equals(symbol)) {
             throw error(t, "'" + symbol + "'");
         }
         pos++;
@@ -97,11 +96,11 @@ final class TokenCursor {
     /** Consumes an identifier and returns its text, or throws {@link SyntaxException}. */
     String expectIdentifier(String what) {
         Token t = peek();
-        if (t.getType() != TokenType.IDENTIFIER) {
+        if (t.type() != TokenType.IDENTIFIER) {
             throw error(t, what);
         }
         pos++;
-        return t.getText();
+        return t.text();
     }
 
     /** Accepts an optional trailing ';' then requires end of input, else throws. */
@@ -112,9 +111,14 @@ final class TokenCursor {
         }
     }
 
-    /** Builds a syntax error naming the expectation and the offending token (QO-01). */
+    /** Builds a syntax error naming the expectation, the offending token, and its position. */
     SyntaxException error(Token found, String expected) {
-        String what = found.isEof() ? "end of input" : "'" + found.getText() + "'";
-        return new SyntaxException("Expected " + expected + " but found " + what, found);
+        String what = found.isEof() ? "end of input" : "'" + found.text() + "'";
+        return syntaxError("Expected " + expected + " but found " + what, found);
+    }
+
+    /** Builds a syntax error with {@code message} followed by the position of {@code at} (QO-01). */
+    static SyntaxException syntaxError(String message, Token at) {
+        return new SyntaxException(message + " at " + at.position(), at);
     }
 }

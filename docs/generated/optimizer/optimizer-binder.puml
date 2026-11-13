@@ -1,0 +1,24 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.optimizer.binder.Binder {
+	{method}  {abstract} +bind ( parsed : ParsedQuery ) : ParsedQuery
+}
+
+
+class org.rafendb.optimizer.binder.QueryBinder {
+	{method} +bind ( parsed : ParsedQuery ) : ParsedQuery
+	{method} +bind ( query : SelectQuery , natural : boolean ) : SelectQuery
+}
+
+
+
+
+org.rafendb.optimizer.binder.QueryBinder ..|>  org.rafendb.optimizer.binder.Binder
+
+
+@enduml

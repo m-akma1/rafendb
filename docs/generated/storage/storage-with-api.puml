@@ -1,0 +1,285 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.storage.RecordCursor {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +next () : StoredRow
+}
+
+
+interface org.rafendb.api.storage.StorageManager {
+	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
+	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
+	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
+	{method}  {abstract} +flush () : void
+	{method}  {abstract} +getSchema ( table : String ) : TableSchema
+	{method}  {abstract} +getStats ( table : String ) : TableStats
+	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
+	{method}  {abstract} +listIndexes ( table : String ) : List
+	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
+	{method}  {abstract} +listTables () : List
+	{method}  {abstract} +loadSampleDatabase () : void
+	{method}  {abstract} +lookupIndex ( index : String , key : Value ) : List
+	{method}  {abstract} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+	{method}  {abstract} +reloadAfterRestore () : void
+	{method}  {abstract} +reserveRid ( table : String , row : Row ) : Rid
+	{method}  {abstract} +scan ( table : String ) : RecordCursor
+	{method}  {abstract} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void
+}
+
+
+interface org.rafendb.api.storage.WalSync {
+	{method}  {abstract} +forceThrough ( lsn : long ) : void
+}
+
+
+class org.rafendb.storage.StorageManagerImpl {
+	{method} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void <<synchronized>> 
+	{method} +cancelReservation ( table : String , rid : Rid ) : void <<synchronized>> 
+	{method} +clearTable ( table : String , logDelete : ToLongFunction ) : long <<synchronized>> 
+	{method} +close () : void <<synchronized>> 
+	{method} +createIndex ( index : IndexInfo ) : void <<synchronized>> 
+	{method} +createTable ( schema : TableSchema ) : void <<synchronized>> 
+	{method} +delete ( table : String , rid : Rid , lsn : long ) : boolean <<synchronized>> 
+	{method} +dropTable ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +fetch ( table : String , rid : Rid ) : Optional <<synchronized>> 
+	{method} +flush () : void <<synchronized>> 
+	{method} +getSchema ( table : String ) : TableSchema <<synchronized>> 
+	{method} +getStats ( table : String ) : TableStats <<synchronized>> 
+	{method} +initializeIndexes () : void <<synchronized>> 
+	{method} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid <<synchronized>> 
+	{method} +listIndexes ( table : String ) : List <<synchronized>> 
+	{method} +listReferencingForeignKeys ( table : String ) : List <<synchronized>> 
+	{method} +listTables () : List <<synchronized>> 
+	{method} +loadSampleDatabase () : void <<synchronized>> 
+	{method} +lookupIndex ( index : String , key : Value ) : List <<synchronized>> 
+	{method} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List <<synchronized>> 
+	{method} +reloadAfterRestore () : void <<synchronized>> 
+	{method} +reserveRid ( table : String , row : Row ) : Rid <<synchronized>> 
+	{method} +scan ( table : String ) : RecordCursor <<synchronized>> 
+	{method} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.storage.buffer.BufferManager {
+	{method} +close () : void
+	{method} +flushAll () : void
+	{method} +flushPage ( block : BlockId ) : void
+	{method} +invalidateAll () : void
+	{method} +invalidateFile ( fileName : String ) : void
+	{method} +markDirty ( block : BlockId , lsn : long ) : void <<synchronized>> 
+	{method} +markUnloggedDirty ( block : BlockId ) : void <<synchronized>> 
+	{method} +pin ( block : BlockId ) : ByteBuffer
+	{method} +unpin ( block : BlockId ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.storage.catalog.CatalogManager {
+	{method} +dropTable ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +getIndex ( name : String ) : IndexInfo <<synchronized>> 
+	{method} +getSchema ( table : String ) : TableSchema <<synchronized>> 
+	{method} +indexFile ( name : String ) : String <<synchronized>> 
+	{method} +listIndexes ( table : String ) : List <<synchronized>> 
+	{method} +listReferencingForeignKeys ( table : String ) : List <<synchronized>> 
+	{method} +listTables () : List <<synchronized>> 
+	{method} +load () : void <<synchronized>> 
+	{method} +nextSlot ( table : String , block : long ) : int <<synchronized>> 
+	{method} +persistAllocation ( table : String , rid : Rid ) : void <<synchronized>> 
+	{method} +recordChanged ( table : String , rowDelta : long , blockCount : long ) : void <<synchronized>> 
+	{method} +refreshStats ( table : String , rows : RecordCursor , blockCount : long ) : void
+	{method} +registerIndex ( index : IndexInfo ) : void <<synchronized>> 
+	{method} +registerTable ( schema : TableSchema ) : void <<synchronized>> 
+	{method} +save () : void <<synchronized>> 
+	{method} +tableFile ( table : String ) : String <<synchronized>> 
+	{method} +unregisterIndex ( name : String ) : void <<synchronized>> 
+	{method} +validateDrop ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +validateRow ( table : String , row : Row ) : void <<synchronized>> 
+	{method} +validateTable ( schema : TableSchema ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.storage.file.BlockId {
+	{method} +fileName () : String
+	{method} +number () : long
+}
+
+
+class org.rafendb.storage.file.BlockManager {
+	{method} +append ( fileName : String ) : BlockId <<synchronized>> 
+	{method} +blockSize () : int
+	{method} +close () : void <<synchronized>> 
+	{method} +closeFiles () : void <<synchronized>> 
+	{method} +create ( fileName : String ) : void <<synchronized>> 
+	{method} +delete ( fileName : String ) : void <<synchronized>> 
+	{method} +force ( fileName : String ) : void <<synchronized>> 
+	{method} +read ( block : BlockId ) : ByteBuffer <<synchronized>> 
+	{method} +size ( fileName : String ) : long <<synchronized>> 
+	{method} +write ( block : BlockId , contents : ByteBuffer ) : void <<synchronized>> 
+}
+
+
+interface org.rafendb.storage.index.Index {
+	{method}  {abstract} +delete ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +initialize () : void
+	{method}  {abstract} +insert ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +insertUnlogged ( key : Value , rid : Rid ) : boolean
+	{method}  {abstract} +lookup ( key : Value ) : List
+	{method}  {abstract} +range ( lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+}
+
+
+class org.rafendb.storage.index.IndexEntry {
+	{method} +compareTo ( other : IndexEntry ) : int
+	{method} +key () : Value
+	{method}  {static} +probe ( key : Value ) : IndexEntry
+	{method} +rid () : Rid
+}
+
+
+class org.rafendb.storage.index.IndexKeys {
+	{field} {static} +BUCKET_HEADER_BYTES : int
+	{field} {static} +CHILD_BYTES : int
+	{field} {static} +NODE_HEADER_BYTES : int
+	{method}  {static} +compare ( a : Value , b : Value ) : int
+	{method}  {static} +normalize ( key : Value , column : Column ) : Optional
+	{method}  {static} +requireIndexable ( column : Column , type : IndexType , pageSize : int ) : void
+}
+
+
+class org.rafendb.storage.index.IndexManager {
+	{method} +beginSession () : boolean <<synchronized>> 
+	{method} +create ( index : IndexInfo , rows : RecordCursor ) : void <<synchronized>> 
+	{method} +dropIndexesOf ( table : String ) : void <<synchronized>> 
+	{method} +invalidateAll () : void <<synchronized>> 
+	{method} +lookup ( index : String , key : Value ) : List <<synchronized>> 
+	{method} +markClean () : void <<synchronized>> 
+	{method} +onDelete ( table : String , rid : Rid , before : Row , lsn : long ) : void <<synchronized>> 
+	{method} +onInsert ( table : String , rid : Rid , row : Row , lsn : long ) : void <<synchronized>> 
+	{method} +onUpdate ( table : String , rid : Rid , before : Row , after : Row , lsn : long ) : void <<synchronized>> 
+	{method} +range ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List <<synchronized>> 
+	{method} +rebuild ( table : String , rows : RecordCursor ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.storage.index.IndexPageStore {
+	{method} +append () : long
+	{method} +force () : void
+	{method} +pageCount () : long
+	{method} +pageSize () : int
+	{method} +read ( page : long , reader : Function ) : Object
+	{method} +write ( page : long , lsn : long , writer : Consumer ) : void
+	{method} +writeUnlogged ( page : long , writer : Consumer ) : void
+}
+
+
+class org.rafendb.storage.index.KeyCodec {
+	{field} {static} +RID_BYTES : int
+	{method}  {static} +entrySize ( e : IndexEntry , column : Column ) : int
+	{method}  {static} +keySize ( key : Value , column : Column ) : int
+	{method}  {static} +maxEntrySize ( column : Column ) : int
+	{method}  {static} +maxKeySize ( column : Column ) : int
+	{method}  {static} +readEntry ( buf : ByteBuffer , column : Column ) : IndexEntry
+	{method}  {static} +readKey ( buf : ByteBuffer , column : Column ) : Value
+	{method}  {static} +writeEntry ( buf : ByteBuffer , e : IndexEntry , column : Column ) : void
+	{method}  {static} +writeKey ( buf : ByteBuffer , key : Value , column : Column ) : void
+}
+
+
+class org.rafendb.storage.index.btree.BPlusTree {
+	{method} +delete ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method} +initialize () : void
+	{method} +insert ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method} +insertUnlogged ( key : Value , rid : Rid ) : boolean
+	{method} +lookup ( key : Value ) : List
+	{method} +range ( lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+}
+
+
+class org.rafendb.storage.index.hash.HashIndex {
+	{field} {static} +DEFAULT_BUCKETS : int
+	{method} +delete ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method} +initialize () : void
+	{method} +insert ( key : Value , rid : Rid , lsn : long ) : boolean
+	{method} +insertUnlogged ( key : Value , rid : Rid ) : boolean
+	{method} +lookup ( key : Value ) : List
+	{method} +range ( lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
+}
+
+
+class org.rafendb.storage.record.RecordSerializer {
+	{method} +decodeValue ( bytes : ByteBuffer , column : Column ) : Value
+	{method} +deserialize ( bytes : ByteBuffer , schema : TableSchema ) : Row
+	{method} +encodeValue ( value : Value , column : Column ) : byte[]
+	{method} +encodedSize ( row : Row , schema : TableSchema ) : int
+	{method} +serialize ( row : Row , schema : TableSchema ) : byte[]
+}
+
+
+class org.rafendb.storage.record.SlottedPage {
+	{method} +cancelReservation ( slot : int ) : void
+	{method} +delete ( slot : int ) : boolean
+	{method} +freeSpace () : int
+	{method} +initialize () : void
+	{method} +insert ( slot : int , record : byte[] ) : void
+	{method} +isFormatted () : boolean
+	{method} +liveSlots () : List
+	{method} +maxRecordSize () : int
+	{method} +read ( slot : int ) : Optional
+	{method} +reserve ( recordBytes : int ) : int
+	{method} +reserve ( recordBytes : int , firstUnusedSlot : int ) : int
+	{method} +restore ( slot : int , record : byte[] ) : void
+	{method} +slotStatus ( slot : int ) : SlotStatus
+	{method} +update ( slot : int , record : byte[] ) : void
+}
+
+
+enum org.rafendb.storage.record.SlottedPage$SlotStatus {
+	{field} +FREE
+	{field} +LIVE
+	{field} +RESERVED
+}
+
+
+class org.rafendb.storage.record.TableScan {
+	{method} +close () : void
+	{method} +next () : StoredRow
+}
+
+
+
+
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.buffer.BufferManager : buffers
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.catalog.CatalogManager : catalog
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.index.IndexManager : indexes
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.record.RecordSerializer : serializer
+org.rafendb.storage.StorageManagerImpl ..|>  org.rafendb.api.storage.StorageManager
+org.rafendb.storage.buffer.BufferManager "1" o-- "0..*"  org.rafendb.storage.file.BlockId : cached
+org.rafendb.storage.buffer.BufferManager *--  org.rafendb.api.storage.WalSync : wal
+org.rafendb.storage.buffer.BufferManager *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.buffer.BufferManager : buffers
+org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.catalog.CatalogManager : catalog
+org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.index.IndexPageStore *--  org.rafendb.storage.buffer.BufferManager : buffers
+org.rafendb.storage.index.IndexPageStore *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.index.btree.BPlusTree *--  org.rafendb.storage.index.IndexPageStore : store
+org.rafendb.storage.index.btree.BPlusTree ..|>  org.rafendb.storage.index.Index
+org.rafendb.storage.index.hash.HashIndex *--  org.rafendb.storage.index.IndexPageStore : store
+org.rafendb.storage.index.hash.HashIndex ..|>  org.rafendb.storage.index.Index
+org.rafendb.storage.record.TableScan *--  org.rafendb.storage.buffer.BufferManager : buffers
+org.rafendb.storage.record.TableScan *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.record.TableScan *--  org.rafendb.storage.record.RecordSerializer : serializer
+org.rafendb.storage.record.TableScan ..|>  org.rafendb.api.storage.RecordCursor
+
+
+@enduml

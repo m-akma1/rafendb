@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.rafendb.common.error.ValidationException;
+import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.query.InsertQuery;
 import org.rafendb.common.query.SelectQuery;
@@ -21,7 +21,10 @@ class QueryBinderTest {
     void rejectsUnknownTableAndColumn() {
         assertThrows(
                 ValidationException.class,
-                () -> binder.bind(new SelectQuery("", List.of(), List.of("missing"), null, null)));
+                () ->
+                        binder.bind(
+                                new SelectQuery(
+                                        "", List.of(), List.of("missing"), null, null, List.of())));
         assertThrows(
                 ValidationException.class,
                 () ->
@@ -31,7 +34,8 @@ class QueryBinderTest {
                                         List.of(new Expr.ColumnRef(null, "absent")),
                                         List.of("mahasiswa"),
                                         null,
-                                        null)));
+                                        null,
+                                        List.of())));
     }
 
     @Test
@@ -39,7 +43,13 @@ class QueryBinderTest {
         SelectQuery bound =
                 (SelectQuery)
                         binder.bind(
-                                new SelectQuery("", List.of(), List.of("MAHASISWA"), null, null));
+                                new SelectQuery(
+                                        "",
+                                        List.of(),
+                                        List.of("MAHASISWA"),
+                                        null,
+                                        null,
+                                        List.of()));
         assertEquals(4, bound.projection().size());
         assertEquals(new Expr.ColumnRef("mahasiswa", "nim"), bound.projection().get(0));
         assertEquals(bound, binder.bind(bound));
@@ -56,7 +66,8 @@ class QueryBinderTest {
                                         List.of(new Expr.ColumnRef(null, "nama")),
                                         List.of("mahasiswa", "prodi"),
                                         null,
-                                        null)));
+                                        null,
+                                        List.of())));
     }
 
     @Test
@@ -69,7 +80,8 @@ class QueryBinderTest {
                                         List.of(new Expr.ColumnRef("MAHASISWA", "*")),
                                         List.of("mahasiswa", "prodi"),
                                         null,
-                                        null));
+                                        null,
+                                        List.of()));
         assertEquals(4, projection.projection().size());
         assertThrows(
                 ValidationException.class,
@@ -80,7 +92,8 @@ class QueryBinderTest {
                                         List.of(new Expr.ColumnRef("absent", "nama")),
                                         List.of("mahasiswa"),
                                         null,
-                                        null)));
+                                        null,
+                                        List.of())));
     }
 
     @Test
@@ -106,7 +119,8 @@ class QueryBinderTest {
                                         List.of(),
                                         List.of("left_table", "right_table"),
                                         null,
-                                        null),
+                                        null,
+                                        List.of()),
                                 true));
     }
 
@@ -139,7 +153,13 @@ class QueryBinderTest {
     void naturalJoinUsesSharedColumnsAndDeduplicatesStar() {
         SelectQuery natural =
                 binder.bind(
-                        new SelectQuery("", List.of(), List.of("mahasiswa", "prodi"), null, null),
+                        new SelectQuery(
+                                "",
+                                List.of(),
+                                List.of("mahasiswa", "prodi"),
+                                null,
+                                null,
+                                List.of()),
                         true);
         assertNotNull(natural.joinCondition());
         assertEquals(5, natural.projection().size());
@@ -155,7 +175,15 @@ class QueryBinderTest {
                         new Expr.Literal(Value.ofInt(3)));
         assertThrows(
                 ValidationException.class,
-                () -> binder.bind(new SelectQuery("", List.of(), List.of("mahasiswa"), null, bad)));
+                () ->
+                        binder.bind(
+                                new SelectQuery(
+                                        "",
+                                        List.of(),
+                                        List.of("mahasiswa"),
+                                        null,
+                                        bad,
+                                        List.of())));
         Expr arithmetic =
                 new Expr.Binary(
                         Expr.Op.ADD,
@@ -170,7 +198,12 @@ class QueryBinderTest {
     void rejectsNonBooleanConditionsAndTypesNullFromContext() {
         SelectQuery nonBoolean =
                 new SelectQuery(
-                        "", List.of(), List.of("mahasiswa"), null, new Expr.ColumnRef(null, "nim"));
+                        "",
+                        List.of(),
+                        List.of("mahasiswa"),
+                        null,
+                        new Expr.ColumnRef(null, "nim"),
+                        List.of());
         assertThrows(ValidationException.class, () -> binder.bind(nonBoolean));
         SelectQuery nullComparison =
                 new SelectQuery(
@@ -181,7 +214,8 @@ class QueryBinderTest {
                         new Expr.Binary(
                                 Expr.Op.EQ,
                                 new Expr.ColumnRef(null, "nama"),
-                                new Expr.Literal(Value.nullOf(DataType.INTEGER))));
+                                new Expr.Literal(Value.nullOf(DataType.INTEGER))),
+                        List.of());
         Expr.Binary bound =
                 (Expr.Binary) ((SelectQuery) binder.bind(nullComparison)).whereCondition();
         assertEquals(DataType.VARCHAR, ((Expr.Literal) bound.right()).value().type());
@@ -204,7 +238,12 @@ class QueryBinderTest {
                 new QueryBinder(catalog)
                         .bind(
                                 new SelectQuery(
-                                        "", List.of(), List.of("first", "second"), null, null),
+                                        "",
+                                        List.of(),
+                                        List.of("first", "second"),
+                                        null,
+                                        null,
+                                        List.of()),
                                 true);
         assertNull(query.joinCondition());
         assertEquals(2, query.projection().size());

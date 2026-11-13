@@ -23,7 +23,7 @@ class CostModelTest {
     }
 
     @Test
-    void costValidatesAndAddsValues() {
+    void costValidatesAndAddsValues() throws Exception {
         Cost a = new Cost(2, 10);
         Cost b = new Cost(3, 5);
         assertEquals(2, a.getSeeks());
@@ -37,7 +37,7 @@ class CostModelTest {
     }
 
     @Test
-    void mockModelReturnsNonnegativeEstimatesAndLocalCost() {
+    void mockModelReturnsNonnegativeEstimatesAndLocalCost() throws Exception {
         MockCostModel model = new MockCostModel(100);
         PlanNode leaf = node("leaf");
         PlanNode parent = node("parent", leaf);
@@ -48,7 +48,7 @@ class CostModelTest {
     }
 
     @Test
-    void totalIncludesNestedSubtreeAndCountsSharedNodeOnce() {
+    void totalIncludesNestedSubtreeAndCountsSharedNodeOnce() throws Exception {
         MockCostModel model = new MockCostModel(10);
         PlanNode shared = node("shared");
         PlanNode left = node("left", shared);
@@ -60,7 +60,7 @@ class CostModelTest {
     }
 
     @Test
-    void totalRejectsInvalidChildrenAndNullLocalCost() {
+    void totalRejectsInvalidChildrenAndNullLocalCost() throws Exception {
         CostModel nullCost =
                 new CostModel() {
                     @Override

@@ -1,7 +1,7 @@
 package org.rafendb.optimizer.parser;
 
 import java.util.List;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.TransactionQuery;
@@ -55,15 +55,13 @@ final class CommandParser {
         return new CreateIndexQuery(sql, name, table, column, indexType(in));
     }
 
-    // USING is matched by text because the Tokenizer may class it as a keyword or an identifier.
+    // USING, BTREE and HASH are matched by text because the Tokenizer may class them either way.
     private static IndexType indexType(TokenCursor in) {
-        if (!in.acceptWord("USING")) {
-            return IndexType.BTREE;
+        if (!in.acceptWord("USING") || in.acceptWord("BTREE")) {
+            return IndexType.B_PLUS_TREE;
         }
-        for (IndexType type : IndexType.values()) {
-            if (in.acceptWord(type.name())) {
-                return type;
-            }
+        if (in.acceptWord("HASH")) {
+            return IndexType.HASH;
         }
         throw in.error(in.peek(), "BTREE or HASH");
     }

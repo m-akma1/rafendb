@@ -1,0 +1,40 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.concurrency.ConcurrencyControl {
+	{method}  {abstract} +abort ( tx : TxId ) : TxResult
+	{method}  {abstract} +activeProtocol () : ProtocolType
+	{method}  {abstract} +awaitNoActive ( timeout : Duration ) : boolean
+	{method}  {abstract} +begin () : TxId
+	{method}  {abstract} +commit ( tx : TxId ) : TxResult
+	{method}  {abstract} +pauseNewTransactions () : void
+	{method}  {abstract} +requestAccess ( tx : TxId , type : AccessType , resource : ResourceId ) : AccessResult
+	{method}  {abstract} +resumeNewTransactions () : void
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyLogging {
+	{method}  {abstract} +logChange ( tx : TxId , change : ChangeRecord ) : long
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyMaintenance {
+	{method}  {abstract} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void
+}
+
+
+enum org.rafendb.api.concurrency.ProtocolType {
+	{field} +LOCK_BASED
+	{field} +TIMESTAMP_BASED
+}
+
+
+
+
+
+
+@enduml

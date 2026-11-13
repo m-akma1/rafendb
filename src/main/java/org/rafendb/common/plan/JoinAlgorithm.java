@@ -1,18 +1,17 @@
 package org.rafendb.common.plan;
 
+/**
+ * Join algorithms a {@link JoinPlanNode} can use.
+ *
+ * <p>Immutable and thread-safe.
+ */
 public enum JoinAlgorithm {
-    BLOCK_NESTED_LOOP("Block Nested Loop Join"),
-    NESTED_LOOP("Nested Loop Join"),
-    HASH_JOIN("Hash Join"),
-    SORT_MERGE("Sort Merge Join");
-
-    private final String displayName;
-
-    JoinAlgorithm(String displayName) {
-        this.displayName = displayName;
-    }
-
-    public String displayName() {
-        return displayName;
-    }
+    /** Block nested-loop join. */
+    BLOCK_NESTED_LOOP,
+    /** Tuple-at-a-time nested-loop join. */
+    NESTED_LOOP,
+    /** Hash join. */
+    HASH_JOIN,
+    /** Sort-merge join. */
+    SORT_MERGE;
 }

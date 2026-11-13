@@ -1,0 +1,29 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.join.AccessPathOptimizer {
+	{method} +generateCandidates ( root : PlanNode ) : List
+}
+
+
+class org.rafendb.optimizer.join.JoinAccessPathOptimizer {
+	{method} +optimize ( plan : QueryPlan ) : QueryPlan
+}
+
+
+class org.rafendb.optimizer.join.JoinOptimizer {
+	{method} +generateCandidates ( root : PlanNode , storage : StorageManager ) : List
+	{method} +normalize ( root : PlanNode ) : PlanNode
+}
+
+
+
+
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinOptimizer : joins
+
+
+@enduml

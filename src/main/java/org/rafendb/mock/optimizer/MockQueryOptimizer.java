@@ -44,7 +44,7 @@ public class MockQueryOptimizer implements QueryOptimizer {
     public ParsedQuery parse(String sql) {
         Objects.requireNonNull(sql, "sql");
         calls.add("parse");
-        return new PlaceholderParsedQuery(sql);
+        return new MockParsedQuery(sql);
     }
 
     @Override
@@ -58,7 +58,7 @@ public class MockQueryOptimizer implements QueryOptimizer {
     public QueryPlan optimize(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
         calls.add("optimize");
-        PlanNode root = new PlaceholderPlanNode("MockPlan(" + parsed.originalSql() + ")");
+        PlanNode root = new MockPlanNode("MockPlan(" + parsed.originalSql() + ")");
         return new QueryPlan(root, DEFAULT_COST);
     }
 
@@ -66,7 +66,7 @@ public class MockQueryOptimizer implements QueryOptimizer {
     public String explain(QueryPlan plan) {
         Objects.requireNonNull(plan, "plan");
         calls.add("explain");
-        return plan.getRoot().describe() + " [cost=" + plan.getTotalCost() + "]";
+        return plan.root().describe() + " [cost=" + plan.totalCost() + "]";
     }
 
     /**

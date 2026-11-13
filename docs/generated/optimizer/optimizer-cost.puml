@@ -1,0 +1,47 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.cost.Cost {
+	{field} {static} +SEEK_MILLIS : double
+	{field} {static} +TRANSFER_MILLIS : double
+	{method} +plus ( other : Cost ) : Cost
+	{method} +timeMs () : double
+}
+
+
+interface org.rafendb.optimizer.cost.CostModel {
+	{method}  {abstract} +estimateLocalCost ( node : PlanNode ) : Cost
+	{method}  {abstract} +estimateRows ( node : PlanNode ) : long
+	{method} +estimateTotalCost ( node : PlanNode ) : Cost
+}
+
+
+class org.rafendb.optimizer.cost.CostParameters {
+	{method} +blockSizeBytes () : int
+	{method} +bufferBlocks () : int
+	{method} +defaultEqSelectivity () : double
+	{method}  {static} +defaults () : CostParameters
+	{method} +rangeSelectivity () : double
+	{method} +seekMillis () : double
+	{method} +transferMillis () : double
+}
+
+
+class org.rafendb.optimizer.cost.StatsCostModel {
+	{method} +estimateLocalCost ( node : PlanNode ) : Cost
+	{method} +estimateRows ( node : PlanNode ) : long
+	{method} +estimateTotalCost ( node : PlanNode ) : Cost
+}
+
+
+
+
+org.rafendb.optimizer.cost.StatsCostModel *--  org.rafendb.optimizer.cost.CostParameters : parameters
+org.rafendb.optimizer.cost.StatsCostModel ..|>  org.rafendb.optimizer.cost.CostModel
+
+
+@enduml

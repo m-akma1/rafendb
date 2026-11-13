@@ -1,20 +1,21 @@
 package org.rafendb.optimizer.parser;
 
-import static org.rafendb.common.token.TokenType.NUMBER_FLOAT;
-import static org.rafendb.common.token.TokenType.NUMBER_INT;
-import static org.rafendb.common.token.TokenType.OPERATOR_ARITHMETIC;
-import static org.rafendb.common.token.TokenType.OPERATOR_COMPARISON;
+import static org.rafendb.common.token.Token.TokenType.ARITHMETIC_OPERATOR;
+import static org.rafendb.common.token.Token.TokenType.COMPARISON_OPERATOR;
+import static org.rafendb.common.token.Token.TokenType.FLOAT_LITERAL;
+import static org.rafendb.common.token.Token.TokenType.INTEGER_LITERAL;
 
 import java.util.Map;
 import java.util.function.Supplier;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.expr.Expr.Literal;
+import org.rafendb.common.expr.Expr.Null;
 import org.rafendb.common.expr.Expr.Op;
 import org.rafendb.common.token.Token;
-import org.rafendb.common.token.TokenType;
+import org.rafendb.common.token.Token.TokenType;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 
@@ -23,7 +24,7 @@ import org.rafendb.common.type.Value;
  *
  * <p>Precedence, highest first: primary (column, literal, parentheses), {@code * / %}, {@code + -},
  * comparison, {@code AND}. All binary operators are left-associative. A {@code -} directly before a
- * number is read as a negative literal.
+ * number is read as a negative literal, and {@code NULL} is an untyped {@link Null}.
  *
  * <p>Not thread-safe: use one instance per query. It stops at the first token that cannot continue
  * the expression; the caller decides whether that token is acceptable.
@@ -73,7 +74,7 @@ final class ExpressionParser {
 
     private Expr parseComparison() {
         Expr left = parseAdditive();
-        Op op = opAt(OPERATOR_COMPARISON, CMP);
+        Op op = opAt(COMPARISON_OPERATOR, CMP);
         if (op == null) {
             return left;
         }
@@ -82,11 +83,11 @@ final class ExpressionParser {
     }
 
     private Expr parseAdditive() {
-        return leftAssoc(OPERATOR_ARITHMETIC, ADD, this::parseMultiplicative);
+        return leftAssoc(ARITHMETIC_OPERATOR, ADD, this::parseMultiplicative);
     }
 
     private Expr parseMultiplicative() {
-        return leftAssoc(OPERATOR_ARITHMETIC, MUL, this::parsePrimary);
+        return leftAssoc(ARITHMETIC_OPERATOR, MUL, this::parsePrimary);
     }
 
     // A loop instead of right recursion makes 5 - 3 - 2 parse as (5 - 3) - 2.
@@ -102,20 +103,31 @@ final class ExpressionParser {
 
     private Expr parsePrimary() {
         Token t = in.next();
-        return switch (t.getType()) {
-            case NUMBER_INT, NUMBER_FLOAT -> number(t, false);
-            case STRING_LITERAL -> new Literal(Value.ofText(DataType.VARCHAR, t.getText()));
-            case IDENTIFIER -> {
-                if (in.acceptPunct(".")) {
-                    yield new ColumnRef(t.getText(), in.expectIdentifier("column name"));
+        return switch (t.type()) {
+            case INTEGER_LITERAL, FLOAT_LITERAL -> number(t, false);
+            case STRING_LITERAL -> new Literal(Value.ofText(DataType.VARCHAR, t.text()));
+            case KEYWORD -> {
+                if (!t.isKeyword("NULL")) {
+                    throw in.error(t, "an operand");
                 }
-                yield new ColumnRef(null, t.getText());
+                yield new Null();
             }
-            case OPERATOR_ARITHMETIC -> {
+            case IDENTIFIER -> {
+                // NULL may be tokenized as a keyword or as an identifier.
+                if (t.text().equalsIgnoreCase("NULL")) {
+                    yield new Null();
+                }
+                // The Tokenizer returns table.column as a single identifier token.
+                int dot = t.text().indexOf('.');
+                yield dot < 0
+                        ? new ColumnRef(null, t.text())
+                        : new ColumnRef(t.text().substring(0, dot), t.text().substring(dot + 1));
+            }
+            case ARITHMETIC_OPERATOR -> {
                 Token n = in.peek();
                 boolean negativeNumber =
-                        t.getText().equals("-")
-                                && (n.getType() == NUMBER_INT || n.getType() == NUMBER_FLOAT);
+                        t.text().equals("-")
+                                && (n.type() == INTEGER_LITERAL || n.type() == FLOAT_LITERAL);
                 if (!negativeNumber) {
                     throw in.error(t, "an operand");
                 }
@@ -137,13 +149,13 @@ final class ExpressionParser {
     // Checks the token type first so a string literal '+' is never taken as an operator.
     private Op opAt(TokenType type, Map<String, Op> ops) {
         Token t = in.peek();
-        return t.getType() == type ? ops.get(t.getText()) : null;
+        return t.type() == type ? ops.get(t.text()) : null;
     }
 
     private static Expr number(Token t, boolean negative) {
-        String text = (negative ? "-" : "") + t.getText();
+        String text = (negative ? "-" : "") + t.text();
         try {
-            if (t.getType() == NUMBER_INT) {
+            if (t.type() == INTEGER_LITERAL) {
                 return new Literal(Value.ofInt(Integer.parseInt(text)));
             }
             float f = Float.parseFloat(text);
@@ -152,7 +164,7 @@ final class ExpressionParser {
             }
             return new Literal(Value.ofFloat(f));
         } catch (NumberFormatException e) {
-            throw new SyntaxException("Invalid or out-of-range number '" + text + "'", t);
+            throw TokenCursor.syntaxError("Invalid or out-of-range number '" + text + "'", t);
         }
     }
 }

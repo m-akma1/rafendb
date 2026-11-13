@@ -4,52 +4,36 @@ import java.util.List;
 import java.util.Objects;
 import org.rafendb.common.expr.Expr;
 
-public final class ProjectionPlanNode implements PlanNode {
-    private final List<Expr> columns;
-    private final PlanNode child;
+/**
+ * Unary node that outputs the given expressions for each row of its child.
+ *
+ * <p>Immutable and thread-safe.
+ *
+ * @param columns the output expressions in order; copied to an unmodifiable list, not null and
+ *     without null elements
+ * @param child the input node, not null
+ */
+public record ProjectionPlanNode(List<Expr> columns, PlanNode child) implements PlanNode {
 
-    public ProjectionPlanNode(List<Expr> columns, PlanNode child) {
+    /**
+     * Checks the arguments and copies {@code columns}.
+     *
+     * @throws NullPointerException if an argument or an element of {@code columns} is null
+     */
+    public ProjectionPlanNode {
         columns = List.copyOf(columns);
-        this.columns = columns;
-        this.child = child;
+        Objects.requireNonNull(child, "child");
     }
 
-    public List<Expr> columns() {
-        return columns;
-    }
-
-    public PlanNode child() {
-        return child;
-    }
-
+    /** {@inheritDoc} Always {@code [child]}. */
     @Override
     public List<PlanNode> children() {
         return List.of(child);
     }
 
+    /** {@inheritDoc} For example {@code PROJECTION [<expr>, <expr>]}. */
     @Override
     public String describe() {
-        return "";
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof ProjectionPlanNode that)) {
-            return false;
-        }
-        return columns.equals(that.columns) && Objects.equals(child, that.child);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(columns, child);
-    }
-
-    @Override
-    public String toString() {
-        return "ProjectionPlanNode[columns=" + columns + ", child=" + child + "]";
+        return "PROJECTION " + columns;
     }
 }

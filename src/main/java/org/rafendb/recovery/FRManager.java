@@ -1,0 +1,419 @@
+package org.rafendb.recovery;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import org.rafendb.api.recovery.RecoveryManager;
+import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.log.LogPayload;
+import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.tuple.Row;
+import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.ResourceId;
+import org.rafendb.common.txn.TxId;
+import org.rafendb.common.txn.TxStatus;
+import org.rafendb.recovery.checkpoint.CheckpointManager;
+import org.rafendb.recovery.log.LogType;
+import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
+import org.rafendb.recovery.log.WALRecord;
+import org.rafendb.recovery.restart.CrashRecoveryEngine;
+import org.rafendb.recovery.rollback.RollbackManager;
+import org.rafendb.recovery.rollback.UndoStorage;
+
+/**
+ * Komponen utama Failure Recovery Manager (FRM) Facade milik FR1 sesuai diagram kelas FRM.
+ *
+ * <p>Mengimplementasikan kontrak publik {@link RecoveryManager} bagi komponen lain seperti Concurrency
+ * Control Manager (CCM) dan Query Processor (QP) untuk berinteraksi dengan subsistem pemulihan, penulisan
+ * WAL, checkpointing, rollback transaksi, dan pemulihan crash.
+ *
+ * <p>Thread-safe. Menjamin aturan Write-Ahead Logging (WAL): setiap perubahan data harus dicatat di log
+ * sebelum ditulis permanen ke storage.
+ */
+public class FRManager implements RecoveryManager {
+
+    private final Logger logger;
+    private final RollbackManager rollbackManager;
+    private final CheckpointManager checkpointManager;
+    private final CrashRecoveryEngine crashRecoveryManager;
+    private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
+
+    /**
+     * Membuat instance FRManager dengan seluruh komponen sub-modul recovery.
+     *
+     * @param logger logger WAL (FR2), tidak boleh null
+     * @param rollbackManager manager rollback dan undo (FR3), tidak boleh null
+     * @param checkpointManager manager pembuatan checkpoint (FR4), tidak boleh null
+     * @param crashRecoveryManager engine pemulihan crash (FR5), tidak boleh null
+     * @throws NullPointerException jika salah satu komponen bernilai null
+     */
+    public FRManager(
+            Logger logger,
+            RollbackManager rollbackManager,
+            CheckpointManager checkpointManager,
+            CrashRecoveryEngine crashRecoveryManager) {
+        this.logger = Objects.requireNonNull(logger, "logger must not be null");
+        this.rollbackManager =
+                Objects.requireNonNull(rollbackManager, "rollbackManager must not be null");
+        this.checkpointManager =
+                Objects.requireNonNull(checkpointManager, "checkpointManager must not be null");
+        this.crashRecoveryManager =
+                Objects.requireNonNull(
+                        crashRecoveryManager, "crashRecoveryManager must not be null");
+    }
+
+    /**
+     * Konstruktor fleksibel untuk inisialisasi praktis dengan logger dan storage adapter.
+     *
+     * @param logger logger WAL, tidak boleh null
+     * @param storage adapter penyimpanan data SM untuk operasi undo/redo, tidak boleh null
+     */
+    public FRManager(Logger logger, UndoStorage storage) {
+        this.logger = Objects.requireNonNull(logger, "logger must not be null");
+        Objects.requireNonNull(storage, "storage must not be null");
+        this.rollbackManager = new RollbackManager(logger, storage);
+        this.checkpointManager = new CheckpointManager(logger);
+        this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
+    }
+
+    /**
+     * Konstruktor praktis yang menghubungkan langsung dengan kontrak resmi {@link StorageManager}.
+     *
+     * @param logger logger WAL, tidak boleh null
+     * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
+     */
+    public FRManager(Logger logger, StorageManager storageManager) {
+        this(
+                logger,
+                (tableName, idRecord, image, lsn) -> {
+                    Rid rid =
+                            new Rid(
+                                    Math.max(0L, (long) idRecord / 1000),
+                                    Math.max(0, idRecord % 1000));
+                    Optional<Row> rowOpt = Optional.empty();
+                    try {
+                        storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+                    } catch (Exception e) {
+                        throw new RuntimeException("StorageManager applyRecovery failed", e);
+                    }
+                });
+    }
+
+    @Override
+    public long writeLog(org.rafendb.common.log.LogPayload payload)
+            throws RecoveryInternalException {
+        if (payload == null) {
+            throw new NullPointerException("payload must not be null");
+        }
+        try {
+            int txId = (int) payload.tx().value();
+            LogType logType = LogType.valueOf(payload.type().name());
+            if (payload.change().isPresent()) {
+                var change = payload.change().get();
+                String table = change.resource().table();
+                int idRecord =
+                        change.resource().rid() != null
+                                ? (int)
+                                        (change.resource().rid().block() * 1000
+                                                + change.resource().rid().slot())
+                                : -1;
+                String beforeStr =
+                        change.beforeImage()
+                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
+                                .orElse(null);
+                String afterStr =
+                        change.afterImage()
+                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
+                                .orElse(null);
+                return logger.logDataChange(
+                        txId, logType, payload.timestamp(), table, idRecord, beforeStr, afterStr);
+            } else {
+                logger.logTransactionEvent(txId, logType);
+                return logger.getCurrentLSN();
+            }
+        } catch (Exception e) {
+            throw new RecoveryInternalException("Failed to write log record", e);
+        }
+    }
+
+    /**
+     * Overload praktis untuk mencatat perubahan data langsung ke WAL logger dengan timestamp saat ini.
+     *
+     * @param idTransaction id transaksi
+     * @param logType jenis operasi
+     * @param tableName nama tabel
+     * @param idRecord id record
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
+     * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
+     */
+    public long writeLog(
+            int idTransaction,
+            LogType logType,
+            String tableName,
+            int idRecord,
+            String beforeVal,
+            String afterVal) {
+        return writeLog(
+                idTransaction,
+                logType,
+                System.currentTimeMillis(),
+                tableName,
+                idRecord,
+                beforeVal,
+                afterVal);
+    }
+
+    /**
+     * Overload praktis untuk mencatat perubahan data langsung ke WAL logger dengan timestamp tertentu.
+     *
+     * @param idTransaction id transaksi
+     * @param logType jenis operasi
+     * @param timestamp timestamp epoch milidetik
+     * @param tableName nama tabel
+     * @param idRecord id record
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
+     * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
+     */
+    public long writeLog(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            int idRecord,
+            String beforeVal,
+            String afterVal) {
+        Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
+        ChangeRecord change =
+                new ChangeRecord(
+                        rid != null
+                                ? ResourceId.ofRow(tableName, rid)
+                                : ResourceId.ofTable(tableName),
+                        Optional.ofNullable(
+                                beforeVal != null
+                                        ? beforeVal.getBytes(StandardCharsets.UTF_8)
+                                        : null),
+                        Optional.ofNullable(
+                                afterVal != null
+                                        ? afterVal.getBytes(StandardCharsets.UTF_8)
+                                        : null));
+        org.rafendb.common.log.LogType commonType =
+                org.rafendb.common.log.LogType.valueOf(logType.name());
+        LogPayload payload =
+                new LogPayload(new TxId(idTransaction), commonType, timestamp, Optional.of(change));
+        try {
+            return writeLog(payload);
+        } catch (RecoveryInternalException e) {
+            throw new LoggerErrorException("Failed to write log", e);
+        }
+    }
+
+    /**
+     * Mencatat peristiwa dimulainya transaksi baru (BEGIN) ke WAL.
+     *
+     * @param idTransaction id transaksi yang baru dimulai
+     * @return {@code true} jika berhasil dicatat; {@code false} jika gagal
+     */
+    public boolean beginTransaction(int idTransaction) {
+        try {
+            logger.logTransactionEvent(idTransaction, LogType.BEGIN);
+            txStatuses.put(idTransaction, TxStatus.ACTIVE);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Mencatat peristiwa transaksi selesai (COMMIT) dan memastikan record persisten di stable storage.
+     *
+     * @param idTransaction id transaksi yang di-commit
+     * @return {@code true} jika berhasil di-commit dan di-flush; {@code false} jika gagal
+     */
+    public boolean commitTransaction(int idTransaction) {
+        try {
+            logger.logTransactionEvent(idTransaction, LogType.COMMIT);
+            logger.flushAll();
+            txStatuses.put(idTransaction, TxStatus.COMMITTED);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Membatalkan seluruh perubahan transaksi (ABORT/ROLLBACK) secara terbalik dan menulis record ABORT.
+     *
+     * @param idTransaction id transaksi yang akan dibatalkan
+     * @return {@code true} jika rollback berhasil dilakukan; {@code false} jika gagal
+     */
+    public boolean rollbackTransaction(int idTransaction) {
+        try {
+            boolean success = rollbackManager.rollbackTransaction(idTransaction);
+            if (success) {
+                txStatuses.put(idTransaction, TxStatus.ABORTED);
+            }
+            return success;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Memulai proses pembuatan checkpoint sistem.
+     *
+     * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
+     */
+    public boolean createCheckpoint() {
+        try {
+            return checkpointManager.createCheckpoint();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Memulihkan basis data ke titik waktu tertentu (Point-In-Time Recovery).
+     *
+     * @param targetTimestamp waktu tujuan dalam milidetik epoch
+     * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
+     */
+    public boolean recoverToPointInTime(long targetTimestamp) {
+        try {
+            rollbackManager.recoverToPointInTime(targetTimestamp);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Overload tanpa argumen untuk pemulihan point-in-time ke titik checkpoint terakhir atau default.
+     *
+     * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
+     */
+    public boolean recoverToPointInTime() {
+        return recoverToPointInTime(System.currentTimeMillis());
+    }
+
+    /**
+     * Menjalankan prosedur pemulihan kegagalan sistem (Crash Recovery) menggunakan protokol ARIES.
+     *
+     * @return {@code true} jika fase analisis, redo, dan undo berhasil; {@code false} jika gagal
+     */
+    public boolean recoverFromCrash() {
+        try {
+            return crashRecoveryManager.recoverFromCrash();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean redo() {
+        return crashRecoveryManager != null && crashRecoveryManager.redo();
+    }
+
+    @Override
+    public boolean undo() {
+        return crashRecoveryManager != null && crashRecoveryManager.undo();
+    }
+
+    /** @return instance WAL Logger yang digunakan */
+    public Logger getLogger() {
+        return logger;
+    }
+
+    /** @return instance RollbackManager yang digunakan */
+    public RollbackManager getRollbackManager() {
+        return rollbackManager;
+    }
+
+    /** @return instance CheckpointManager yang digunakan */
+    public CheckpointManager getCheckpointManager() {
+        return checkpointManager;
+    }
+
+    /** @return instance CrashRecoveryEngine yang digunakan */
+    public CrashRecoveryEngine getCrashRecoveryManager() {
+        return crashRecoveryManager;
+    }
+
+    @Override
+    public boolean beginTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return beginTransaction((int) tx.value());
+    }
+
+    @Override
+    public boolean commitTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return commitTransaction((int) tx.value());
+    }
+
+    @Override
+    public boolean rollbackTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return rollbackTransaction((int) tx.value());
+    }
+
+    @Override
+    public TxStatus getTransactionStatus(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return getTransactionStatus((int) tx.value());
+    }
+
+    public TxStatus getTransactionStatus(int idTransaction) {
+        TxStatus cached = txStatuses.get(idTransaction);
+        if (cached != null) {
+            return cached;
+        }
+        List<WALRecord> txLogs = logger.getLogsByTransaction(idTransaction);
+        if (txLogs.isEmpty()) {
+            return null;
+        }
+        for (int i = txLogs.size() - 1; i >= 0; i--) {
+            WALRecord rec = txLogs.get(i);
+            if (rec.getLogType() == LogType.COMMIT) {
+                return TxStatus.COMMITTED;
+            }
+            if (rec.getLogType() == LogType.ABORT) {
+                return TxStatus.ABORTED;
+            }
+        }
+        return TxStatus.ACTIVE;
+    }
+
+    @Override
+    public void forceThrough(long lsn) throws RecoveryInternalException {
+        try {
+            logger.forceThrough(lsn);
+        } catch (Exception e) {
+            throw new RecoveryInternalException("Failed to force log through LSN " + lsn, e);
+        }
+    }
+
+    @Override
+    public void close() {
+        try {
+            logger.close();
+        } catch (Exception ignored) {
+        }
+    }
+}
