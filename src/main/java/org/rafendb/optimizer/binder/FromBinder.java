@@ -1,4 +1,3 @@
-
 package org.rafendb.optimizer.binder;
 
 import java.util.HashSet;
@@ -52,7 +51,8 @@ final class FromBinder {
                                 natural.right().tables());
                 merged.addAll(result.merged());
                 if (result.condition() == null) yield new FromItem.CartesianProduct(left, right);
-                Expr condition = conditionBinder(natural).condition(result.condition(), "NATURAL JOIN");
+                Expr condition =
+                        conditionBinder(natural).condition(result.condition(), "NATURAL JOIN");
                 yield new FromItem.Join(left, right, condition);
             }
         };

@@ -243,7 +243,12 @@ class StatsCostModelTest {
                                 null,
                                 "mahasiswa",
                                 new IndexScanDescriptor(
-                                        "mahasiswa_nim_idx", "nim", new Expr.Null()))));
+                                        "mahasiswa_nim_idx",
+                                        "nim",
+                                        new Expr.Binary(
+                                                Expr.Op.EQ,
+                                                new Expr.ColumnRef("mahasiswa", "nim"),
+                                                new Expr.Literal(Value.ofInt(7)))))));
         assertEquals(
                 new Cost(2, 2),
                 model.estimateLocalCost(
@@ -251,7 +256,13 @@ class StatsCostModelTest {
                                 null,
                                 "prodi",
                                 new IndexScanDescriptor(
-                                        "prodi_kode_idx", "kode", new Expr.Null()))));
+                                        "prodi_kode_idx",
+                                        "kode",
+                                        new Expr.Binary(
+                                                Expr.Op.EQ,
+                                                new Expr.ColumnRef("prodi", "kode"),
+                                                new Expr.Literal(
+                                                        Value.ofText(DataType.VARCHAR, "IF")))))));
 
         TableScanNode shared = new TableScanNode(null, "mahasiswa");
         CartesianPlanNode dag =

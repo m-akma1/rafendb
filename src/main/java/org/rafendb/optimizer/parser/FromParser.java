@@ -28,18 +28,15 @@ final class FromParser {
         while (true) {
             if (in.acceptPunct(",")) {
                 left = new FromItem.CartesianProduct(left, table());
-            }
-            else if(in.acceptKeyword("JOIN")){
+            } else if (in.acceptKeyword("JOIN")) {
                 FromItem right = table();
                 in.expectKeyword("ON");
                 left = new FromItem.Join(left, right, new ExpressionParser(in).parseCondition());
-            }
-            else if(in.acceptKeyword("NATURAL")){
+            } else if (in.acceptKeyword("NATURAL")) {
                 in.expectKeyword("JOIN");
                 FromItem right = table();
                 left = new FromItem.NaturalJoin(left, right);
-            }
-            else{
+            } else {
                 break;
             }
         }
@@ -49,7 +46,7 @@ final class FromParser {
     private TableRef table() {
         Token t = in.peek();
         String name = in.expectIdentifier("table name");
-        if(name.indexOf('.') >= 0) {
+        if (name.indexOf('.') >= 0) {
             throw TokenCursor.syntaxError("Table name cannot contain '.': '" + name + "'", t);
         }
         return new TableRef(name);
