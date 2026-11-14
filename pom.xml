@@ -11,10 +11,10 @@
   <packaging>jar</packaging>
 
   <name>RafenDB</name>
-  <description>mini Database Management System from scratch. Made for IF3140 Database System Sem 1 2026/2027</description>
+  <description>mini Database Management System from scratch. Made for IF3140 Database Systems Sem 1 2026/2027</description>
 
   <properties>
-    <revision>2.2.0-dev-SNAPSHOT</revision>
+    <revision>3.1.0-dev-SNAPSHOT</revision>
 
     <!-- Language level. javac checks against the Java 25 API even on a newer JDK. -->
     <maven.compiler.release>25</maven.compiler.release>
