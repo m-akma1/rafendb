@@ -9,9 +9,7 @@ import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.Column;
-import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.schema.TableSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
@@ -20,6 +18,8 @@ import org.rafendb.common.type.Value;
 import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.operator.FakeStorage;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 class TableScanOpTest {
     private static final TableSchema DOSEN =

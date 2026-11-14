@@ -3,17 +3,17 @@ package org.rafendb.processor.operator.scan;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.processor.Operator;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.Column;
-import org.rafendb.common.schema.ColumnSchema;
 import org.rafendb.common.schema.TableSchema;
-import org.rafendb.common.tuple.ResultRow;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.processor.error.QueryExecutionException;
+import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Operator FROM tabel (QP-05). Baca semua baris tabel lewat SM, kolomnya urut katalog dan RID-nya
