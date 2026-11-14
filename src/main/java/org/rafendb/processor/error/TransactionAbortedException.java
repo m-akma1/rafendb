@@ -1,13 +1,10 @@
 package org.rafendb.processor.error;
 
-import org.rafendb.common.error.Component;
-import org.rafendb.common.error.RafenDBRuntimeException;
-
 /**
  * Dilempar pas CCM bilang transaksinya udah batal, biar operator berhenti dan pesannya nyampe ke
  * client.
  */
-public class TransactionAbortedException extends RafenDBRuntimeException {
+public class TransactionAbortedException extends QueryProcessorException {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -16,7 +13,7 @@ public class TransactionAbortedException extends RafenDBRuntimeException {
      * @param message alasan transaksi batal
      */
     public TransactionAbortedException(String message) {
-        super(Component.QP, message, null);
+        super(message);
     }
 
     /**
@@ -26,6 +23,6 @@ public class TransactionAbortedException extends RafenDBRuntimeException {
      * @param cause penyebab aslinya
      */
     public TransactionAbortedException(String message, Throwable cause) {
-        super(Component.QP, message, cause);
+        super(message, cause);
     }
 }
