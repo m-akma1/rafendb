@@ -21,6 +21,39 @@ class org.rafendb.common.query.DeleteQuery {
 }
 
 
+interface org.rafendb.common.query.FromItem {
+	{method}  {abstract} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$CartesianProduct {
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$Join {
+	{method} +condition () : Expr
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$NaturalJoin {
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$TableRef {
+	{method} +name () : String
+	{method} +tables () : List
+}
+
+
 class org.rafendb.common.query.InsertQuery {
 	{method} +originalSql () : String
 	{method} +table () : String
@@ -60,7 +93,7 @@ class org.rafendb.common.query.QueryResult$Status {
 
 
 class org.rafendb.common.query.SelectQuery {
-	{method} +joinCondition () : Expr
+	{method} +from () : FromItem
 	{method} +orderBy () : List
 	{method} +originalSql () : String
 	{method} +projection () : List
@@ -95,11 +128,22 @@ class org.rafendb.common.query.UpdateQuery {
 
 org.rafendb.common.query.CreateIndexQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.DeleteQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.FromItem$CartesianProduct *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$CartesianProduct *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$CartesianProduct ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$Join *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$Join *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$Join ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$NaturalJoin *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$NaturalJoin *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$NaturalJoin ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$TableRef ..|>  org.rafendb.common.query.FromItem
 org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.QueryResult$Affected ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.query.OrderByItem : orderBy
+org.rafendb.common.query.SelectQuery *--  org.rafendb.common.query.FromItem : from
 org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.TransactionQuery *--  org.rafendb.common.query.TransactionQuery$Kind : kind
 org.rafendb.common.query.TransactionQuery ..|>  org.rafendb.common.query.ParsedQuery
