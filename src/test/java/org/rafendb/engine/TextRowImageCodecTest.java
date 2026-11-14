@@ -1,4 +1,4 @@
-package org.rafendb.processor.operator.write;
+package org.rafendb.engine;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,8 +18,6 @@ import org.rafendb.common.type.Value;
 
 class TextRowImageCodecTest {
     private final RowImageCodec codec = RowImageCodec.DEFAULT;
-
-    // ------------------------------------------------------------------ helpers
 
     private static Row row(Value... values) {
         return new Row(List.of(values));
@@ -60,8 +58,6 @@ class TextRowImageCodecTest {
                 () -> codec.decode(image.getBytes(StandardCharsets.UTF_8)),
                 "should reject: " + image);
     }
-
-    // ------------------------------------------------------------ single values
 
     @Test
     void integers() {
@@ -117,8 +113,6 @@ class TextRowImageCodecTest {
         assertEquals(DataType.VARCHAR, decoded.get(1).type());
     }
 
-    // -------------------------------------------------------------------- text
-
     @Test
     void trickyText() {
         String[] samples = {
@@ -148,8 +142,6 @@ class TextRowImageCodecTest {
             assertRoundTrip(row(Value.ofText(DataType.CHAR, s)));
         }
     }
-
-    // ------------------------------------------------------------------- rows
 
     @Test
     void emptyRow() {
@@ -198,8 +190,6 @@ class TextRowImageCodecTest {
         assertArrayEquals(codec.encode(r), codec.encode(r));
     }
 
-    // ------------------------------------- what FRM and the WAL do to the image
-
     private static Row hardRow() {
         return row(
                 Value.ofInt(-7),
@@ -237,8 +227,6 @@ class TextRowImageCodecTest {
         assertEquals(image, read);
         assertSameRow(r, codec.decode(read.getBytes(StandardCharsets.UTF_8)));
     }
-
-    // --------------------------------------------------- random (fixed seed)
 
     private static final String[] PIECES = {
         ";",
@@ -298,8 +286,6 @@ class TextRowImageCodecTest {
                     new String(image, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8));
         }
     }
-
-    // ---------------------------------------------------------- bad input
 
     @Test
     void decodeRejectsForeignAndMalformedImages() {
