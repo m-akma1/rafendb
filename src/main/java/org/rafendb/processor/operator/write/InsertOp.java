@@ -2,7 +2,6 @@ package org.rafendb.processor.operator.write;
 
 import java.util.List;
 import java.util.Objects;
-
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
@@ -71,7 +70,6 @@ public final class InsertOp implements DMLOperator {
             throw support.abortAfterLoggedFailure(tx, "inserting into " + table, e);
         }
         return 1L;
-
     }
 
     private void cancelQuietly(StorageManager sm, Rid rid) {

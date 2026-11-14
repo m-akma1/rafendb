@@ -1,5 +1,7 @@
 package org.rafendb.processor.operator.write;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -13,8 +15,6 @@ import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class TextRowImageCodecTest {
     private final RowImageCodec codec = RowImageCodec.DEFAULT;
@@ -41,10 +41,10 @@ class TextRowImageCodecTest {
             switch (e.type()) {
                 case INTEGER -> assertEquals(e.asInt(), a.asInt(), at);
                 case FLOAT ->
-                    assertEquals(
-                        Float.floatToIntBits(e.asFloat()),
-                        Float.floatToIntBits(a.asFloat()),
-                        at);
+                        assertEquals(
+                                Float.floatToIntBits(e.asFloat()),
+                                Float.floatToIntBits(a.asFloat()),
+                                at);
                 case CHAR, VARCHAR -> assertEquals(e.asText(), a.asText(), at);
             }
         }
@@ -56,9 +56,9 @@ class TextRowImageCodecTest {
 
     private void assertRejected(String image) {
         assertThrows(
-            IllegalArgumentException.class,
-            () -> codec.decode(image.getBytes(StandardCharsets.UTF_8)),
-            "should reject: " + image);
+                IllegalArgumentException.class,
+                () -> codec.decode(image.getBytes(StandardCharsets.UTF_8)),
+                "should reject: " + image);
     }
 
     // ------------------------------------------------------------ single values
@@ -73,8 +73,15 @@ class TextRowImageCodecTest {
     @Test
     void floatsKeepExactBits() {
         float[] samples = {
-            0.0f, 1.5f, -2.25f, 0.1f, Float.MIN_VALUE, Float.MAX_VALUE,
-            Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY
+            0.0f,
+            1.5f,
+            -2.25f,
+            0.1f,
+            Float.MIN_VALUE,
+            Float.MAX_VALUE,
+            Float.NaN,
+            Float.POSITIVE_INFINITY,
+            Float.NEGATIVE_INFINITY
         };
         for (float v : samples) {
             assertRoundTrip(row(Value.ofFloat(v)));
@@ -101,11 +108,11 @@ class TextRowImageCodecTest {
     @Test
     void charAndVarcharStayDistinct() {
         Row decoded =
-            codec.decode(
-                codec.encode(
-                    row(
-                        Value.ofText(DataType.CHAR, "same"),
-                        Value.ofText(DataType.VARCHAR, "same"))));
+                codec.decode(
+                        codec.encode(
+                                row(
+                                        Value.ofText(DataType.CHAR, "same"),
+                                        Value.ofText(DataType.VARCHAR, "same"))));
         assertEquals(DataType.CHAR, decoded.get(0).type());
         assertEquals(DataType.VARCHAR, decoded.get(1).type());
     }
@@ -115,11 +122,26 @@ class TextRowImageCodecTest {
     @Test
     void trickyText() {
         String[] samples = {
-            "a;b", "a:b", ";", ":", ";;", "RI1;", "N:VARCHAR;", "V:3:abc;", "I:5;",
-            " leading and trailing ", "line1\nline2", "tab\there", "nul\0inside",
-            "back\\slash", "\"quoted\" and 'single'",
-            "caf\u00e9", "\u4e2d\u6587", "emoji \uD83D\uDE00 pair",
-            "x".repeat(4000), "\u4e2d".repeat(1000)
+            "a;b",
+            "a:b",
+            ";",
+            ":",
+            ";;",
+            "RI1;",
+            "N:VARCHAR;",
+            "V:3:abc;",
+            "I:5;",
+            " leading and trailing ",
+            "line1\nline2",
+            "tab\there",
+            "nul\0inside",
+            "back\\slash",
+            "\"quoted\" and 'single'",
+            "caf\u00e9",
+            "\u4e2d\u6587",
+            "emoji \uD83D\uDE00 pair",
+            "x".repeat(4000),
+            "\u4e2d".repeat(1000)
         };
         for (String s : samples) {
             assertRoundTrip(row(Value.ofText(DataType.VARCHAR, s)));
@@ -137,22 +159,22 @@ class TextRowImageCodecTest {
     @Test
     void mixedRowMatchesDocumentedFormat() {
         Row r =
-            row(
-                Value.ofInt(5),
-                Value.nullOf(DataType.VARCHAR),
-                Value.ofText(DataType.VARCHAR, "ab;c"),
-                Value.ofFloat(1.5f));
+                row(
+                        Value.ofInt(5),
+                        Value.nullOf(DataType.VARCHAR),
+                        Value.ofText(DataType.VARCHAR, "ab;c"),
+                        Value.ofFloat(1.5f));
         byte[] image = codec.encode(r);
         assertEquals(
-            "RI1;4;I:5;N:VARCHAR;V:4:ab;c;F:1069547520;",
-            new String(image, StandardCharsets.UTF_8));
+                "RI1;4;I:5;N:VARCHAR;V:4:ab;c;F:1069547520;",
+                new String(image, StandardCharsets.UTF_8));
         assertSameRow(r, codec.decode(image));
     }
 
     @Test
     void emptyRowFormat() {
         assertEquals(
-            "RI1;0;", new String(codec.encode(new Row(List.of())), StandardCharsets.UTF_8));
+                "RI1;0;", new String(codec.encode(new Row(List.of())), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -160,12 +182,12 @@ class TextRowImageCodecTest {
         Value[] values = new Value[200];
         for (int i = 0; i < values.length; i++) {
             values[i] =
-                switch (i % 4) {
-                    case 0 -> Value.ofInt(i);
-                    case 1 -> Value.nullOf(DataType.FLOAT);
-                    case 2 -> Value.ofText(DataType.VARCHAR, "v" + i);
-                    default -> Value.ofText(DataType.CHAR, "c" + i);
-                };
+                    switch (i % 4) {
+                        case 0 -> Value.ofInt(i);
+                        case 1 -> Value.nullOf(DataType.FLOAT);
+                        case 2 -> Value.ofText(DataType.VARCHAR, "v" + i);
+                        default -> Value.ofText(DataType.CHAR, "c" + i);
+                    };
         }
         assertRoundTrip(row(values));
     }
@@ -180,10 +202,10 @@ class TextRowImageCodecTest {
 
     private static Row hardRow() {
         return row(
-            Value.ofInt(-7),
-            Value.nullOf(DataType.CHAR),
-            Value.ofText(DataType.VARCHAR, "nul\0 and emoji \uD83D\uDE00 and ; : \n"),
-            Value.ofFloat(Float.MIN_VALUE));
+                Value.ofInt(-7),
+                Value.nullOf(DataType.CHAR),
+                Value.ofText(DataType.VARCHAR, "nul\0 and emoji \uD83D\uDE00 and ; : \n"),
+                Value.ofFloat(Float.MIN_VALUE));
     }
 
     /** FRManager.writeLog does new String(bytes, UTF_8); the WAL later gives that String back. */
@@ -208,7 +230,8 @@ class TextRowImageCodecTest {
             out.writeUTF(image);
         }
         String read;
-        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+        try (DataInputStream in =
+                new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
             read = in.readUTF();
         }
         assertEquals(image, read);
@@ -218,8 +241,21 @@ class TextRowImageCodecTest {
     // --------------------------------------------------- random (fixed seed)
 
     private static final String[] PIECES = {
-        ";", ":", "RI1;", "N:VARCHAR;", "V:3:abc;", " ", "\n", "\t", "\0", "\\", "\"", "'",
-        "\u00e9", "\u4e2d", "\uD83D\uDE00"
+        ";",
+        ":",
+        "RI1;",
+        "N:VARCHAR;",
+        "V:3:abc;",
+        " ",
+        "\n",
+        "\t",
+        "\0",
+        "\\",
+        "\"",
+        "'",
+        "\u00e9",
+        "\u4e2d",
+        "\uD83D\uDE00"
     };
 
     private static String randomText(Random rnd) {
@@ -258,8 +294,8 @@ class TextRowImageCodecTest {
             // the FRM String conversion must not change anything either
             byte[] image = codec.encode(r);
             assertArrayEquals(
-                image,
-                new String(image, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8));
+                    image,
+                    new String(image, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8));
         }
     }
 
@@ -289,15 +325,15 @@ class TextRowImageCodecTest {
     @Test
     void decodeRejectsInvalidUtf8() {
         assertThrows(
-            IllegalArgumentException.class,
-            () -> codec.decode(new byte[] {(byte) 0xFF, (byte) 0xFE}));
+                IllegalArgumentException.class,
+                () -> codec.decode(new byte[] {(byte) 0xFF, (byte) 0xFE}));
     }
 
     @Test
     void encodeRejectsUnpairedSurrogate() {
         // would not survive the String round trip in FRM, so it must fail loudly
         assertThrows(
-            IllegalArgumentException.class,
-            () -> codec.encode(row(Value.ofText(DataType.VARCHAR, "a\uD800b"))));
+                IllegalArgumentException.class,
+                () -> codec.encode(row(Value.ofText(DataType.VARCHAR, "a\uD800b"))));
     }
 }

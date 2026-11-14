@@ -44,26 +44,25 @@ final class TextRowImageCodec implements RowImageCodec {
             }
             switch (type) {
                 case INTEGER -> sb.append("I:").append(v.asInt()).append(';');
-                case FLOAT ->
-                    sb.append("F:").append(Float.floatToIntBits(v.asFloat())).append(';');
+                case FLOAT -> sb.append("F:").append(Float.floatToIntBits(v.asFloat())).append(';');
                 case CHAR, VARCHAR -> {
                     String text = v.asText();
                     sb.append(type == DataType.CHAR ? 'C' : 'V')
-                        .append(':')
-                        .append(text.length())
-                        .append(':')
-                        .append(text)
-                        .append(';');
+                            .append(':')
+                            .append(text.length())
+                            .append(':')
+                            .append(text)
+                            .append(';');
                 }
             }
         }
         try {
             ByteBuffer buf =
-                StandardCharsets.UTF_8
-                    .newEncoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .encode(CharBuffer.wrap(sb));
+                    StandardCharsets.UTF_8
+                            .newEncoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                            .encode(CharBuffer.wrap(sb));
             byte[] out = new byte[buf.remaining()];
             buf.get(out);
             return out;
@@ -79,12 +78,12 @@ final class TextRowImageCodec implements RowImageCodec {
         String s;
         try {
             s =
-                StandardCharsets.UTF_8
-                    .newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(image))
-                    .toString();
+                    StandardCharsets.UTF_8
+                            .newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                            .decode(ByteBuffer.wrap(image))
+                            .toString();
         } catch (CharacterCodingException e) {
             throw new IllegalArgumentException("Row image is not valid UTF-8", e);
         }
@@ -107,8 +106,7 @@ final class TextRowImageCodec implements RowImageCodec {
                     int len = in.readInt(':');
                     String text = in.take(len);
                     in.expect(";");
-                    values.add(
-                        Value.ofText(tag == 'C' ? DataType.CHAR : DataType.VARCHAR, text));
+                    values.add(Value.ofText(tag == 'C' ? DataType.CHAR : DataType.VARCHAR, text));
                 }
                 default -> throw in.bad("unknown value tag '" + tag + "'");
             }
@@ -185,7 +183,8 @@ final class TextRowImageCodec implements RowImageCodec {
         }
 
         IllegalArgumentException bad(String why) {
-            return new IllegalArgumentException("Malformed row image at offset " + pos + ": " + why);
+            return new IllegalArgumentException(
+                    "Malformed row image at offset " + pos + ": " + why);
         }
     }
 }

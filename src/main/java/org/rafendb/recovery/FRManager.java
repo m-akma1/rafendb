@@ -96,9 +96,12 @@ public class FRManager implements RecoveryManager {
                             new Rid(
                                     Math.max(0L, (long) idRecord / 1000),
                                     Math.max(0, idRecord % 1000));
-                    Optional<Row> rowOpt = image == null
-                                                ? Optional.empty()
-                                                : Optional.of(RowImageCodec.DEFAULT.decode(image.getBytes(StandardCharsets.UTF_8)));
+                    Optional<Row> rowOpt =
+                            image == null
+                                    ? Optional.empty()
+                                    : Optional.of(
+                                            RowImageCodec.DEFAULT.decode(
+                                                    image.getBytes(StandardCharsets.UTF_8)));
                     try {
                         storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
                     } catch (Exception e) {

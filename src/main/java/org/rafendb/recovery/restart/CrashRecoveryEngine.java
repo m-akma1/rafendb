@@ -2,7 +2,6 @@ package org.rafendb.recovery.restart;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.recovery.log.LogType;
@@ -84,9 +83,12 @@ public class CrashRecoveryEngine {
                                                         (long) idRecord / 1000, idRecord % 1000)
                                                 : null;
                                 Optional<Row> row =
-                                image == null
-                                    ? Optional.empty()
-                                    : Optional.of(RowImageCodec.DEFAULT.decode(image.getBytes(StandardCharsets.UTF_8)));
+                                        image == null
+                                                ? Optional.empty()
+                                                : Optional.of(
+                                                        RowImageCodec.DEFAULT.decode(
+                                                                image.getBytes(
+                                                                        StandardCharsets.UTF_8)));
 
                                 storageManager.applyRecovery(tableName, rid, row, lsn);
                             } catch (Exception e) {

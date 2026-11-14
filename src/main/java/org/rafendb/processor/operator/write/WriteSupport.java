@@ -2,7 +2,6 @@ package org.rafendb.processor.operator.write;
 
 import java.util.Objects;
 import java.util.Optional;
-
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
 import org.rafendb.common.error.ConcurrencyInternalException;
@@ -99,16 +98,14 @@ final class WriteSupport {
                         Optional.of(codec.encode(after))));
     }
 
-    //QP3 - logging support example for delete
+    // QP3 - logging support example for delete
     long logDelete(TxId tx, String table, Rid rid, Row after) {
         return log(
-            tx,
-            new ChangeRecord(
-                ResourceId.ofRow(table, rid),
-                Optional.of(codec.encode(after)),
-                Optional.empty()
-            )
-        );
+                tx,
+                new ChangeRecord(
+                        ResourceId.ofRow(table, rid),
+                        Optional.of(codec.encode(after)),
+                        Optional.empty()));
     }
 
     /** Wraps a storage failure; it is an internal error, not something the user caused. */
@@ -125,8 +122,8 @@ final class WriteSupport {
      */
     TransactionAbortedException abortAfterLoggedFailure(TxId tx, String what, Exception cause) {
         TransactionAbortedException failure =
-            new TransactionAbortedException(
-                tx + " was aborted: storage failed while " + what, cause);
+                new TransactionAbortedException(
+                        tx + " was aborted: storage failed while " + what, cause);
         syncAfterAbort(tx, failure);
         return failure;
     }
