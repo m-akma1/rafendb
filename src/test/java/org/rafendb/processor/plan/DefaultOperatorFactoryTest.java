@@ -4,8 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.QueryPlan;
+import org.rafendb.common.plan.TableScanNode;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.concurrency.MockConcurrencyControl;
@@ -14,11 +19,85 @@ import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.write.DMLOperator;
+import org.rafendb.processor.plan.command.DeletePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
+import org.rafendb.processor.plan.command.UpdatePlanNode;
 
 class DefaultOperatorFactoryTest {
     private final InsertPlanNode node = new InsertPlanNode("employees", List.of(Value.ofInt(7)));
+
+    @Test
+    void customScanBindingForwardsContextTableAndNullableAliasWithoutLifecycleCalls() {
+        for (int sessionId : new int[] {1, 2}) {
+            var context = context(sessionId);
+            for (String alias : new String[] {null, "p"}) {
+                var workers = new ArrayList<FakeChildOp>();
+                var builder =
+                        DefaultOperatorFactory.bindScan(
+                                context,
+                                (receivedContext, table, receivedAlias) -> {
+                                    assertSame(context, receivedContext);
+                                    assertEquals("prodi", table);
+                                    assertEquals(alias, receivedAlias);
+                                    var worker = new FakeChildOp(List.of(), List.of());
+                                    workers.add(worker);
+                                    return worker;
+                                });
+
+                var factory =
+                        factory(
+                                builder,
+                                insert -> {
+                                    throw new AssertionError("Unexpected INSERT");
+                                });
+                var first = factory.createScan(new TableScanNode(alias, "prodi"));
+                var second = factory.createScan(new TableScanNode(alias, "prodi"));
+                assertNotSame(first, second);
+                assertEquals(2, workers.size());
+                for (var worker : workers) {
+                    assertThrows(IllegalStateException.class, worker::next);
+                    assertEquals(0, worker.getCloseCount());
+                }
+            }
+        }
+    }
+
+    @Test
+    void scanBindingRejectsMissingDependenciesInputsAndOperatorResults() {
+        var context = context(1);
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        DefaultOperatorFactory.bindScan(
+                                null,
+                                (ctx, table, alias) -> new FakeChildOp(List.of(), List.of())));
+        assertThrows(
+                NullPointerException.class, () -> DefaultOperatorFactory.bindScan(context, null));
+        var noStorage =
+                new ExecutionContext(
+                        context.getSContext(),
+                        context.getConcurrencyControl(),
+                        null,
+                        context.getRecoveryManager());
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        DefaultOperatorFactory.bindScan(
+                                noStorage,
+                                (ctx, table, alias) -> new FakeChildOp(List.of(), List.of())));
+        var builder =
+                DefaultOperatorFactory.bindScan(
+                        context, (ctx, table, alias) -> new FakeChildOp(List.of(), List.of()));
+        assertThrows(NullPointerException.class, () -> builder.apply(null));
+        var missingWorker = DefaultOperatorFactory.bindScan(context, (ctx, table, alias) -> null);
+        assertThrows(
+                NullPointerException.class,
+                () -> missingWorker.apply(new TableScanNode(null, "prodi")));
+    }
 
     @Test
     void bindsConstructorTableValuesAndContextWithoutExecutingInsert() {
@@ -157,6 +236,135 @@ class DefaultOperatorFactoryTest {
         }
     }
 
+    @Test
+    void updateBindingForwardsAssignmentChildEvaluatorAndSessionWithoutExecuting() {
+        var context = context(1);
+        var evaluator = new DefaultExpressionEvaluator();
+        var column = new Expr.ColumnRef("employees", "salary", 1);
+        var value = new Expr.Binary(Expr.Op.ADD, column, new Expr.Literal(Value.ofInt(10)));
+        var update = new UpdatePlanNode("employees", column, value, Optional.empty());
+        var child = new FakeChildOp(List.of(), List.of());
+        int[] creations = {0};
+        int[] executions = {0};
+        var builder =
+                DefaultOperatorFactory.bindUpdate(
+                        context,
+                        evaluator,
+                        (table, target, expression, source, receivedEvaluator, ctx) -> {
+                            assertEquals(update.table(), table);
+                            assertSame(column, target);
+                            assertSame(value, expression);
+                            assertSame(child, source);
+                            assertSame(evaluator, receivedEvaluator);
+                            assertSame(context, ctx);
+                            creations[0]++;
+                            return () -> {
+                                executions[0]++;
+                                return 2L;
+                            };
+                        });
+        var factory =
+                writeFactory(
+                        builder,
+                        (delete, source) -> {
+                            throw new AssertionError("Unexpected DELETE");
+                        });
+
+        var action = factory.createUpdate(update, child);
+        assertEquals(1, creations[0]);
+        assertEquals(0, executions[0]);
+        assertThrows(IllegalStateException.class, child::next);
+        assertEquals(0, child.getCloseCount());
+        assertNull(context.getSContext().getCurrentTxId());
+        assertEquals(new ExecutionPlan.CommandResult(2, "UPDATE"), action.execute());
+        assertThrows(IllegalStateException.class, action::execute);
+        assertEquals(1, executions[0]);
+    }
+
+    @Test
+    void deleteBindingForwardsSessionOriginalChildAndTableWithoutExecuting() {
+        var context = context(1);
+        var delete = new DeletePlanNode("employees", Optional.empty());
+        var child = new FakeChildOp(List.of(), List.of());
+        int[] creations = {0};
+        int[] executions = {0};
+        var builder =
+                DefaultOperatorFactory.bindDelete(
+                        context,
+                        (ctx, source, table) -> {
+                            assertSame(context, ctx);
+                            assertSame(child, source);
+                            assertEquals(delete.table(), table);
+                            creations[0]++;
+                            return () -> {
+                                executions[0]++;
+                                return 1L;
+                            };
+                        });
+        var factory =
+                writeFactory(
+                        (update, source) -> {
+                            throw new AssertionError("Unexpected UPDATE");
+                        },
+                        builder);
+
+        var action = factory.createDelete(delete, child);
+        assertEquals(1, creations[0]);
+        assertEquals(0, executions[0]);
+        assertThrows(IllegalStateException.class, child::next);
+        assertEquals(0, child.getCloseCount());
+        assertNull(context.getSContext().getCurrentTxId());
+        assertEquals(new ExecutionPlan.CommandResult(1, "DELETE"), action.execute());
+        assertThrows(IllegalStateException.class, action::execute);
+        assertEquals(1, executions[0]);
+    }
+
+    @Test
+    void updateAndDeleteBindingsRejectMissingInputsAndWorkers() {
+        var context = context(1);
+        var evaluator = new DefaultExpressionEvaluator();
+        var update =
+                new UpdatePlanNode(
+                        "employees",
+                        new Expr.ColumnRef(null, "salary", 0),
+                        new Expr.Literal(Value.ofInt(10)),
+                        Optional.empty());
+        var delete = new DeletePlanNode("employees", Optional.empty());
+        var child = new FakeChildOp(List.of(), List.of());
+        DefaultOperatorFactory.UpdateConstructor updateConstructor =
+                (table, column, value, source, eval, ctx) -> () -> 0L;
+        DefaultOperatorFactory.DeleteConstructor deleteConstructor =
+                (ctx, source, table) -> () -> 0L;
+
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindUpdate(null, evaluator, updateConstructor));
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindUpdate(context, null, updateConstructor));
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindUpdate(context, evaluator, null));
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindDelete(null, deleteConstructor));
+        assertThrows(
+                NullPointerException.class, () -> DefaultOperatorFactory.bindDelete(context, null));
+
+        var updates = DefaultOperatorFactory.bindUpdate(context, evaluator, updateConstructor);
+        var deletes = DefaultOperatorFactory.bindDelete(context, deleteConstructor);
+        assertThrows(NullPointerException.class, () -> updates.apply(null, child));
+        assertThrows(NullPointerException.class, () -> updates.apply(update, null));
+        assertThrows(NullPointerException.class, () -> deletes.apply(null, child));
+        assertThrows(NullPointerException.class, () -> deletes.apply(delete, null));
+        var noUpdate =
+                DefaultOperatorFactory.bindUpdate(
+                        context, evaluator, (table, column, value, source, eval, ctx) -> null);
+        var noDelete = DefaultOperatorFactory.bindDelete(context, (ctx, source, table) -> null);
+        assertThrows(NullPointerException.class, () -> noUpdate.apply(update, child));
+        assertThrows(NullPointerException.class, () -> noDelete.apply(delete, child));
+    }
+
     private static ExecutionContext context(int sessionId) {
         return new ExecutionContext(
                 new SessionContext(sessionId),
@@ -167,20 +375,54 @@ class DefaultOperatorFactoryTest {
 
     private static DefaultOperatorFactory factory(
             ExecutionContext context, DefaultOperatorFactory.InsertConstructor constructor) {
-        return new DefaultOperatorFactory(
+        return factory(
                 scan -> {
                     throw new AssertionError("Unexpected Table Scan");
                 },
-                scan -> {
-                    throw new AssertionError("Unexpected Index Scan");
-                },
-                DefaultOperatorFactory.bindInsert(context, constructor),
+                DefaultOperatorFactory.bindInsert(context, constructor));
+    }
+
+    private static DefaultOperatorFactory factory(
+            Function<TableScanNode, Operator> scanBuilder,
+            Function<InsertPlanNode, DMLOperator> insertBuilder) {
+        return factory(
+                scanBuilder,
+                insertBuilder,
                 (update, child) -> {
                     throw new AssertionError("Unexpected UPDATE");
                 },
                 (delete, child) -> {
                     throw new AssertionError("Unexpected DELETE");
+                });
+    }
+
+    private static DefaultOperatorFactory writeFactory(
+            BiFunction<UpdatePlanNode, Operator, DMLOperator> updateBuilder,
+            BiFunction<DeletePlanNode, Operator, DMLOperator> deleteBuilder) {
+        return factory(
+                scan -> {
+                    throw new AssertionError("Unexpected Table Scan");
                 },
+                insert -> {
+                    throw new AssertionError("Unexpected INSERT");
+                },
+                updateBuilder,
+                deleteBuilder);
+    }
+
+    private static DefaultOperatorFactory factory(
+            Function<TableScanNode, Operator> scanBuilder,
+            Function<InsertPlanNode, DMLOperator> insertBuilder,
+            BiFunction<UpdatePlanNode, Operator, DMLOperator> updateBuilder,
+            BiFunction<DeletePlanNode, Operator, DMLOperator> deleteBuilder) {
+        return new DefaultOperatorFactory(
+                scanBuilder,
+                scan -> {
+                    throw new AssertionError("Unexpected Index Scan");
+                },
+                insertBuilder,
+                updateBuilder,
+                deleteBuilder,
                 index -> {
                     throw new AssertionError("Unexpected CREATE INDEX");
                 });

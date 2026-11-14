@@ -91,6 +91,20 @@ public final class DefaultOperatorFactory implements OperatorFactory {
         };
     }
 
+    /** Membentuk operator Scan baru tanpa membuka cursor atau meminta lock. */
+    @FunctionalInterface
+    public interface ScanConstructor {
+        /**
+         * Menyiapkan operator pembacaan tabel.
+         *
+         * @param context context sesi yang tidak null, sumber storage dan transaksi
+         * @param table nama tabel yang tidak null
+         * @param alias alias tabel, boleh null
+         * @return operator baru yang tidak null
+         */
+        Operator create(ExecutionContext context, String table, String alias);
+    }
+
     /** Constructor INSERT QP5; pembentukan tidak menjalankan operasi atau memulai transaksi. */
     @FunctionalInterface
     public interface InsertConstructor {
@@ -103,6 +117,92 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @return operator baru yang tidak null dan dimiliki satu eksekusi
          */
         DMLOperator create(String table, List<Value> values, ExecutionContext context);
+    }
+
+    /** Constructor UPDATE QP5; child membawa row tabel lengkap beserta RID. */
+    @FunctionalInterface
+    public interface UpdateConstructor {
+        /**
+         * Menyiapkan UPDATE tanpa membuka child atau mengubah storage.
+         *
+         * @param table nama tabel yang tidak null
+         * @param column target assignment yang tidak null
+         * @param value ekspresi nilai baru yang tidak null
+         * @param child input lengkap beserta RID yang tidak null
+         * @param evaluator evaluator ekspresi yang tidak null
+         * @param context context sesi yang tidak null
+         * @return operator baru yang tidak null
+         */
+        DMLOperator create(
+                String table,
+                Expr.ColumnRef column,
+                Expr value,
+                Operator child,
+                ExpressionEvaluator evaluator,
+                ExecutionContext context);
+    }
+
+    /** Constructor DELETE QP3; lifecycle child dimiliki operator DELETE. */
+    @FunctionalInterface
+    public interface DeleteConstructor {
+        /**
+         * Menyiapkan DELETE tanpa membuka child atau mengubah storage.
+         *
+         * @param context context sesi yang tidak null
+         * @param child input lengkap beserta RID yang tidak null
+         * @param table nama tabel yang tidak null
+         * @return operator baru yang tidak null
+         */
+        DMLOperator create(ExecutionContext context, Operator child, String table);
+    }
+
+    /**
+     * Mengikat UPDATE QP5 dengan context sesi dan evaluator.
+     * WHERE sudah diterapkan translator pada child. Target dan ekspresi SET diteruskan
+     * tanpa diubah, dan child lengkap beserta RID tetap menjadi input worker.
+     *
+     * @param context context satu sesi yang tidak null
+     * @param evaluator evaluator yang tidak null dan aman dipakai oleh eksekusi terkait
+     * @param constructor pembentuk UPDATE yang tidak null
+     * @return builder UPDATE; tidak menjalankan child atau memulai transaksi
+     * @throws NullPointerException jika parameter, node, child, atau hasil pembentukan null
+     */
+    public static BiFunction<UpdatePlanNode, Operator, DMLOperator> bindUpdate(
+            ExecutionContext context,
+            ExpressionEvaluator evaluator,
+            UpdateConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(evaluator, "evaluator");
+        Objects.requireNonNull(constructor, "constructor");
+        return (node, child) -> {
+            Objects.requireNonNull(node, "node");
+            Objects.requireNonNull(child, "child");
+            return Objects.requireNonNull(
+                    constructor.create(
+                            node.table(), node.column(), node.value(), child, evaluator, context),
+                    "UPDATE operator");
+        };
+    }
+
+    /**
+     * Mengikat DELETE QP3 dengan context satu sesi. WHERE sudah diterapkan pada child;
+     * binding mempertahankan child beserta RID dan tidak menjalankan lifecycle-nya.
+     *
+     * @param context context satu sesi yang tidak null
+     * @param constructor pembentuk DELETE yang tidak null
+     * @return builder DELETE yang meneruskan context, child, dan tabel
+     * @throws NullPointerException jika parameter, node, child, atau hasil pembentukan null
+     */
+    public static BiFunction<DeletePlanNode, Operator, DMLOperator> bindDelete(
+            ExecutionContext context, DeleteConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        return (node, child) -> {
+            Objects.requireNonNull(node, "node");
+            Objects.requireNonNull(child, "child");
+            return Objects.requireNonNull(
+                    constructor.create(context, child, node.table()), "DELETE operator");
+        };
     }
 
     /** {@inheritDoc} */
@@ -216,6 +316,34 @@ public final class DefaultOperatorFactory implements OperatorFactory {
                 executed = true;
                 return Objects.requireNonNull(action.execute(), "command result");
             }
+        };
+    }
+
+    /**
+     * Mengikat constructor Scan QP3 dengan context satu sesi.
+     *
+     * <p>Context diteruskan sebagai objek yang sama agar READ lock memakai transaksi aktif
+     * ketika operator dibuka. Binding tidak membuka cursor, meminta lock, atau memulai
+     * transaksi. Pemanggil menjalankan statement melalui AutoCommit atau setelah BEGIN.
+     *
+     * @param context context sesi yang tidak null
+     * @param constructor pembentuk Scan yang tidak null
+     * @return builder yang meneruskan nama tabel dan alias dari node
+     * @throws NullPointerException jika context, storage, constructor,
+     *     node, atau operator hasil pembentukan null
+     */
+    public static Function<TableScanNode, Operator> bindScan(
+            ExecutionContext context, ScanConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+
+        Objects.requireNonNull(context.getStorageManager(), "storage");
+
+        return node -> {
+            Objects.requireNonNull(node, "node");
+
+            return Objects.requireNonNull(
+                    constructor.create(context, node.table(), node.alias()), "Table Scan operator");
         };
     }
 }
