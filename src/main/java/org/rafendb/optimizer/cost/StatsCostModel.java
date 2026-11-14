@@ -138,8 +138,8 @@ public final class StatsCostModel implements CostModel {
                                 : Math.min(
                                         stats(scan.table()).blockCount(),
                                         ceil(rows(node) / factor(node)));
-            else if (node instanceof JoinPlanNode join) b = packed(rows(node), size(node));
-            else if (node instanceof CartesianPlanNode cartesian)
+            else if (node instanceof JoinPlanNode) b = packed(rows(node), size(node));
+            else if (node instanceof CartesianPlanNode)
                 b = packed(rows(node), size(node));
             else {
                 PlanNode child = node.children().get(0);
@@ -155,7 +155,7 @@ public final class StatsCostModel implements CostModel {
             double s;
             if (node instanceof TableScanNode scan) s = recordSize(scan.table());
             else if (node instanceof IndexScanNode scan) s = recordSize(scan.table());
-            else if (node instanceof SelectionPlanNode selection || node instanceof SortPlanNode)
+            else if (node instanceof SelectionPlanNode || node instanceof SortPlanNode)
                 s = size(node.children().get(0));
             else if (node instanceof ProjectionPlanNode projection) {
                 double sum = 0;
