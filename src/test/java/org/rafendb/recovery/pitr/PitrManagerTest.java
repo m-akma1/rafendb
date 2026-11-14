@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -15,7 +16,7 @@ class PitrManagerTest {
     void timestampTargetUsesCommitTimeAndExcludesLateCommit() throws InterruptedException {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
-        pitr.captureSnapshot(1, Map.of("accounts", Map.of(10, "opening")));
+        pitr.captureSnapshot(1, Map.of("accounts", Map.of(rid(10), "opening")));
 
         logger.logTransactionEvent(10, LogType.BEGIN);
         logger.logTransactionEvent(2, LogType.BEGIN); // Began before target, commits afterward.
@@ -27,12 +28,12 @@ class PitrManagerTest {
         logger.logTransactionEvent(2, LogType.COMMIT);
 
         assertTrue(pitr.recoverToTimestamp(target));
-        assertEquals("early", pitr.getCurrentRows().get("accounts").get(10));
+        assertEquals("early", pitr.getCurrentRows().get("accounts").get(rid(10)));
         assertEquals(1, pitr.getTransactionsReplayed());
         assertEquals(1, pitr.getChangesReplayed());
         int retainedRecords = pitr.getWalRecords().size();
         assertTrue(pitr.recoverToTimestamp(target));
-        assertEquals("early", pitr.getCurrentRows().get("accounts").get(10));
+        assertEquals("early", pitr.getCurrentRows().get("accounts").get(rid(10)));
         assertEquals(retainedRecords, pitr.getWalRecords().size());
         assertEquals(10, pitr.getRecoveredHighestTransactionId());
         assertTrue(pitr.getRecoveredHighestTimestamp() >= target);
@@ -52,8 +53,8 @@ class PitrManagerTest {
         logger.logTransactionEvent(2, LogType.COMMIT);
 
         assertTrue(pitr.recoverToTransaction(2));
-        assertEquals("first", pitr.getCurrentRows().get("accounts").get(900));
-        assertEquals("second", pitr.getCurrentRows().get("accounts").get(2));
+        assertEquals("first", pitr.getCurrentRows().get("accounts").get(rid(900)));
+        assertEquals("second", pitr.getCurrentRows().get("accounts").get(rid(2)));
         assertEquals(2, pitr.getTransactionsReplayed());
     }
 
@@ -79,13 +80,42 @@ class PitrManagerTest {
     void deleteAfterImageRemovesTheSameRecordIdentity() {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
-        pitr.captureSnapshot(1, Map.of("accounts", Map.of(3, "exists")));
+        pitr.captureSnapshot(1, Map.of("accounts", Map.of(rid(3), "exists")));
         logger.logTransactionEvent(3, LogType.BEGIN);
         writeChange(logger, 3, LogType.DELETE, "exists", null);
         logger.logTransactionEvent(3, LogType.COMMIT);
 
         assertTrue(pitr.recoverToTimestamp(commit(logger, 3).getTimestamp()));
-        assertFalse(pitr.getCurrentRows().get("accounts").containsKey(3));
+        assertFalse(pitr.getCurrentRows().get("accounts").containsKey(rid(3)));
+    }
+
+    @Test
+    void replayKeepsFullRidBeyondLegacyEncoding() {
+        Logger logger = new Logger();
+        PitrManager pitr = new PitrManager(logger);
+        pitr.captureSnapshot(1, Map.of("accounts", Map.of()));
+        Rid wide = new Rid(5_000_000L, 1234);
+        Rid neighbour = new Rid(5_000_001L, 234); // sama dengan wide pada encoding lama
+        logger.logTransactionEvent(7, LogType.BEGIN);
+        logger.logDataChange(
+                7, LogType.INSERT, System.currentTimeMillis(), "accounts", 2L, wide, null, "a");
+        logger.logDataChange(
+                7,
+                LogType.INSERT,
+                System.currentTimeMillis(),
+                "accounts",
+                2L,
+                neighbour,
+                null,
+                "b");
+        logger.logTransactionEvent(7, LogType.COMMIT);
+
+        assertTrue(pitr.recoverToTransaction(7));
+        assertEquals(Map.of(wide, "a", neighbour, "b"), pitr.getCurrentRows().get("accounts"));
+    }
+
+    private static Rid rid(int legacyId) {
+        return new Rid(legacyId / 1000, legacyId % 1000);
     }
 
     private static void writeChange(

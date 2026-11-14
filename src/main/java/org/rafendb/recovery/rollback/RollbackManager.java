@@ -281,7 +281,7 @@ public final class RollbackManager {
         for (WALRecord r : all.reversed()) {
             int tx = r.getIdTransaction();
             if (r.getLogType().isDataChange() && !kept.contains(tx) && !aborted.contains(tx)) {
-                if (r.getTableName() == null || r.getIdRecord() < 0) {
+                if (r.getTableName() == null || r.getRid() == null) {
                     throw new IllegalStateException("Malformed data change record: " + r);
                 }
                 toUndo.add(r);
@@ -345,12 +345,17 @@ public final class RollbackManager {
                             r.getLogType().inverse(),
                             clock.getAsLong(),
                             r.getTableName(),
-                            r.getIdRecord(),
+                            r.getTableGeneration(),
+                            r.getRid(),
                             r.getAfterValue(),
                             r.getBeforeValue());
         }
         storage.applyUndo(
-                r.getTableName(), r.getIdRecord(), r.getBeforeValue(), step.compensationLsn);
+                r.getTableName(),
+                r.getTableGeneration(),
+                r.getRid(),
+                r.getBeforeValue(),
+                step.compensationLsn);
     }
 
     /** Mengecek apakah ada record bertipe {@code type} di dalam daftar. */

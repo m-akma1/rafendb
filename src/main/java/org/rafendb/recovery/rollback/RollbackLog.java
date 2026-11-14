@@ -1,6 +1,7 @@
 package org.rafendb.recovery.rollback;
 
 import java.util.List;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
@@ -55,6 +56,32 @@ public interface RollbackLog {
             long timestamp,
             String tableName,
             int idRecord,
+            String beforeVal,
+            String afterVal);
+
+    /**
+     * Sama seperti {@link #logDataChange(int, LogType, long, String, int, String, String)}, tetapi
+     * memakai alamat baris {@link Rid} penuh dan generasi tabel. Dipakai FR3 untuk menulis record
+     * kompensasi agar alamat dan generasi tabelnya sama persis dengan record asal.
+     *
+     * @param idTransaction id transaksi
+     * @param logType INSERT, UPDATE, atau DELETE; tidak boleh null
+     * @param timestamp waktu perubahan terjadi, dalam milidetik epoch
+     * @param tableName tabel yang diubah, tidak boleh null
+     * @param tableGeneration generasi tabel saat perubahan dicatat
+     * @param rid alamat baris yang diubah, tidak boleh null
+     * @param beforeVal isi record sebelum perubahan, {@code null} untuk INSERT
+     * @param afterVal isi record sesudah perubahan, {@code null} untuk DELETE
+     * @return LSN record yang baru
+     * @throws LoggerErrorException jika record gagal ditambahkan
+     */
+    long logDataChange(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            long tableGeneration,
+            Rid rid,
             String beforeVal,
             String afterVal);
 
