@@ -1,4 +1,4 @@
-package org.rafendb.common.tuple;
+package org.rafendb.engine;
 
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.tuple.Row;
+import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 
@@ -28,7 +30,7 @@ import org.rafendb.common.type.Value;
  * Example: (5, NULL VARCHAR, "ab;c", 1.5f) becomes
  * {@code RI1;4;I:5;N:VARCHAR;V:4:ab;c;F:1069547520;}
  */
-final class TextRowImageCodec implements RowImageCodec {
+public final class TextRowImageCodec implements RowImageCodec {
     private static final String MAGIC = "RI1";
 
     @Override
