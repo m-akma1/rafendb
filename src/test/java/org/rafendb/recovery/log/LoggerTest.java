@@ -141,4 +141,37 @@ class LoggerTest {
             assertEquals(5L, logger2.getLogsSorted().get(1).getTableGeneration());
         }
     }
+
+    @Test
+    void testEmptyLogDisplayIsSafeAndReadOnly() throws Exception {
+        try (Logger logger = new Logger(logPath)) {
+            assertDoesNotThrow(logger::displayLogs);
+            assertDoesNotThrow(() -> logger.displayLogsByTransaction(42));
+            assertTrue(logger.getLogsSorted().isEmpty());
+        }
+    }
+
+    @Test
+    void testFailedCommitFlushDoesNotAdvanceCommittedState() throws Exception {
+        boolean[] shouldFail = {true};
+        try (Logger failingFlushLogger =
+                new Logger(logPath) {
+                    @Override
+                    public synchronized void flushAll() {
+                        if (shouldFail[0]) {
+                            throw new LoggerErrorException("Simulated disk sync failure");
+                        }
+                        super.flushAll();
+                    }
+                }) {
+            failingFlushLogger.logTransactionEvent(1, LogType.BEGIN);
+            assertThrows(
+                    LoggerErrorException.class,
+                    () -> failingFlushLogger.logTransactionEvent(1, LogType.COMMIT));
+            assertEquals(0L, failingFlushLogger.getLastCommittedLSN());
+            assertEquals(1, failingFlushLogger.getLogsSorted().size());
+            assertEquals(1L, failingFlushLogger.getCurrentLSN());
+            shouldFail[0] = false;
+        }
+    }
 }

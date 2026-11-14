@@ -1,0 +1,14 @@
+# FR-05 & FR-08 Scenario 3: Point-In-Time Recovery (PITR) di Antara Dua Commit
+#
+# Urutan Eksekusi:
+#   1. T1 BEGIN -> INSERT key=100 val="Version1" -> COMMIT (ts = T_commit1)
+#   2. T2 BEGIN -> UPDATE key=100 val="Version1" -> "Version2" -> COMMIT (ts = T_commit2 > T_commit1)
+#   3. T3 BEGIN -> UPDATE key=100 val="Version2" -> "Version3" (belum COMMIT)
+#   4. Jalankan recoverToPointInTime(target = T_commit1)
+#
+# Hasil yang Diharapkan:
+#   - key=100 bernilai "Version1" (perubahan T1 bertahan, T2 & T3 tidak disertakan).
+#   - Target di luar rentang riwayat ditolak sebelum mengubah basis data aktif.
+#
+# Cara Verifikasi Otomatis:
+#   Jalankan FRManagerDriver#testPointInTime dan PitrManagerTest

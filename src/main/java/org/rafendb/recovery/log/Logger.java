@@ -320,6 +320,9 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         WALRecord record = new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null);
         try {
             writeRecordToDisk(record);
+            if (logType == LogType.COMMIT) {
+                flushAll();
+            }
         } catch (RuntimeException e) {
             currentLSN.set(prevLsn);
             throw e;

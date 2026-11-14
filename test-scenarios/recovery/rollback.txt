@@ -1,0 +1,17 @@
+# FR-04 & FR-08 Scenario 2: Rollback Transaksi & Atribut NULL vs Record Tidak Ada
+#
+# Kondisi Awal:
+#   Tabel `items(id INT, name VARCHAR)` kosong.
+#
+# Urutan Eksekusi:
+#   1. T1 BEGIN -> INSERT (10, NULL) -> COMMIT
+#      Verifikasi WAL: beforeValue == null (record tidak ada), afterValue != null (berisi row dgn atribut NULL).
+#   2. T2 BEGIN -> UPDATE (10, NULL) -> (10, "Present") -> diterapkan ke StorageManager
+#   3. T2 ROLLBACK -> undo dalam urutan terbalik + menulis CLR & ABORT
+#
+# Hasil yang Diharapkan:
+#   - Record (10) == (10, NULL) (atribut NULL tetap ada, bukan terhapus).
+#   - Permintaan rollback ulang pada T2 tidak mengubah data lagi.
+#
+# Cara Verifikasi Otomatis:
+#   Jalankan FRManagerTest#testNullAttributeDistinctFromMissingRecord

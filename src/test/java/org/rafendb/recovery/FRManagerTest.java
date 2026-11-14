@@ -350,4 +350,147 @@ class FRManagerTest {
                     restartedSm.fetch("items", rid).map(org.rafendb.common.tuple.StoredRow::row));
         }
     }
+
+    @Test
+    void testNullAttributeDistinctFromMissingRecord() throws Exception {
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        Path walPath = tempDir.resolve("null-attr-wal.log");
+        Path dataDir = tempDir.resolve("null-attr-data");
+
+        org.rafendb.common.tuple.Row nullNameRow =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(10),
+                                org.rafendb.common.type.Value.nullOf(
+                                        org.rafendb.common.type.DataType.VARCHAR)));
+        org.rafendb.common.tuple.Row nonNullRow =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(10),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Present")));
+
+        Rid rid;
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager sm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
+                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+            sm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "name",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            50,
+                                            true,
+                                            false))));
+
+            TxId tx1 = new TxId(1);
+            assertTrue(realFrm.beginTransaction(tx1));
+            rid = sm.reserveRid("items", nullNameRow);
+            byte[] nullNameBytes = sm.encodeRow("items", nullNameRow);
+            long lsn1 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx1,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("items", rid),
+                                                    Optional.empty(),
+                                                    Optional.of(nullNameBytes)))));
+            sm.insert("items", rid, nullNameRow, lsn1);
+            assertTrue(realFrm.commitTransaction(tx1));
+
+            // Record INSERT memiliki beforeValue == null (tidak ada), sedangkan afterValue != null
+            // meski atribut name bernilai NULL.
+            var insertRec = logger.getLogsSorted().get(1);
+            assertNull(insertRec.getBeforeValue());
+            assertNotNull(insertRec.getAfterValue());
+
+            // Tx2 mengubah NULL -> "Present", lalu di-rollback -> harus kembali ke row dengan
+            // atribut NULL, bukan terhapus.
+            TxId tx2 = new TxId(2);
+            assertTrue(realFrm.beginTransaction(tx2));
+            byte[] nonNullBytes = sm.encodeRow("items", nonNullRow);
+            long lsn2 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx2,
+                                    org.rafendb.common.log.LogType.UPDATE,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("items", rid),
+                                                    Optional.of(nullNameBytes),
+                                                    Optional.of(nonNullBytes)))));
+            sm.update("items", rid, nonNullRow, lsn2);
+            assertTrue(realFrm.rollbackTransaction(tx2));
+            assertEquals(
+                    Optional.of(nullNameRow),
+                    sm.fetch("items", rid).map(org.rafendb.common.tuple.StoredRow::row));
+        }
+    }
+
+    @Test
+    void testRealProcessCrashRecoverySimulation() throws Exception {
+        Path walPath = tempDir.resolve("proc-crash-wal.log");
+        Path dataDir = tempDir.resolve("proc-crash-data");
+        String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        String classpath = System.getProperty("java.class.path");
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        javaBin,
+                        "-cp",
+                        classpath,
+                        org.rafendb.recovery.driver.FRManagerDriver.class.getName(),
+                        "--simulate-crash-child",
+                        dataDir.toString(),
+                        walPath.toString());
+        pb.redirectErrorStream(true);
+        Process child = pb.start();
+
+        String readyLine = null;
+        try (var reader =
+                new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                child.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("READY_FOR_CRASH:")) {
+                    readyLine = line;
+                    break;
+                }
+            }
+        } finally {
+            child.destroyForcibly();
+            child.waitFor();
+        }
+        assertNotNull(readyLine, "Child process must reach READY_FOR_CRASH before forcible kill");
+
+        String[] parts = readyLine.substring("READY_FOR_CRASH:".length()).split(";");
+        String[] r1Parts = parts[0].split(",");
+        String[] r2Parts = parts[1].split(",");
+        Rid committedRid = new Rid(Long.parseLong(r1Parts[0]), Integer.parseInt(r1Parts[1]));
+        Rid uncommittedRid = new Rid(Long.parseLong(r2Parts[0]), Integer.parseInt(r2Parts[1]));
+
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+            assertTrue(restartedFrm.recoverFromCrash());
+            assertTrue(restartedSm.fetch("items", committedRid).isPresent());
+            assertTrue(restartedSm.fetch("items", uncommittedRid).isEmpty());
+        }
+    }
 }
