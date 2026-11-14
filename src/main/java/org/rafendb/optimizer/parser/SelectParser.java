@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.ColumnRef;
+import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.OrderByItem;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
@@ -18,11 +19,11 @@ final class SelectParser {
         in.expectKeyword("SELECT");
         List<Expr> projection = selectList(in);
         in.expectKeyword("FROM");
-        List<String> tables = fromTables(in);
+        FromItem tables = new FromParser(in).parse();
         Expr where = optionalWhere(in);
         List<OrderByItem> orderBy = optionalOrderBy(in);
         in.expectEnd();
-        return new SelectQuery(sql, projection, tables, null, where, orderBy);
+        return new SelectQuery(sql, projection, tables, where, orderBy);
     }
 
     private static List<Expr> selectList(TokenCursor in) {
@@ -33,26 +34,12 @@ final class SelectParser {
                 in.next();
                 columns.add(new Expr.ColumnRef(null, "*"));
             } else if (t.type() == Token.TokenType.IDENTIFIER) {
-                in.next();
                 columns.add(column(in, true));
             } else {
                 throw in.error(t, "column name or '*'");
             }
         } while (in.acceptPunct(","));
         return columns;
-    }
-
-    private static List<String> fromTables(TokenCursor in) {
-        List<String> tables = new ArrayList<>();
-        do {
-            Token t = in.peek();
-            String tableName = in.expectIdentifier("table name");
-            if (tableName.indexOf('.') != -1) {
-                throw in.error(t, "table name cannot contain '.'");
-            }
-            tables.add(tableName);
-        } while (in.acceptPunct(","));
-        return tables;
     }
 
     private static Expr optionalWhere(TokenCursor in) {
@@ -71,6 +58,8 @@ final class SelectParser {
                 boolean ascending = true;
                 if (in.acceptKeyword("DESC")) {
                     ascending = false;
+                } else {
+                    in.acceptKeyword("ASC");
                 }
                 orderBy.add(new OrderByItem(columnName, ascending));
             } while (in.acceptPunct(","));

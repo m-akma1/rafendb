@@ -8,6 +8,7 @@ import org.rafendb.common.error.OptimizerInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
+import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.JoinAlgorithm;
 import org.rafendb.common.plan.JoinPlanNode;
@@ -107,7 +108,7 @@ public final class StatsCostModel implements CostModel {
             if (saved != null) return saved;
             long n;
             if (node instanceof TableScanNode scan) n = stats(scan.table()).recordCount();
-            else if (node instanceof IndexScanNode scan) n = stats(scan.table()).recordCount();
+            else if (node instanceof IndexScanNode scan) n = indexRows(scan);
             else if (node instanceof SelectionPlanNode selection)
                 n =
                         selected(
@@ -197,33 +198,7 @@ public final class StatsCostModel implements CostModel {
                 long b = stats(scan.table()).blockCount();
                 result = new Cost(b > 0 ? 1 : 0, b);
             } else if (node instanceof IndexScanNode scan) {
-                TableStats t = stats(scan.table());
-                // TODO(contract): IndexScanNode currently has no descriptor or predicate.
-                IndexInfo index =
-                        catalog.listIndexes(scan.table()).stream().findFirst().orElse(null);
-                if (index == null) result = new Cost(t.blockCount() > 0 ? 1 : 0, t.blockCount());
-                else {
-                    if (index.type() == IndexType.HASH)
-                        result =
-                                new Cost(
-                                        1 + Math.min(rows(node), Math.max(1, t.blockCount())),
-                                        1 + Math.min(rows(node), Math.max(1, t.blockCount())));
-                    else {
-                        double keySize = columnSize(scan.table(), index.column());
-                        double fanout =
-                                Math.max(
-                                        2, Math.floor(parameters.blockSizeBytes() / (keySize + 8)));
-                        long height =
-                                Math.max(
-                                        1,
-                                        (long)
-                                                Math.ceil(
-                                                        Math.log(Math.max(1, t.recordCount()))
-                                                                / Math.log(fanout)));
-                        long fetched = Math.min(rows(node), Math.max(1, t.blockCount()));
-                        result = cost(height + fetched, height + fetched);
-                    }
-                }
+                result = indexScanCost(scan);
             } else if (node instanceof SelectionPlanNode || node instanceof ProjectionPlanNode)
                 result = new Cost(0, 0);
             else if (node instanceof SortPlanNode sort) result = sortCost(blocks(sort.child()));
@@ -234,6 +209,125 @@ public final class StatsCostModel implements CostModel {
             else throw fail("Unknown plan node class " + node.getClass().getName());
             locals.put(node, result);
             return result;
+        }
+
+        /** Index scans whose row estimate is being computed; guards the distinct-count cap. */
+        final Set<PlanNode> computing = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        long indexRows(IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            long total = stats(scan.table()).recordCount();
+            computing.add(scan);
+            try {
+                return selected(total, selectivity(scan.descriptor().condition(), scan));
+            } finally {
+                computing.remove(scan);
+            }
+        }
+
+        /** How the conjuncts of an index condition use the indexed column. */
+        record IndexUse(boolean equality, boolean range) {}
+
+        IndexUse indexUse(Expr condition, IndexInfo index, IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            if (condition instanceof Expr.Binary and && and.op() == Expr.Op.AND) {
+                IndexUse l = indexUse(and.left(), index, scan);
+                IndexUse r = indexUse(and.right(), index, scan);
+                return new IndexUse(l.equality() || r.equality(), l.range() || r.range());
+            }
+            if (!(condition instanceof Expr.Binary cmp)
+                    || cmp.op() == Expr.Op.NE
+                    || cmp.op() == Expr.Op.AND
+                    || cmp.op() == Expr.Op.ADD
+                    || cmp.op() == Expr.Op.SUB
+                    || cmp.op() == Expr.Op.MUL
+                    || cmp.op() == Expr.Op.DIV
+                    || cmp.op() == Expr.Op.MOD)
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " can only answer =, >, >=, < and <= on its column, got "
+                                + condition);
+            Expr.ColumnRef col =
+                    cmp.left() instanceof Expr.ColumnRef l
+                            ? l
+                            : cmp.right() instanceof Expr.ColumnRef r ? r : null;
+            Expr other = col == cmp.left() ? cmp.right() : cmp.left();
+            if (col == null
+                    || !col.column().equalsIgnoreCase(index.column())
+                    || (col.table() != null && !refersTo(scan, col.table()))
+                    || other instanceof Expr.ColumnRef
+                    || mentionsColumn(other))
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " on column "
+                                + index.column()
+                                + " cannot answer condition "
+                                + condition);
+            return cmp.op() == Expr.Op.EQ ? new IndexUse(true, false) : new IndexUse(false, true);
+        }
+
+        boolean refersTo(IndexScanNode scan, String name) {
+            return scan.table().equalsIgnoreCase(name)
+                    || scan.alias() != null && scan.alias().equalsIgnoreCase(name);
+        }
+
+        boolean mentionsColumn(Expr expr) {
+            return expr instanceof Expr.ColumnRef
+                    || expr instanceof Expr.Binary b
+                            && (mentionsColumn(b.left()) || mentionsColumn(b.right()));
+        }
+
+        /**
+         * Cost of reading through the index the descriptor names, assuming a secondary
+         * (non-clustering) index: the lookup path plus one block fetch per matching row, never more
+         * fetches than the table has blocks. A hash index costs one bucket access and answers only
+         * equality; a B+Tree costs its height and answers equality and ranges.
+         */
+        Cost indexScanCost(IndexScanNode scan)
+                throws OptimizerInternalException.CostEstimationException {
+            TableStats t = stats(scan.table());
+            IndexScanDescriptor descriptor = scan.descriptor();
+            IndexInfo index =
+                    catalog.listIndexes(scan.table()).stream()
+                            .filter(i -> i.name().equalsIgnoreCase(descriptor.indexName()))
+                            .findFirst()
+                            .orElseThrow(
+                                    () ->
+                                            fail(
+                                                    "Index "
+                                                            + descriptor.indexName()
+                                                            + " does not exist on table "
+                                                            + scan.table()));
+            if (!index.column().equalsIgnoreCase(descriptor.column()))
+                throw fail(
+                        "Index "
+                                + index.name()
+                                + " is on column "
+                                + index.column()
+                                + " but the scan names column "
+                                + descriptor.column());
+            IndexUse use = indexUse(descriptor.condition(), index, scan);
+            if (index.type() == IndexType.HASH && use.range())
+                throw fail(
+                        "Hash index "
+                                + index.name()
+                                + " answers only equality, got "
+                                + descriptor.condition());
+            if (t.recordCount() == 0) return new Cost(0, 0);
+            long fetched = Math.min(rows(scan), Math.max(1, t.blockCount()));
+            if (index.type() == IndexType.HASH) return cost(1 + fetched, 1 + fetched);
+            double keySize = columnSize(scan.table(), index.column());
+            double fanout = Math.max(2, Math.floor(parameters.blockSizeBytes() / (keySize + 8)));
+            long height =
+                    Math.max(
+                            1,
+                            (long)
+                                    Math.ceil(
+                                            Math.log(Math.max(1, t.recordCount()))
+                                                    / Math.log(fanout)));
+            return cost(height + fetched, height + fetched);
         }
 
         Cost joinCost(JoinAlgorithm algorithm, PlanNode left, PlanNode right)
@@ -339,7 +433,8 @@ public final class StatsCostModel implements CostModel {
                                     .orElse(1L)
                             : exact;
             PlanNode relation = relationNode(node, table);
-            return Math.max(1, Math.min(v, Math.max(1, rows(relation))));
+            long available = computing.contains(relation) ? t.recordCount() : rows(relation);
+            return Math.max(1, Math.min(v, Math.max(1, available)));
         }
 
         boolean hasTable(PlanNode node, String name) {

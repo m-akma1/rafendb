@@ -1,9 +1,7 @@
 package org.rafendb.optimizer.binder;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.ColumnRef;
@@ -12,30 +10,42 @@ import org.rafendb.common.expr.Expr.ColumnRef;
 final class StarExpander {
     private StarExpander() {}
 
+    /** An empty projection or a lone {@code *} / {@code t.*} means "all columns". */
     static boolean isStar(List<Expr> projection) {
         // TODO(contract): keep the accepted star encodings here as the parser contract settles.
-        return projection.isEmpty()
-                || projection.size() == 1
-                        && projection.get(0) instanceof ColumnRef c
-                        && c.column().equals("*");
+        return projection.isEmpty() || projection.size() == 1 && isStarItem(projection.get(0));
     }
 
-    static List<Expr> expand(List<Expr> projection, Scope scope, boolean natural) {
-        if (!isStar(projection)) return projection;
-        String qualifier = projection.isEmpty() ? null : ((ColumnRef) projection.get(0)).table();
-        if (qualifier != null
-                && scope.tables().stream().noneMatch(table -> Scope.eq(table.name(), qualifier)))
+    private static boolean isStarItem(Expr expr) {
+        return expr instanceof ColumnRef c && c.column().equals("*");
+    }
+
+    /**
+     * Replaces every {@code *} or {@code t.*} item by explicit columns, keeping the order of the
+     * other items. A bare {@code *} skips columns merged away by NATURAL JOIN; {@code t.*} keeps
+     * all columns of {@code t}.
+     */
+    static List<Expr> expand(List<Expr> projection, Scope scope) {
+        if (projection.isEmpty()) return expandItem(null, scope);
+        List<Expr> result = new ArrayList<>();
+        for (Expr item : projection) {
+            if (isStarItem(item)) result.addAll(expandItem(((ColumnRef) item).table(), scope));
+            else result.add(item);
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<Expr> expandItem(String qualifier, Scope scope) {
+        if (qualifier != null && scope.table(qualifier) == null)
             throw new ValidationException("Table '" + qualifier + "' is not in FROM clause");
         List<Expr> result = new ArrayList<>();
-        Set<String> emitted = new HashSet<>();
         for (Scope.Table table : scope.tables()) {
             if (qualifier != null && !Scope.eq(qualifier, table.name())) continue;
             for (var column : table.schema().columns()) {
-                String key = column.name().toLowerCase(java.util.Locale.ROOT);
-                if (!natural || emitted.add(key))
-                    result.add(new ColumnRef(table.name(), column.name()));
+                if (qualifier == null && scope.isHidden(table, column)) continue;
+                result.add(new ColumnRef(table.name(), column.name()));
             }
         }
-        return List.copyOf(result);
+        return result;
     }
 }
