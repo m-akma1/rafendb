@@ -37,22 +37,28 @@ public final class ScriptLoader {
      * @throws IOException if the file cannot be read
      */
     public static List<TestScenario> load(Path path) throws IOException {
-        try {
-            BufferedReader reader = Files.newBufferedReader(path);
+        try (BufferedReader reader = Files.newBufferedReader(path)) {
             String line = reader.readLine();
             int lineNumber = 1;
             List<TestScenario> scenarios = new ArrayList<>();
             while (line != null) {
-                String[] parts = line.split("|");
-                parts[0] = parts[0].trim();
-                parts[1] = parts[1].trim();
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    line = reader.readLine();
+                    lineNumber++;
+                    continue;
+                }
+                String[] parts = trimmed.split("\\|", 2);
+                if (parts.length != 2) {
+                    throw new IOException("Malformed line " + lineNumber + ": " + trimmed);
+                }
                 ScenarioOutcome outcome = ScenarioOutcome.fromString(parts[0]);
-                TestScenario scenario = new TestScenario("Line " + lineNumber, parts[1], outcome);
+                String sql = parts[1].trim();
+                TestScenario scenario = new TestScenario("Line " + lineNumber, sql, outcome);
                 scenarios.add(scenario);
                 line = reader.readLine();
                 lineNumber++;
             }
-            reader.close();
             return scenarios;
         } catch (IOException e) {
             throw new IOException("Failed to read script file: " + path, e);
