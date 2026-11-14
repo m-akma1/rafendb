@@ -139,8 +139,7 @@ public final class StatsCostModel implements CostModel {
                                         stats(scan.table()).blockCount(),
                                         ceil(rows(node) / factor(node)));
             else if (node instanceof JoinPlanNode) b = packed(rows(node), size(node));
-            else if (node instanceof CartesianPlanNode)
-                b = packed(rows(node), size(node));
+            else if (node instanceof CartesianPlanNode) b = packed(rows(node), size(node));
             else {
                 PlanNode child = node.children().get(0);
                 b = Math.min(blocks(child), ceil(rows(node) / factor(node)));
