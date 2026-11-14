@@ -34,23 +34,22 @@ public final class QueryParser {
     public ParsedQuery parse(String sql) {
         List<Token> tokens = tokenizer.tokenize(sql);
         Token first = tokens.get(0);
-        if(first.isKeyword("SELECT")){
+        if (first.isKeyword("SELECT")) {
             return SelectParser.parse(sql, tokens);
-        } 
-        if(first.isKeyword("INSERT") 
-            || first.isKeyword("UPDATE") 
-            || first.isKeyword("DELETE")){
+        }
+        if (first.isKeyword("INSERT") || first.isKeyword("UPDATE") || first.isKeyword("DELETE")) {
             return DmlParser.parse(sql, tokens);
         }
-        if(first.isKeyword("BEGIN") 
-            || first.isKeyword("COMMIT") 
-            || first.isKeyword("CREATE") 
-            || first.isKeyword("ABORT")){
+        if (first.isKeyword("BEGIN")
+                || first.isKeyword("COMMIT")
+                || first.isKeyword("CREATE")
+                || first.isKeyword("ABORT")) {
             return CommandParser.parse(sql, tokens);
         }
         throw TokenCursor.syntaxError(
-                        "Expected SELECT, UPDATE, INSERT, DELETE, BEGIN, COMMIT, ABORT or CREATE but found '"
+                "Expected SELECT, UPDATE, INSERT, DELETE, BEGIN, COMMIT, ABORT or CREATE but found '"
                         + first.text()
-                        + "'", first);
+                        + "'",
+                first);
     }
 }
