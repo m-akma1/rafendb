@@ -8,6 +8,8 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.SortPlanNode.Direction;
 import org.rafendb.common.plan.TableScanNode;
+import org.rafendb.common.type.Value;
+import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.expr.ExpressionEvaluator;
@@ -62,6 +64,45 @@ public final class DefaultOperatorFactory implements OperatorFactory {
         this.updateBuilder = Objects.requireNonNull(updateBuilder, "updateBuilder");
         this.deleteBuilder = Objects.requireNonNull(deleteBuilder, "deleteBuilder");
         this.createIndexBuilder = Objects.requireNonNull(createIndexBuilder, "createIndexBuilder");
+    }
+
+    /**
+     * Mengikat constructor INSERT ke context satu sesi dan payload node QP2.
+     *
+     * <p>Constructor menerima nama tabel, nilai dalam urutan kolom tabel, dan context,
+     * sesuai signature INSERT QP5. Setelah implementasinya tersedia, pemanggil dapat
+     * memberikan {@code InsertOp::new}. Constructor hanya menyiapkan operator;
+     * transaksi aktif harus disiapkan pemanggil sebelum aksi dijalankan.
+     * Context diteruskan sebagai objek yang sama agar transaksi sesi dibaca saat eksekusi.
+     *
+     * @param context context satu sesi, tidak boleh null
+     * @param constructor pembentuk operator INSERT baru, tidak boleh null
+     * @return builder untuk parameter insertBuilder pada constructor factory
+     * @throws NullPointerException jika context, constructor, node, atau hasil pembentukan null
+     */
+    public static Function<InsertPlanNode, DMLOperator> bindInsert(
+            ExecutionContext context, InsertConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        return node -> {
+            Objects.requireNonNull(node, "node");
+            return Objects.requireNonNull(
+                    constructor.create(node.table(), node.values(), context), "INSERT operator");
+        };
+    }
+
+    /** Constructor INSERT QP5; pembentukan tidak menjalankan operasi atau memulai transaksi. */
+    @FunctionalInterface
+    public interface InsertConstructor {
+        /**
+         * Menyiapkan operator INSERT baru tanpa memanggil execute.
+         *
+         * @param table nama tabel yang tidak null
+         * @param values nilai bertipe dalam urutan kolom tabel, tidak null
+         * @param context context sesi yang tidak null
+         * @return operator baru yang tidak null dan dimiliki satu eksekusi
+         */
+        DMLOperator create(String table, List<Value> values, ExecutionContext context);
     }
 
     /** {@inheritDoc} */
@@ -142,13 +183,21 @@ public final class DefaultOperatorFactory implements OperatorFactory {
                 });
     }
 
-    /** Mengadaptasi hasil DML menjadi hasil perintah internal QP. */
+    /**
+     * Mengadaptasi jumlah baris DML menjadi hasil perintah internal QP.
+     * Interface DML mengizinkan null; hasil tersebut tidak dapat dijadikan jumlah baris
+     * yang sah dan dilaporkan sebagai kegagalan eksekusi.
+     */
     private static ExecutionPlan.CommandAction command(DMLOperator operator, String status) {
         Objects.requireNonNull(operator, "DML operator");
 
         return once(
                 () -> {
-                    Long affectedRows = Objects.requireNonNull(operator.execute(), "DML result");
+                    Long affectedRows = operator.execute();
+                    if (affectedRows == null) {
+                        throw new IllegalStateException(
+                                status + " operator returned no affected-row count");
+                    }
 
                     return new ExecutionPlan.CommandResult(affectedRows, status);
                 });
