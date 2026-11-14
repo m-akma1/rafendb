@@ -60,24 +60,6 @@ final class WriteSupport {
         TableLocks.acquireWrite(ctx, table);
     }
 
-    long logInsert(TxId tx, String table, Rid rid, Row row) {
-        return log(
-                tx,
-                new ChangeRecord(
-                        ResourceId.ofRow(table, rid),
-                        Optional.empty(),
-                        Optional.of(codec.encode(row))));
-    }
-
-    long logUpdate(TxId tx, String table, Rid rid, Row before, Row after) {
-        return log(
-                tx,
-                new ChangeRecord(
-                        ResourceId.ofRow(table, rid),
-                        Optional.of(codec.encode(before)),
-                        Optional.of(codec.encode(after))));
-    }
-
     // QP3 - logging support example for delete
     long logDelete(TxId tx, String table, Rid rid, Row after) {
         return log(
@@ -94,9 +76,45 @@ final class WriteSupport {
     }
 
     /**
+     * Clears the session's transaction once CCM confirms ABORTED. If rollback is still incomplete
+     * the id is kept so that a later ABORT (or session close) can retry it.
+     */
+    @Deprecated
+    private void syncAfterAbort(TxId tx, Exception primary) {
+        try {
+            TxResult result = ctx.getConcurrencyControl().abort(tx);
+            if (result.status() == TxStatus.ABORTED) {
+                ctx.getSContext().setCurrentTxId(null);
+            }
+        } catch (ConcurrencyInternalException | RuntimeException e) {
+            primary.addSuppressed(e);
+        }
+    }
+
+    ChangeRecord insertChange(String table, Rid rid, Row row) {
+        return new ChangeRecord(
+                ResourceId.ofRow(table, rid), Optional.empty(), Optional.of(codec.encode(row)));
+    }
+
+    ChangeRecord updateChange(String table, Rid rid, Row before, Row after) {
+        return new ChangeRecord(
+                ResourceId.ofRow(table, rid),
+                Optional.of(codec.encode(before)),
+                Optional.of(codec.encode(after)));
+    }
+
+    ChangeRecord deleteChange(String table, Rid rid, Row before) {
+        return new ChangeRecord(
+                ResourceId.ofRow(table, rid), Optional.of(codec.encode(before)), Optional.empty());
+    }
+
+    public long logInsert(TxId tx, String table, Rid rid, Row row) {
+        return log(tx, insertChange(table, rid, row));
+    }
+
+    /**
      * For a change whose record is already in the WAL but could not be applied. A statement has no
-     * rollback of its own, so the whole transaction is aborted; otherwise a later COMMIT would
-     * make recovery redo a change that never happened.
+     * rollback of its own, so the whole transaction is aborted.
      *
      * @return the exception to throw; the transaction is already aborted
      */
@@ -108,7 +126,8 @@ final class WriteSupport {
         return failure;
     }
 
-    private long log(TxId tx, ChangeRecord change) {
+    /** Sends one change to CCM, which logs it through FRM, and returns its LSN. */
+    long log(TxId tx, ChangeRecord change) {
         if (!(ctx.getConcurrencyControl() instanceof ConcurrencyLogging logging)) {
             throw new IllegalStateException("CCM does not implement ConcurrencyLogging");
         }
@@ -121,21 +140,6 @@ final class WriteSupport {
                             tx + " was aborted: its change could not be logged", e);
             syncAfterAbort(tx, failure);
             throw failure;
-        }
-    }
-
-    /**
-     * Clears the session's transaction once CCM confirms ABORTED. If rollback is still incomplete
-     * the id is kept so that a later ABORT (or session close) can retry it.
-     */
-    private void syncAfterAbort(TxId tx, Exception primary) {
-        try {
-            TxResult result = ctx.getConcurrencyControl().abort(tx);
-            if (result.status() == TxStatus.ABORTED) {
-                ctx.getSContext().setCurrentTxId(null);
-            }
-        } catch (ConcurrencyInternalException | RuntimeException e) {
-            primary.addSuppressed(e);
         }
     }
 }
