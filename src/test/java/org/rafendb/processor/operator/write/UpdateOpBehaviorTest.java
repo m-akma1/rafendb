@@ -59,18 +59,18 @@ import org.rafendb.processor.tuple.ResultRow;
 class UpdateOpBehaviorTest {
     private static final String TABLE = "t";
     private static final TableSchema SCHEMA =
-        new TableSchema(
-            TABLE,
-            List.of(
-                new Column("id", DataType.INTEGER, 0, false, true),
-                new Column("name", DataType.VARCHAR, 20, true, false),
-                new Column("score", DataType.FLOAT, 0, true, false)),
-            List.of());
+            new TableSchema(
+                    TABLE,
+                    List.of(
+                            new Column("id", DataType.INTEGER, 0, false, true),
+                            new Column("name", DataType.VARCHAR, 20, true, false),
+                            new Column("score", DataType.FLOAT, 0, true, false)),
+                    List.of());
     private static final List<ColumnSchema> OP_SCHEMA =
-        List.of(
-            new ColumnSchema(new Expr.ColumnRef(TABLE, "id", 0), DataType.INTEGER),
-            new ColumnSchema(new Expr.ColumnRef(TABLE, "name", 1), DataType.VARCHAR),
-            new ColumnSchema(new Expr.ColumnRef(TABLE, "score", 2), DataType.FLOAT));
+            List.of(
+                    new ColumnSchema(new Expr.ColumnRef(TABLE, "id", 0), DataType.INTEGER),
+                    new ColumnSchema(new Expr.ColumnRef(TABLE, "name", 1), DataType.VARCHAR),
+                    new ColumnSchema(new Expr.ColumnRef(TABLE, "score", 2), DataType.FLOAT));
 
     private static final Rid R1 = new Rid(1, 0);
     private static final Rid R2 = new Rid(1, 1);
@@ -88,8 +88,7 @@ class UpdateOpBehaviorTest {
         session.setCurrentTxId(TX);
         StorageManager sm = (StorageManager) proxy(storage, StorageManager.class);
         ConcurrencyControl cc =
-            (ConcurrencyControl)
-                proxy(ccm, ConcurrencyControl.class, ConcurrencyLogging.class);
+                (ConcurrencyControl) proxy(ccm, ConcurrencyControl.class, ConcurrencyLogging.class);
         ctx = new ExecutionContext(session, cc, sm, null);
     }
 
@@ -105,8 +104,7 @@ class UpdateOpBehaviorTest {
 
         assertEquals(1L, n);
         assertEquals(
-            List.of("ccm.access WRITE", "ccm.log UPDATE lsn=100", "sm.update lsn=100"),
-            events);
+                List.of("ccm.access WRITE", "ccm.log UPDATE lsn=100", "sm.update lsn=100"), events);
         ChangeRecord record = ccm.logged.get(0);
         assertEquals(ResourceId.ofRow(TABLE, R1), record.resource());
         assertEquals(old.values(), decode(record.beforeImage()).values());
@@ -149,14 +147,14 @@ class UpdateOpBehaviorTest {
 
         assertEquals(1L, n); // one row, not two writes
         assertEquals(
-            List.of(
-                "ccm.access WRITE",
-                "sm.reserve",
-                "ccm.log DELETE lsn=100",
-                "sm.delete lsn=100",
-                "ccm.log INSERT lsn=101",
-                "sm.insert lsn=101"),
-            events);
+                List.of(
+                        "ccm.access WRITE",
+                        "sm.reserve",
+                        "ccm.log DELETE lsn=100",
+                        "sm.delete lsn=100",
+                        "ccm.log INSERT lsn=101",
+                        "sm.insert lsn=101"),
+                events);
 
         Rid fresh = storage.reserved.get(0);
         ChangeRecord delete = ccm.logged.get(0);
@@ -194,16 +192,16 @@ class UpdateOpBehaviorTest {
         assertEquals(2L, setName(text("alexander"), child).execute());
 
         assertEquals(
-            List.of(
-                "ccm.access WRITE",
-                "sm.reserve",
-                "ccm.log DELETE lsn=100",
-                "sm.delete lsn=100",
-                "ccm.log INSERT lsn=101",
-                "sm.insert lsn=101",
-                "ccm.log UPDATE lsn=102",
-                "sm.update lsn=102"),
-            events);
+                List.of(
+                        "ccm.access WRITE",
+                        "sm.reserve",
+                        "ccm.log DELETE lsn=100",
+                        "sm.delete lsn=100",
+                        "ccm.log INSERT lsn=101",
+                        "sm.insert lsn=101",
+                        "ccm.log UPDATE lsn=102",
+                        "sm.update lsn=102"),
+                events);
         assertEquals(row(2, "alexander", 2f).values(), storage.rows.get(R2).values());
     }
 
@@ -213,12 +211,7 @@ class UpdateOpBehaviorTest {
     void nullInNotNullColumnIsRejectedBeforeAnyLog() {
         storage.rows.put(R1, row(1, "alice", 1f));
         TrackedOperator child = child(row(1, "alice", 1f), R1);
-        UpdateOp op =
-            update(
-                "id",
-                0,
-                new Expr.Literal(Value.nullOf(DataType.INTEGER)),
-                child);
+        UpdateOp op = update("id", 0, new Expr.Literal(Value.nullOf(DataType.INTEGER)), child);
 
         assertThrows(StorageRuntimeException.class, op::execute);
 
@@ -232,8 +225,8 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "alice", 1f), R1);
 
         assertThrows(
-            StorageRuntimeException.class,
-            () -> setName(text("x".repeat(21)), child).execute()); // VARCHAR(20)
+                StorageRuntimeException.class,
+                () -> setName(text("x".repeat(21)), child).execute()); // VARCHAR(20)
 
         assertNothingChanged();
         assertChildClosed(child);
@@ -246,10 +239,10 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "a", 1f), R1, row(0, "b", 2f), R2);
         // SET score = 10 / id; the second row has id 0
         Expr tenOverId =
-            new Expr.Binary(
-                Expr.Op.DIV,
-                new Expr.Literal(Value.ofInt(10)),
-                new Expr.ColumnRef(TABLE, "id", 0));
+                new Expr.Binary(
+                        Expr.Op.DIV,
+                        new Expr.Literal(Value.ofInt(10)),
+                        new Expr.ColumnRef(TABLE, "id", 0));
         UpdateOp op = update("score", 2, tenOverId, child);
 
         assertThrows(ArithmeticException.class, op::execute);
@@ -264,12 +257,11 @@ class UpdateOpBehaviorTest {
         storage.rows.put(R1, row(1, "a", 1f));
         storage.rows.put(R2, row(2, "b", 2f));
         storage.failOn(
-            "reserveRid", 2, new StorageRuntimeException("row is too large for one block"));
+                "reserveRid", 2, new StorageRuntimeException("row is too large for one block"));
         TrackedOperator child = child(row(1, "a", 1f), R1, row(2, "b", 2f), R2);
 
         assertThrows(
-            StorageRuntimeException.class,
-            () -> setName(text("alexander"), child).execute());
+                StorageRuntimeException.class, () -> setName(text("alexander"), child).execute());
 
         assertEquals(List.of(storage.reserved.get(0)), storage.cancelled);
         assertEquals(0, count("ccm.log"));
@@ -285,9 +277,9 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "a", 1f), R1);
 
         IllegalStateException e =
-            assertThrows(
-                IllegalStateException.class,
-                () -> setName(text("alexander"), child).execute());
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> setName(text("alexander"), child).execute());
 
         assertTrue(e.getCause() instanceof StorageInternalException);
         assertEquals(0, count("ccm.log"));
@@ -304,23 +296,23 @@ class UpdateOpBehaviorTest {
         storage.rows.put(R3, row(3, "carol", 3f));
         storage.failOn("update", 2, new StorageInternalException("cannot write slot"));
         TrackedOperator child =
-            child(row(1, "alice", 1f), R1, row(2, "bobby", 2f), R2, row(3, "carol", 3f), R3);
+                child(row(1, "alice", 1f), R1, row(2, "bobby", 2f), R2, row(3, "carol", 3f), R3);
 
         TransactionAbortedException e =
-            assertThrows(
-                TransactionAbortedException.class,
-                () -> setName(text("x"), child).execute());
+                assertThrows(
+                        TransactionAbortedException.class,
+                        () -> setName(text("x"), child).execute());
 
         assertTrue(e.getCause() instanceof StorageInternalException);
         assertEquals(
-            List.of(
-                "ccm.access WRITE",
-                "ccm.log UPDATE lsn=100",
-                "sm.update lsn=100",
-                "ccm.log UPDATE lsn=101",
-                "sm.update (fails)",
-                "ccm.abort"),
-            events);
+                List.of(
+                        "ccm.access WRITE",
+                        "ccm.log UPDATE lsn=100",
+                        "sm.update lsn=100",
+                        "ccm.log UPDATE lsn=101",
+                        "sm.update (fails)",
+                        "ccm.abort"),
+                events);
         assertEquals(2, ccm.logged.size(), "the third row must never be logged");
         assertEquals(null, session.getCurrentTxId());
         assertChildClosed(child);
@@ -333,8 +325,8 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "al", 1f), R1);
 
         assertThrows(
-            TransactionAbortedException.class,
-            () -> setName(text("alexander"), child).execute());
+                TransactionAbortedException.class,
+                () -> setName(text("alexander"), child).execute());
 
         assertTrue(first("sm.cancel") != -1, events.toString());
         assertTrue(first("sm.cancel") < first("ccm.abort"), "cancel before abort: " + events);
@@ -350,8 +342,8 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "al", 1f), R1);
 
         assertThrows(
-            TransactionAbortedException.class,
-            () -> setName(text("alexander"), child).execute());
+                TransactionAbortedException.class,
+                () -> setName(text("alexander"), child).execute());
 
         assertEquals(0, count("ccm.log INSERT"));
         assertTrue(first("sm.cancel") < first("ccm.abort"), events.toString());
@@ -365,8 +357,8 @@ class UpdateOpBehaviorTest {
         TrackedOperator child = child(row(1, "al", 1f), R1);
 
         assertThrows(
-            TransactionAbortedException.class,
-            () -> setName(text("alexander"), child).execute());
+                TransactionAbortedException.class,
+                () -> setName(text("alexander"), child).execute());
 
         assertEquals(0, count("sm.delete"));
         assertEquals(List.of(storage.reserved.get(0)), storage.cancelled);
@@ -381,8 +373,7 @@ class UpdateOpBehaviorTest {
         ccm.accessScript.add(AccessResult.aborted("deadlock victim"));
         TrackedOperator child = child(row(1, "alice", 1f), R1);
 
-        assertThrows(
-            TransactionAbortedException.class, () -> setName(text("x"), child).execute());
+        assertThrows(TransactionAbortedException.class, () -> setName(text("x"), child).execute());
 
         assertEquals(List.of("ccm.access WRITE", "ccm.abort"), events);
         assertEquals(null, session.getCurrentTxId());
@@ -394,8 +385,8 @@ class UpdateOpBehaviorTest {
         session.setCurrentTxId(null);
 
         assertThrows(
-            IllegalStateException.class,
-            () -> setName(text("x"), child(row(1, "a", 1f), R1)).execute());
+                IllegalStateException.class,
+                () -> setName(text("x"), child(row(1, "a", 1f), R1)).execute());
 
         assertEquals(List.of(), events);
     }
@@ -408,7 +399,10 @@ class UpdateOpBehaviorTest {
     }
 
     private static void assertChildClosed(TrackedOperator child) {
-        assertEquals(child.opens, child.closes, "child opened " + child.opens + " closed " + child.closes);
+        assertEquals(
+                child.opens,
+                child.closes,
+                "child opened " + child.opens + " closed " + child.closes);
     }
 
     private int first(String prefix) {
@@ -431,10 +425,10 @@ class UpdateOpBehaviorTest {
 
     private static Row row(int id, String name, float score) {
         return new Row(
-            List.of(
-                Value.ofInt(id),
-                Value.ofText(DataType.VARCHAR, name),
-                Value.ofFloat(score)));
+                List.of(
+                        Value.ofInt(id),
+                        Value.ofText(DataType.VARCHAR, name),
+                        Value.ofFloat(score)));
     }
 
     private static Row decode(Optional<byte[]> image) {
@@ -460,17 +454,17 @@ class UpdateOpBehaviorTest {
 
     private UpdateOp update(String column, int offset, Expr value, Operator child) {
         return new UpdateOp(
-            TABLE,
-            new Expr.ColumnRef(TABLE, column, offset),
-            value,
-            child,
-            new DefaultExpressionEvaluator(),
-            ctx);
+                TABLE,
+                new Expr.ColumnRef(TABLE, column, offset),
+                value,
+                child,
+                new DefaultExpressionEvaluator(),
+                ctx);
     }
 
     private static Object proxy(InvocationHandler handler, Class<?>... interfaces) {
         return Proxy.newProxyInstance(
-            UpdateOpBehaviorTest.class.getClassLoader(), interfaces, handler);
+                UpdateOpBehaviorTest.class.getClassLoader(), interfaces, handler);
     }
 
     private static String kind(ChangeRecord c) {

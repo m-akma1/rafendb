@@ -93,23 +93,19 @@ final class WriteSupport {
 
     ChangeRecord insertChange(String table, Rid rid, Row row) {
         return new ChangeRecord(
-            ResourceId.ofRow(table, rid),
-            Optional.empty(),
-            Optional.of(codec.encode(row)));
+                ResourceId.ofRow(table, rid), Optional.empty(), Optional.of(codec.encode(row)));
     }
 
     ChangeRecord updateChange(String table, Rid rid, Row before, Row after) {
         return new ChangeRecord(
-            ResourceId.ofRow(table, rid),
-            Optional.of(codec.encode(before)),
-            Optional.of(codec.encode(after)));
+                ResourceId.ofRow(table, rid),
+                Optional.of(codec.encode(before)),
+                Optional.of(codec.encode(after)));
     }
 
     ChangeRecord deleteChange(String table, Rid rid, Row before) {
         return new ChangeRecord(
-            ResourceId.ofRow(table, rid),
-            Optional.of(codec.encode(before)),
-            Optional.empty());
+                ResourceId.ofRow(table, rid), Optional.of(codec.encode(before)), Optional.empty());
     }
 
     public long logInsert(TxId tx, String table, Rid rid, Row row) {
@@ -124,8 +120,8 @@ final class WriteSupport {
      */
     TransactionAbortedException abortAfterLoggedFailure(TxId tx, String what, Exception cause) {
         TransactionAbortedException failure =
-            new TransactionAbortedException(
-                tx + " was aborted: storage failed while " + what, cause);
+                new TransactionAbortedException(
+                        tx + " was aborted: storage failed while " + what, cause);
         syncAfterAbort(tx, failure);
         return failure;
     }
@@ -140,8 +136,8 @@ final class WriteSupport {
         } catch (ConcurrencyInternalException e) {
             // CCM already ran its abort path (CC-04); only the session state is left to fix.
             TransactionAbortedException failure =
-                new TransactionAbortedException(
-                    tx + " was aborted: its change could not be logged", e);
+                    new TransactionAbortedException(
+                            tx + " was aborted: its change could not be logged", e);
             syncAfterAbort(tx, failure);
             throw failure;
         }

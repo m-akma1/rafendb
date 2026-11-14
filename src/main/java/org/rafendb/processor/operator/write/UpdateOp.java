@@ -71,23 +71,23 @@ public final class UpdateOp implements DMLOperator {
     private record Change(Rid rid, Row after, Rid fresh, ChangeRecord first, ChangeRecord second) {}
 
     public UpdateOp(
-        String table,
-        Expr.ColumnRef column,
-        Expr valueExpr,
-        Operator child,
-        ExpressionEvaluator evaluator,
-        ExecutionContext ctx) {
+            String table,
+            Expr.ColumnRef column,
+            Expr valueExpr,
+            Operator child,
+            ExpressionEvaluator evaluator,
+            ExecutionContext ctx) {
         this(table, column, valueExpr, child, evaluator, ctx, RowImageCodec.DEFAULT);
     }
 
     public UpdateOp(
-        String table,
-        Expr.ColumnRef column,
-        Expr valueExpr,
-        Operator child,
-        ExpressionEvaluator evaluator,
-        ExecutionContext ctx,
-        RowImageCodec codec) {
+            String table,
+            Expr.ColumnRef column,
+            Expr valueExpr,
+            Operator child,
+            ExpressionEvaluator evaluator,
+            ExecutionContext ctx,
+            RowImageCodec codec) {
         this.table = Objects.requireNonNull(table, "table");
         this.column = Objects.requireNonNull(column, "column");
         this.valueExpr = Objects.requireNonNull(valueExpr, "valueExpr");
@@ -144,7 +144,8 @@ public final class UpdateOp implements DMLOperator {
             }
         } catch (StorageInternalException | RuntimeException e) {
             cancelQuietly(sm, c.fresh()); // free the slot first, then drop the transaction
-            throw support.abortAfterLoggedFailure(tx, "deleting from " + table + " at " + c.rid(), e);
+            throw support.abortAfterLoggedFailure(
+                    tx, "deleting from " + table + " at " + c.rid(), e);
         }
 
         long insertLsn = support.log(tx, c.second());
@@ -153,7 +154,7 @@ public final class UpdateOp implements DMLOperator {
         } catch (StorageInternalException | RuntimeException e) {
             cancelQuietly(sm, c.fresh());
             throw support.abortAfterLoggedFailure(
-                tx, "inserting the relocated row of " + table + " at " + c.fresh(), e);
+                    tx, "inserting the relocated row of " + table + " at " + c.fresh(), e);
         }
     }
 
@@ -169,12 +170,12 @@ public final class UpdateOp implements DMLOperator {
             List<ColumnSchema> schema = child.schema();
             if (schema.size() != tableSchema.columns().size()) {
                 throw new IllegalStateException(
-                    "UPDATE child must yield full rows of "
-                        + table
-                        + ": expected "
-                        + tableSchema.columns().size()
-                        + " columns, got "
-                        + schema.size());
+                        "UPDATE child must yield full rows of "
+                                + table
+                                + ": expected "
+                                + tableSchema.columns().size()
+                                + " columns, got "
+                                + schema.size());
             }
             int target = resolveTarget(schema);
             DataType targetType = schema.get(target).type();
@@ -192,12 +193,12 @@ public final class UpdateOp implements DMLOperator {
                 // Same check SM runs in update(); doing it here keeps the failure before any log.
                 if (!targetColumn.accepts(newValue)) {
                     throw new StorageRuntimeException(
-                        "value "
-                            + newValue
-                            + " is not acceptable for "
-                            + table
-                            + "."
-                            + targetColumn.name());
+                            "value "
+                                    + newValue
+                                    + " is not acceptable for "
+                                    + table
+                                    + "."
+                                    + targetColumn.name());
                 }
 
                 List<Value> newValues = new ArrayList<>(old.values());
@@ -209,24 +210,24 @@ public final class UpdateOp implements DMLOperator {
                     Rid fresh = reserve(sm, after);
                     try {
                         changes.add(
-                            new Change(
-                                old.rid(),
-                                after,
-                                fresh,
-                                support.deleteChange(table, old.rid(), before),
-                                support.insertChange(table, fresh, after)));
+                                new Change(
+                                        old.rid(),
+                                        after,
+                                        fresh,
+                                        support.deleteChange(table, old.rid(), before),
+                                        support.insertChange(table, fresh, after)));
                     } catch (RuntimeException e) {
                         cancelQuietly(sm, fresh); // e.g. the row could not be encoded
                         throw e;
                     }
                 } else {
                     changes.add(
-                        new Change(
-                            old.rid(),
-                            after,
-                            null,
-                            support.updateChange(table, old.rid(), before, after),
-                            null));
+                            new Change(
+                                    old.rid(),
+                                    after,
+                                    null,
+                                    support.updateChange(table, old.rid(), before, after),
+                                    null));
                 }
             }
         } catch (RuntimeException e) {
@@ -249,7 +250,8 @@ public final class UpdateOp implements DMLOperator {
         try {
             return sm.reserveRid(table, after);
         } catch (StorageInternalException e) {
-            throw support.storageFailure("reserving a slot in " + table + " for a relocated row", e);
+            throw support.storageFailure(
+                    "reserving a slot in " + table + " for a relocated row", e);
         }
     }
 
@@ -293,7 +295,7 @@ public final class UpdateOp implements DMLOperator {
             if (schema.get(i).reference().column().equalsIgnoreCase(column.column())) return i;
         }
         throw new IllegalArgumentException(
-            "Unknown column " + column.column() + " in table " + table);
+                "Unknown column " + column.column() + " in table " + table);
     }
 
     /**

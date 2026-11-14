@@ -18,17 +18,19 @@ import org.rafendb.storage.record.RecordSerializer;
 /** Pins UpdateOp's size estimate to what RecordSerializer really produces. */
 class UpdateSizingCompatibilityTest {
     private static final TableSchema SCHEMA =
-        new TableSchema(
-            "t",
-            List.of(
-                new Column("id", DataType.INTEGER, 0, false, true),
-                new Column("name", DataType.VARCHAR, 200, true, false),
-                new Column("code", DataType.CHAR, 8, true, false),
-                new Column("tag", DataType.VARCHAR, 50, true, false),
-                new Column("score", DataType.FLOAT, 0, true, false)),
-            List.of());
+            new TableSchema(
+                    "t",
+                    List.of(
+                            new Column("id", DataType.INTEGER, 0, false, true),
+                            new Column("name", DataType.VARCHAR, 200, true, false),
+                            new Column("code", DataType.CHAR, 8, true, false),
+                            new Column("tag", DataType.VARCHAR, 50, true, false),
+                            new Column("score", DataType.FLOAT, 0, true, false)),
+                    List.of());
 
-    private static final String[] PIECES = {"a", "b", "z", " ", ";", "\u00e9", "\u4e2d", "\uD83D\uDE00"};
+    private static final String[] PIECES = {
+        "a", "b", "z", " ", ";", "\u00e9", "\u4e2d", "\uD83D\uDE00"
+    };
 
     private final RecordSerializer serializer = new RecordSerializer();
 
@@ -72,13 +74,13 @@ class UpdateSizingCompatibilityTest {
             changed.set(target, newValue);
 
             int delta =
-                serializer.encodedSize(new Row(changed), SCHEMA)
-                    - serializer.encodedSize(new Row(base), SCHEMA);
+                    serializer.encodedSize(new Row(changed), SCHEMA)
+                            - serializer.encodedSize(new Row(base), SCHEMA);
 
             assertEquals(
-                UpdateOp.storedSize(newValue, col) - UpdateOp.storedSize(oldValue, col),
-                delta,
-                "size delta for column " + col.name() + ": " + oldValue + " -> " + newValue);
+                    UpdateOp.storedSize(newValue, col) - UpdateOp.storedSize(oldValue, col),
+                    delta,
+                    "size delta for column " + col.name() + ": " + oldValue + " -> " + newValue);
             if (!UpdateOp.growsRecord(oldValue, newValue, col)) {
                 assertTrue(delta <= 0, "a non-growing update must never need more space");
             }
