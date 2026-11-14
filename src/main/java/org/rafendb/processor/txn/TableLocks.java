@@ -1,6 +1,7 @@
 package org.rafendb.processor.txn;
 
 import java.util.Objects;
+
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.AccessResult;
@@ -80,13 +81,15 @@ public final class TableLocks {
         TxId tx = session.getCurrentTxId();
         if (tx == null) {
             throw new IllegalStateException(
-                    "No active transaction: run the statement inside AutoCommit.run(...) or after"
-                            + " BEGIN");
+                    "No active transaction: run the statement inside AutoCommit.run(...) or after BEGIN");
         }
         return tx;
     }
 
-    /** Abort ke CCM; kalau udah beneran ABORTED, txId session dikosongin. Error abort ditempel. */
+    /**
+     * Abort ke CCM; kalau udah beneran ABORTED, txId session dikosongin. Kalau abort-nya error,
+     * error itu ditempel ke exception utama (suppressed).
+     */
     private static void abortAndClear(ExecutionContext context, TxId tx, Exception primary) {
         try {
             TxResult result = context.getConcurrencyControl().abort(tx);

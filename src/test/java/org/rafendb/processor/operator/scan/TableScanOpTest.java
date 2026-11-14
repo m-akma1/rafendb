@@ -246,14 +246,25 @@ class TableScanOpTest {
     }
 
     @Test
+    void abortedLockOnReopenClosesOldCursor() {
+        FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
+        scan.open();
+        ccm.answerNext(AccessResult.aborted("Deadlock"));
+        assertThrows(TransactionAbortedException.class, scan::open);
+        assertEquals(1, storage.getOpenedCursorCount());
+        assertEquals(0, storage.getOpenCursorCount());
+        assertThrows(IllegalStateException.class, scan::next);
+    }
+
+    @Test
     void noActiveTransactionIsRejectedBeforeScan() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
         TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         session.setCurrentTxId(null);
         IllegalStateException error = assertThrows(IllegalStateException.class, scan::open);
         assertEquals(
-                "No active transaction: run the statement inside AutoCommit.run(...) or after"
-                        + " BEGIN",
+                "No active transaction: run the statement inside AutoCommit.run(...) or after BEGIN",
                 error.getMessage());
         assertEquals(0, storage.getOpenedCursorCount());
     }

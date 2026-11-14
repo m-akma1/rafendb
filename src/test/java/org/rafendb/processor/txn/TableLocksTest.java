@@ -64,8 +64,7 @@ class TableLocksTest {
                         IllegalStateException.class,
                         () -> TableLocks.acquireRead(context, "dosen"));
         assertEquals(
-                "No active transaction: run the statement inside AutoCommit.run(...) or after"
-                        + " BEGIN",
+                "No active transaction: run the statement inside AutoCommit.run(...) or after BEGIN",
                 error.getMessage());
         assertTrue(ccm.getEvents().isEmpty());
     }

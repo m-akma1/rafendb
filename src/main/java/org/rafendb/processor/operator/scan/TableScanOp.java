@@ -63,7 +63,7 @@ public final class TableScanOp implements Operator {
      * scan gagal, operator ini tetap ketutup, jadi next() bakal error.
      *
      * @throws TransactionAbortedException kalau CCM bilang transaksinya batal
-     * @throws IllegalStateException kalau ga ada transaksi aktif
+     * @throws IllegalStateException kalau session ga valid atau ga ada transaksi aktif
      * @throws QueryExecutionException kalau SM gagal buka scan
      */
     @Override
