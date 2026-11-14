@@ -13,7 +13,6 @@ import org.rafendb.common.schema.ReferentialAction;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 
@@ -203,8 +202,7 @@ public class SampleDatabaseLoader {
     public long countRows(StorageManager storage, String table) throws StorageInternalException {
         long count = 0;
         try (RecordCursor cursor = storage.scan(table)) {
-            StoredRow row;
-            while ((row = cursor.next()) != null) {
+            while ((cursor.next()) != null) {
                 count++;
             }
         }
