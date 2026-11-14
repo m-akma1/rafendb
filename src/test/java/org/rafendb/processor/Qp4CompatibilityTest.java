@@ -5,11 +5,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.expr.*;
+import org.rafendb.common.plan.SortPlanNode.Direction;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.type.*;
-import org.rafendb.mock.processor.*;
 import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.expr.TruthValue;
+import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.sort.SortOp;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
 
@@ -40,7 +43,8 @@ class Qp4CompatibilityTest {
     void cursorResetsMidReadAfterExhaustionAndAfterClose() {
         var first = new ResultRow(List.of(Value.ofInt(1)), null);
         var second = new ResultRow(List.of(Value.ofInt(2)), null);
-        var cursor = new MockOperator(List.of(b), List.of(first, second));
+        var cursor =
+                new SortOp(new FakeChildOp(List.of(b), List.of(second, first)), 0, Direction.ASC);
         assertEquals(List.of(b), cursor.schema());
         assertThrows(IllegalStateException.class, cursor::next);
         cursor.close();
@@ -65,33 +69,38 @@ class Qp4CompatibilityTest {
 
     @Test
     void emptySchemaAndHeaderConsistencyDoNotDependOnRows() {
-        var cursor = new MockOperator(List.of(a), List.of());
+        var cursor = new SortOp(new FakeChildOp(List.of(a), List.of()), 0, Direction.ASC);
+        var result = new ExecutionPlan.Rows(List.of(a), cursor);
+        assertEquals(List.of(a), result.columns());
         assertEquals(List.of(a), cursor.schema());
         cursor.open();
         assertNull(cursor.next());
         assertThrows(UnsupportedOperationException.class, () -> cursor.schema().clear());
         assertThrows(
                 IllegalArgumentException.class, () -> new ExecutionPlan.Rows(List.of(b), cursor));
-        var wrong = new ResultRow(List.of(), null);
-        assertThrows(
-                IllegalArgumentException.class, () -> new MockOperator(List.of(a), List.of(wrong)));
         cursor.close();
     }
 
     @Test
     void unknownIsObservableButOnlyTruePasses() {
-        Expr literal = new Expr.Literal(Value.ofInt(1));
-        Expr predicate = new Expr.Binary(Expr.Op.EQ, literal, literal);
-        List<ColumnSchema> schema = List.of();
-        var row = new ResultRow(List.of(), null);
-        for (var truth : TruthValue.values()) {
-            var mock = new MockExpressionEvaluator(Value.nullOf(DataType.INTEGER), truth);
-            assertEquals(truth, mock.evaluateCondition(predicate, row, schema));
-            assertEquals(truth == TruthValue.TRUE, mock.test(predicate, row, schema));
-            assertEquals(Value.nullOf(DataType.INTEGER), mock.evaluate(literal, row, schema));
+        var evaluator = new DefaultExpressionEvaluator();
+        Expr predicate =
+                new Expr.Binary(
+                        Expr.Op.EQ,
+                        new Expr.ColumnRef("a", "id", 0),
+                        new Expr.ColumnRef("b", "id", 1));
+        var schema = List.of(a, b);
+        var rightValues = List.of(Value.ofInt(1), Value.ofInt(2), Value.nullOf(DataType.INTEGER));
+        var expected = List.of(TruthValue.TRUE, TruthValue.FALSE, TruthValue.UNKNOWN);
+        for (int i = 0; i < rightValues.size(); i++) {
+            var row =
+                    ResultRow.concat(
+                            new ResultRow(List.of(Value.ofInt(1)), null),
+                            new ResultRow(List.of(rightValues.get(i)), null));
+            assertEquals(expected.get(i), evaluator.evaluateCondition(predicate, row, schema));
+            assertEquals(
+                    expected.get(i) == TruthValue.TRUE, evaluator.test(predicate, row, schema));
         }
-        // A mock returns configured truth; it does not infer NULL semantics from the tree.
-        assertTrue(new MockExpressionEvaluator(Value.ofInt(0), true).test(predicate, row, schema));
     }
 
     @Test
