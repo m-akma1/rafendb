@@ -15,6 +15,23 @@ class org.rafendb.optimizer.join.JoinAccessPathOptimizer {
 }
 
 
+class org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig {
+	{method} +accessPathBudget () : int
+	{method}  {static} +defaults () : SearchConfig
+	{method} +generations () : int
+	{method} +mode () : SearchMode
+	{method} +mutationProbability () : double
+	{method} +populationSize () : int
+	{method} +seed () : long
+}
+
+
+enum org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode {
+	{field} +GENETIC
+	{field} +HEURISTIC
+}
+
+
 class org.rafendb.optimizer.join.JoinOptimizer {
 	{method} +generateCandidates ( root : PlanNode , storage : StorageManager ) : List
 	{method} +normalize ( root : PlanNode ) : PlanNode
@@ -23,7 +40,10 @@ class org.rafendb.optimizer.join.JoinOptimizer {
 
 
 
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.AccessPathOptimizer : access
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig : config
 org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinOptimizer : joins
+org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode : mode
 
 
 @enduml

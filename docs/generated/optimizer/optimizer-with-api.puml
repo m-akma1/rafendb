@@ -20,7 +20,7 @@ interface org.rafendb.optimizer.binder.Binder {
 
 class org.rafendb.optimizer.binder.QueryBinder {
 	{method} +bind ( parsed : ParsedQuery ) : ParsedQuery
-	{method} +bind ( query : SelectQuery , natural : boolean ) : SelectQuery
+	{method} +bind ( query : SelectQuery ) : SelectQuery
 }
 
 
@@ -59,6 +59,7 @@ interface org.rafendb.optimizer.cost.CostModel {
 	{method}  {abstract} +estimateLocalCost ( node : PlanNode ) : Cost
 	{method}  {abstract} +estimateRows ( node : PlanNode ) : long
 	{method} +estimateTotalCost ( node : PlanNode ) : Cost
+	{method} +getCost ( root : PlanNode ) : double
 }
 
 
@@ -90,6 +91,23 @@ class org.rafendb.optimizer.join.JoinAccessPathOptimizer {
 }
 
 
+class org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig {
+	{method} +accessPathBudget () : int
+	{method}  {static} +defaults () : SearchConfig
+	{method} +generations () : int
+	{method} +mode () : SearchMode
+	{method} +mutationProbability () : double
+	{method} +populationSize () : int
+	{method} +seed () : long
+}
+
+
+enum org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode {
+	{field} +GENETIC
+	{field} +HEURISTIC
+}
+
+
 class org.rafendb.optimizer.join.JoinOptimizer {
 	{method} +generateCandidates ( root : PlanNode , storage : StorageManager ) : List
 	{method} +normalize ( root : PlanNode ) : PlanNode
@@ -106,6 +124,11 @@ class org.rafendb.optimizer.lexer.TokenizerImpl {
 }
 
 
+class org.rafendb.optimizer.parser.QueryParser {
+	{method} +parse ( sql : String ) : ParsedQuery
+}
+
+
 class org.rafendb.optimizer.rewrite.ProjectionPushdownRule {
 	{method} +apply ( root : PlanNode ) : PlanNode
 }
@@ -117,6 +140,8 @@ interface org.rafendb.optimizer.rewrite.RewriteRule {
 
 
 class org.rafendb.optimizer.rewrite.SelectionPushdownRule {
+	{field} {static} +KEEP_ORDER : Comparator
+	{field} {static} +SELECTIVE_FIRST : Comparator
 	{method} +apply ( root : PlanNode ) : PlanNode
 }
 
@@ -131,8 +156,13 @@ org.rafendb.optimizer.catalog.StorageManagerCatalog ..|>  org.rafendb.optimizer.
 org.rafendb.optimizer.cost.StatsCostModel *--  org.rafendb.optimizer.catalog.Catalog : catalog
 org.rafendb.optimizer.cost.StatsCostModel *--  org.rafendb.optimizer.cost.CostParameters : parameters
 org.rafendb.optimizer.cost.StatsCostModel ..|>  org.rafendb.optimizer.cost.CostModel
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.cost.CostModel : costs
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.AccessPathOptimizer : access
+org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig : config
 org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinOptimizer : joins
+org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode : mode
 org.rafendb.optimizer.lexer.TokenizerImpl ..|>  org.rafendb.optimizer.lexer.Tokenizer
+org.rafendb.optimizer.parser.QueryParser *--  org.rafendb.optimizer.lexer.Tokenizer : tokenizer
 org.rafendb.optimizer.rewrite.ProjectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 org.rafendb.optimizer.rewrite.SelectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 
