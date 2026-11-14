@@ -3,15 +3,19 @@ package org.rafendb.processor.operator.index;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+
+import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.mock.recovery.MockRecoveryManager;
-import org.rafendb.mock.storage.MockStorageManager;
+
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.tuple.ResultRow;
@@ -43,7 +47,12 @@ class IndexScanOpTest {
         session = new SessionContext(1);
         session.setCurrentTxId(ccm.begin());
 
-        context = new ExecutionContext(session, ccm, storage, frm);
+        context = new ExecutionContext(
+            session,
+            ccm,
+            storage,
+            frm
+        );
     }
 
     /**
@@ -63,17 +72,27 @@ class IndexScanOpTest {
      */
     private IndexScanOp createMahasiswaScan(Expr.Op op, int key) {
 
-        Expr.ColumnRef column = new Expr.ColumnRef("m", "nim", 0);
+        Expr.ColumnRef column =
+            new Expr.ColumnRef("m", "nim", 0);
 
-        Expr.Literal literal = new Expr.Literal(Value.ofInt(key));
+        Expr.Literal literal =
+            new Expr.Literal(Value.ofInt(key));
 
-        Expr.Binary condition = new Expr.Binary(op, column, literal);
+        Expr.Binary condition =
+            new Expr.Binary(op, column, literal);
 
-        var descriptor =
-                new org.rafendb.common.plan.IndexScanDescriptor(
-                        "mahasiswa_nim_idx", "nim", condition);
+        var descriptor = new org.rafendb.common.plan.IndexScanDescriptor(
+            "mahasiswa_nim_idx",
+            "nim",
+            condition
+        );
 
-        return new IndexScanOp(context, "mahasiswa", "m", descriptor);
+        return new IndexScanOp(
+            context,
+            "mahasiswa",
+            "m",
+            descriptor
+        );
     }
 
     /**
@@ -101,7 +120,8 @@ class IndexScanOpTest {
     @Test
     void testEqualityLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.EQ, 13524275);
 
         scan.open();
 
@@ -123,13 +143,17 @@ class IndexScanOpTest {
     @Test
     void testGreaterThanLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.GT, 13524276);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.GT, 13524276);
 
         scan.open();
 
         List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(18224278, 18224280), result);
+        assertEquals(
+            List.of(18224278, 18224280),
+            result
+        );
 
         scan.close();
     }
@@ -140,13 +164,17 @@ class IndexScanOpTest {
     @Test
     void testGreaterThanOrEqualLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.GE, 13524276);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.GE, 13524276);
 
         scan.open();
 
         List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13524276, 18224278, 18224280), result);
+        assertEquals(
+            List.of(13524276, 18224278, 18224280),
+            result
+        );
 
         scan.close();
     }
@@ -157,13 +185,17 @@ class IndexScanOpTest {
     @Test
     void testLessThanLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.LT, 13524276);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.LT, 13524276);
 
         scan.open();
 
         List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13224279, 13524275), result);
+        assertEquals(
+            List.of(13224279, 13524275),
+            result
+        );
 
         scan.close();
     }
@@ -174,13 +206,17 @@ class IndexScanOpTest {
     @Test
     void testLessThanOrEqualLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.LE, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.LE, 13524275);
 
         scan.open();
 
         List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13224279, 13524275), result);
+        assertEquals(
+            List.of(13224279, 13524275),
+            result
+        );
 
         scan.close();
     }
@@ -191,17 +227,29 @@ class IndexScanOpTest {
     @Test
     void testHashIndexEqualityLookup() {
 
-        Expr.ColumnRef column = new Expr.ColumnRef("p", "kode", 0);
+        Expr.ColumnRef column =
+            new Expr.ColumnRef("p", "kode", 0);
 
-        Expr.Literal literal = new Expr.Literal(Value.ofText(DataType.CHAR, "IF"));
+        Expr.Literal literal =
+            new Expr.Literal(
+                Value.ofText(DataType.CHAR, "IF")
+            );
 
-        Expr.Binary condition = new Expr.Binary(Expr.Op.EQ, column, literal);
+        Expr.Binary condition =
+            new Expr.Binary(Expr.Op.EQ, column, literal);
 
-        var descriptor =
-                new org.rafendb.common.plan.IndexScanDescriptor(
-                        "prodi_kode_idx", "kode", condition);
+        var descriptor = new org.rafendb.common.plan.IndexScanDescriptor(
+            "prodi_kode_idx",
+            "kode",
+            condition
+        );
 
-        IndexScanOp scan = new IndexScanOp(context, "prodi", "p", descriptor);
+        IndexScanOp scan = new IndexScanOp(
+            context,
+            "prodi",
+            "p",
+            descriptor
+        );
 
         scan.open();
 
@@ -222,13 +270,23 @@ class IndexScanOpTest {
     @Test
     void testSchemaUsesTableAlias() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.EQ, 13524275);
 
-        assertEquals("m", scan.schema().get(0).reference().table());
+        assertEquals(
+            "m",
+            scan.schema().get(0).reference().table()
+        );
 
-        assertEquals("nim", scan.schema().get(0).reference().column());
+        assertEquals(
+            "nim",
+            scan.schema().get(0).reference().column()
+        );
 
-        assertEquals(DataType.INTEGER, scan.schema().get(0).type());
+        assertEquals(
+            DataType.INTEGER,
+            scan.schema().get(0).type()
+        );
     }
 
     /**
@@ -237,9 +295,13 @@ class IndexScanOpTest {
     @Test
     void testNextBeforeOpenThrowsException() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.EQ, 13524275);
 
-        assertThrows(IllegalStateException.class, scan::next);
+        assertThrows(
+            IllegalStateException.class,
+            scan::next
+        );
     }
 
     /**
@@ -248,12 +310,16 @@ class IndexScanOpTest {
     @Test
     void testCloseResetsOperatorState() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.EQ, 13524275);
 
         scan.open();
         scan.close();
 
-        assertThrows(IllegalStateException.class, scan::next);
+        assertThrows(
+            IllegalStateException.class,
+            scan::next
+        );
 
         scan.close();
     }
@@ -264,7 +330,8 @@ class IndexScanOpTest {
     @Test
     void testOpenResetsScanPosition() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.EQ, 13524275);
 
         scan.open();
 
@@ -278,9 +345,15 @@ class IndexScanOpTest {
 
         assertNotNull(repeatedResult);
 
-        assertEquals(firstResult.get(0), repeatedResult.get(0));
+        assertEquals(
+            firstResult.get(0),
+            repeatedResult.get(0)
+        );
 
-        assertEquals(firstResult.rid(), repeatedResult.rid());
+        assertEquals(
+            firstResult.rid(),
+            repeatedResult.rid()
+        );
 
         scan.close();
     }
@@ -291,9 +364,13 @@ class IndexScanOpTest {
     @Test
     void testUnsupportedComparisonOperator() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.NE, 13524275);
+        IndexScanOp scan =
+            createMahasiswaScan(Expr.Op.NE, 13524275);
 
-        assertThrows(IllegalArgumentException.class, scan::open);
+        assertThrows(
+            IllegalArgumentException.class,
+            scan::open
+        );
 
         scan.close();
     }

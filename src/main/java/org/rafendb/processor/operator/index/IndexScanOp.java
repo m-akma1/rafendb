@@ -4,15 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
-import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.Value;
+import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.operator.Operator;
@@ -56,10 +57,14 @@ public final class IndexScanOp implements Operator {
      * @throws NullPointerException if context, storage manager, table, or descriptor is null
      */
     public IndexScanOp(
-            ExecutionContext context, String table, String alias, IndexScanDescriptor descriptor) {
+        ExecutionContext context,
+        String table,
+        String alias,
+        IndexScanDescriptor descriptor) {
 
         this.context = Objects.requireNonNull(context, "context");
-        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
+        this.storage = Objects.requireNonNull(
+            context.getStorageManager(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
 
@@ -70,7 +75,8 @@ public final class IndexScanOp implements Operator {
         List<ColumnSchema> columns = new ArrayList<>();
 
         for (Column column : tableSchema.columns()) {
-            Expr.ColumnRef reference = new Expr.ColumnRef(qualifier, column.name());
+            Expr.ColumnRef reference =
+                new Expr.ColumnRef(qualifier, column.name());
 
             columns.add(new ColumnSchema(reference, column.type()));
         }
@@ -103,7 +109,8 @@ public final class IndexScanOp implements Operator {
             position = 0;
         } catch (StorageInternalException e) {
             rids = null;
-            throw new QueryExecutionException("Failed to execute index scan on table " + table, e);
+            throw new QueryExecutionException(
+                "Failed to execute index scan on table " + table, e);
         }
     }
 
@@ -141,7 +148,8 @@ public final class IndexScanOp implements Operator {
             try {
                 result = storage.fetch(table, rid);
             } catch (StorageInternalException e) {
-                throw new QueryExecutionException("Failed to fetch record from table " + table, e);
+                throw new QueryExecutionException(
+                    "Failed to fetch record from table " + table, e);
             }
 
             if (result.isEmpty()) {
@@ -150,7 +158,9 @@ public final class IndexScanOp implements Operator {
 
             StoredRow stored = result.get();
 
-            return new ResultRow(stored.row().values(), stored.rid());
+            return new ResultRow(
+                stored.row().values(),
+                stored.rid());
         }
 
         return null;
@@ -182,22 +192,23 @@ public final class IndexScanOp implements Operator {
         Expr condition = descriptor.condition();
 
         if (!(condition instanceof Expr.Binary binary)) {
-            throw new IllegalArgumentException("Index condition must be a binary expression");
+            throw new IllegalArgumentException(
+                "Index condition must be a binary expression");
         }
 
         if (!(binary.left() instanceof Expr.ColumnRef column)) {
             throw new IllegalArgumentException(
-                    "Index condition must have a column on the left side");
+                "Index condition must have a column on the left side");
         }
 
         if (!(binary.right() instanceof Expr.Literal literal)) {
             throw new IllegalArgumentException(
-                    "Index condition must have a literal on the right side");
+                "Index condition must have a literal on the right side");
         }
 
         if (!column.column().equals(descriptor.column())) {
             throw new IllegalArgumentException(
-                    "Index condition column does not match the index descriptor");
+                "Index condition column does not match the index descriptor");
         }
 
         Value key = literal.value();
@@ -207,19 +218,41 @@ public final class IndexScanOp implements Operator {
         }
 
         return switch (binary.op()) {
-            case EQ -> storage.lookupIndex(descriptor.indexName(), key);
 
-            case GT -> storage.rangeIndex(descriptor.indexName(), key, false, null, false);
+            case EQ -> storage.lookupIndex(
+                descriptor.indexName(),
+                key);
 
-            case GE -> storage.rangeIndex(descriptor.indexName(), key, true, null, false);
+            case GT -> storage.rangeIndex(
+                descriptor.indexName(),
+                key,
+                false,
+                null,
+                false);
 
-            case LT -> storage.rangeIndex(descriptor.indexName(), null, false, key, false);
+            case GE -> storage.rangeIndex(
+                descriptor.indexName(),
+                key,
+                true,
+                null,
+                false);
 
-            case LE -> storage.rangeIndex(descriptor.indexName(), null, false, key, true);
+            case LT -> storage.rangeIndex(
+                descriptor.indexName(),
+                null,
+                false,
+                key,
+                false);
 
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported index condition: " + binary.op());
+            case LE -> storage.rangeIndex(
+                descriptor.indexName(),
+                null,
+                false,
+                key,
+                true);
+
+            default -> throw new IllegalArgumentException(
+                "Unsupported index condition: " + binary.op());
         };
     }
 }
