@@ -97,7 +97,9 @@ class BnlJoinOpTest {
         MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(2));
 
         assertThrows(IllegalArgumentException.class, () -> new BnlJoinOp(outer, inner, null, 0));
-        assertThrows(IllegalStateException.class, () -> new BnlJoinOp(outer, inner, null).next());
+        BnlJoinOp join = new BnlJoinOp(outer, inner, null);
+        assertThrows(IllegalStateException.class, join::next);
+        join.close();
     }
 
     private static List<ResultRow> drain(Operator operator) {

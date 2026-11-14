@@ -123,7 +123,12 @@ class SortOpTest {
 
         assertThrows(IllegalArgumentException.class, () -> new SortOp(child, -1, Direction.ASC));
         assertThrows(IllegalArgumentException.class, () -> new SortOp(child, 2, Direction.ASC));
-        assertThrows(IllegalStateException.class, () -> new SortOp(child, 0, Direction.ASC).next());
+        SortOp sort = new SortOp(child, 0, Direction.ASC);
+        try {
+            assertThrows(IllegalStateException.class, sort::next);
+        } finally {
+            sort.close();
+        }
     }
 
     private static List<ResultRow> drain(Operator operator) {
