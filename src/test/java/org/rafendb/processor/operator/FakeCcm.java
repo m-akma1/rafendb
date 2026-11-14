@@ -22,6 +22,7 @@ import org.rafendb.common.txn.TxStatus;
 public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     private final List<String> events = new ArrayList<>();
     private final List<AccessResult> answers = new ArrayList<>();
+    private final List<ChangeRecord> logged = new ArrayList<>();
     private long nextLsn = 1;
     private int abortCount;
     private boolean failNextLog;
@@ -52,6 +53,11 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
         return abortCount;
     }
 
+    /** ChangeRecord yang berhasil di-log, urut sesuai LSN-nya (1, 2, 3, ...). */
+    public List<ChangeRecord> getLoggedChanges() {
+        return logged;
+    }
+
     @Override
     public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
         events.add("request " + type + " " + resource.table());
@@ -79,6 +85,7 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
             throw new ConcurrencyInternalException("Log write failed");
         }
         events.add("log " + change.resource().table() + " " + change.resource().rid());
+        logged.add(change);
         long lsn = nextLsn;
         nextLsn++;
         return lsn;
