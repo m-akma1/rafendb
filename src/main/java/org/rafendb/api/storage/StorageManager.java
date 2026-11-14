@@ -2,6 +2,7 @@ package org.rafendb.api.storage;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.ToLongFunction;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -12,6 +13,7 @@ import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.type.Value;
 
 /**
@@ -51,6 +53,47 @@ public interface StorageManager extends AutoCloseable {
      * @throws StorageRuntimeException if the table does not exist
      */
     TableSchema getSchema(String table);
+
+    /**
+     * Returns the persistent identity of this incarnation of a table. Thread-safe. The identity
+     * survives restart and changes after DROP followed by CREATE, even with the same table name.
+     * FRM must record it with row changes and compare it before decoding or replaying old images.
+     *
+     * @param table the table name, non-null
+     * @return the table generation, non-null
+     * @throws NullPointerException if table is null
+     * @throws StorageRuntimeException if the table does not exist
+     */
+    UUID getTableGeneration(String table);
+
+    /**
+     * Encodes one row using the table's current schema. Thread-safe; does not change storage or
+     * write a log. The returned array belongs to the caller. SQL NULL is encoded inside the image;
+     * row absence is an empty Optional in the change record, never a null or empty image array.
+     *
+     * @param table the table name, non-null
+     * @param row the row to encode, non-null
+     * @return a new array in the binary format used by stored rows
+     * @throws NullPointerException if an argument is null
+     * @throws StorageRuntimeException if the table does not exist, the row does not fit its
+     *     schema, text has invalid Unicode, or CHAR text ends in NUL (reserved for padding)
+     */
+    byte[] encodeRow(String table, Row row);
+
+    /**
+     * Decodes exactly one complete row image with the schema used to encode it. Thread-safe;
+     * does not change storage or the image. The caller must not modify the image during this
+     * call. FRM must check the table generation before decoding a historical image.
+     *
+     * @param table the table name, non-null
+     * @param image the encoded row, non-null; SQL NULL values are inside this image
+     * @return the decoded row, non-null
+     * @throws NullPointerException if an argument is null
+     * @throws StorageRuntimeException if the table does not exist
+     * @throws StorageInternalException if the image is malformed, truncated, has trailing bytes,
+     *     or does not fit the schema
+     */
+    Row decodeRow(String table, byte[] image) throws StorageInternalException;
 
     /**
      * Lists every foreign key that references {@code table}, from any table including itself.
@@ -329,11 +372,28 @@ public interface StorageManager extends AutoCloseable {
 
     /**
      * Fills an empty database with sample tables (at least 3 related, at least 50 rows each, all
-     * four types). Does nothing if tables already exist.
+     * four types). Does nothing if tables already exist. An empty database requires the logging
+     * callback overload; this method fails before creating tables rather than inventing WAL LSNs.
      *
-     * @throws StorageInternalException on a storage failure
+     * @throws StorageInternalException if logging is not configured for an empty database
      */
     void loadSampleDatabase() throws StorageInternalException;
+
+    /**
+     * Loads the sample database with a logged INSERT for each row. Thread-safe; the caller must
+     * provide exclusive bootstrap access and manage the transaction, commit and rollback. The
+     * callback runs after RID reservation and before the row becomes visible, receives an INSERT
+     * change with an encoded after-image, and returns its positive LSN. It may read storage but
+     * must not modify it or mutate the image. An exception stops loading and cancels the
+     * current reservation; earlier rows and DDL remain for the caller to handle. Does nothing if
+     * tables already exist. A final storage flush obeys the injected WalSync.
+     *
+     * @param logInsert the INSERT logger, non-null; it must use the same WAL as this storage
+     * @throws NullPointerException if logInsert is null
+     * @throws StorageInternalException on a storage failure or a nonpositive callback LSN
+     * @throws RuntimeException if the logging callback fails
+     */
+    void loadSampleDatabase(ToLongFunction<ChangeRecord> logInsert) throws StorageInternalException;
 
     /**
      * Flushes and releases all resources. Idempotent.

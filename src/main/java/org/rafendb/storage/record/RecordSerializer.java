@@ -1,6 +1,7 @@
 package org.rafendb.storage.record;
 
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +32,8 @@ import org.rafendb.common.type.Value;
  * formatting for a given type (including VARCHAR's 2-byte length prefix). NULL
  * tracking is handled by {@code serialize} and {@code deserialize} via the
  * null bitmap.
+ * CHAR uses zero padding, so trailing NUL characters cannot be represented and are rejected.
+ * Text must be valid Unicode; malformed surrogate sequences are rejected before encoding.
  */
 public class RecordSerializer {
     private static final int MAX_VARCHAR_BYTES = 0xFFFF;
@@ -460,7 +463,9 @@ public class RecordSerializer {
     }
 
     private static void checkType(Value value, Column column) {
-        if (value.type() != column.type()) {
+        if (!value.isNull()
+                && value.type() != column.type()
+                && !(value.type().isText() && column.type().isText())) {
             throw new IllegalArgumentException(
                     "column '"
                             + column.name()
@@ -506,7 +511,18 @@ public class RecordSerializer {
                             + raw.getClass().getSimpleName());
         }
 
-        byte[] text = s.getBytes(StandardCharsets.UTF_8);
+        if (column.type() == DataType.CHAR && !s.isEmpty() && s.charAt(s.length() - 1) == 0) {
+            throw new IllegalArgumentException("CHAR text cannot end in NUL: " + column.name());
+        }
+        byte[] text;
+        try {
+            ByteBuffer encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(s));
+            text = new byte[encoded.remaining()];
+            encoded.get(text);
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException(
+                    "invalid Unicode in column '" + column.name() + "'", e);
+        }
         int limit = column.length();
         if (column.type() == DataType.VARCHAR) {
             limit = Math.min(limit, MAX_VARCHAR_BYTES);
