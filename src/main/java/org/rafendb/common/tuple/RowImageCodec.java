@@ -1,5 +1,7 @@
 package org.rafendb.common.tuple;
 
+import org.rafendb.engine.TextRowImageCodec;
+
 /**
  * Turns a {@link Row} into the {@code byte[]} stored as before/after image in a
  * {@link org.rafendb.common.txn.ChangeRecord}, and back.
@@ -20,5 +22,5 @@ public interface RowImageCodec {
      */
     Row decode(byte[] image);
 
-    RowImageCodec DEFAULT = new TextRowImageCodec();
+    @Deprecated RowImageCodec DEFAULT = new TextRowImageCodec();
 }
