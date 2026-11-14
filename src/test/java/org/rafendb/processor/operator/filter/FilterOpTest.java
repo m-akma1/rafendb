@@ -78,6 +78,7 @@ class FilterOpTest {
         assertSame(first, filter.next());
         assertSame(third, filter.next());
         assertNull(filter.next());
+        filter.close();
     }
 
     @Test
@@ -86,6 +87,7 @@ class FilterOpTest {
         FilterOp filter = new FilterOp(child, CONDITION, evaluator);
         filter.open();
         assertNull(filter.next());
+        filter.close();
     }
 
     @Test
@@ -96,6 +98,7 @@ class FilterOpTest {
         filter.next();
         assertNull(filter.next());
         assertNull(filter.next());
+        filter.close();
     }
 
     @Test
@@ -108,6 +111,7 @@ class FilterOpTest {
         filter.open();
         assertSame(passing, filter.next());
         assertNull(filter.next());
+        filter.close();
     }
 
     @Test
@@ -116,6 +120,7 @@ class FilterOpTest {
         FilterOp filter = new FilterOp(child, CONDITION, evaluator);
         filter.open();
         assertEquals(new Rid(1, 7), filter.next().rid());
+        filter.close();
     }
 
     @Test
@@ -126,6 +131,7 @@ class FilterOpTest {
         filter.next();
         assertSame(CONDITION, evaluator.lastCondition);
         assertEquals(SCHEMA, evaluator.lastSchema);
+        filter.close();
     }
 
     @Test
@@ -137,6 +143,7 @@ class FilterOpTest {
         filter.next();
         filter.next();
         assertEquals(1, child.getSchemaCount());
+        filter.close();
     }
 
     @Test
@@ -168,6 +175,7 @@ class FilterOpTest {
         filter.open();
         assertSame(passing, filter.next());
         assertNull(filter.next());
+        filter.close();
     }
 
     @Test
@@ -195,6 +203,7 @@ class FilterOpTest {
 
         IllegalStateException error = assertThrows(IllegalStateException.class, filter::next);
         assertEquals("FilterOp is not open", error.getMessage());
+        filter.close();
     }
 
     @Test
@@ -244,6 +253,7 @@ class FilterOpTest {
         evaluator.throwError = true;
         filter.open();
         assertThrows(IllegalArgumentException.class, filter::next);
+        filter.close();
     }
 
     @Test

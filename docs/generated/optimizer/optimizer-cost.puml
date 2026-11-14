@@ -17,6 +17,7 @@ interface org.rafendb.optimizer.cost.CostModel {
 	{method}  {abstract} +estimateLocalCost ( node : PlanNode ) : Cost
 	{method}  {abstract} +estimateRows ( node : PlanNode ) : long
 	{method} +estimateTotalCost ( node : PlanNode ) : Cost
+	{method} +getCost ( root : PlanNode ) : double
 }
 
 

@@ -5,6 +5,11 @@ hide empty members
 skinparam linetype ortho
 
 
+class org.rafendb.optimizer.parser.QueryParser {
+	{method} +parse ( sql : String ) : ParsedQuery
+}
+
+
 
 
 
