@@ -25,6 +25,7 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     private long nextLsn = 1;
     private int abortCount;
     private boolean failNextLog;
+    private boolean failNextAbort;
 
     /** Atur jawaban requestAccess berikutnya. Kalau antriannya kosong, jawabannya ALLOWED. */
     public void answerNext(AccessResult answer) {
@@ -34,6 +35,11 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     /** Bikin logChange berikutnya gagal pakai ConcurrencyInternalException. */
     public void failNextLog() {
         failNextLog = true;
+    }
+
+    /** Bikin abort berikutnya gagal pakai ConcurrencyInternalException. */
+    public void failNextAbort() {
+        failNextAbort = true;
     }
 
     /** Urutan kejadian, misalnya "request READ dosen" atau "abort T1". */
@@ -56,9 +62,13 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     }
 
     @Override
-    public TxResult abort(TxId tx) {
+    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
         abortCount++;
         events.add("abort " + tx);
+        if (failNextAbort) {
+            failNextAbort = false;
+            throw new ConcurrencyInternalException("Rollback failed");
+        }
         return new TxResult(TxStatus.ABORTED, "");
     }
 
