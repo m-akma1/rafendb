@@ -1,0 +1,9 @@
+-- QO-05 / QO-01: incomplete or malformed statements. Each line should print a syntax error naming the token.
+UPDATE employee WHERE id = 3;
+UPDATE employee SET salary = 1, age = 2;
+UPDATE employee SET salary = ;
+INSERT INTO employee;
+INSERT INTO employee VALUES (1, 2;
+DELETE employee WHERE id = 1;
+DELETE FROM employee WHERE a = b = c;
+UPDATE employee SET salary = 99999999999;

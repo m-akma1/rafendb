@@ -1,0 +1,41 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.concurrency.lock.DeadlockDetector {
+	{method}  {abstract} +selectVictim ( waitFor : Map ) : Optional
+}
+
+
+interface org.rafendb.concurrency.lock.LockManager {
+	{method}  {abstract} +cancelPending ( tx : TxId ) : void
+	{method}  {abstract} +releaseAll ( tx : TxId ) : void
+	{method}  {abstract} +tryAcquire ( tx : TxId , type : AccessType , resource : ResourceId ) : boolean
+	{method}  {abstract} +waitForGraph () : Map
+}
+
+
+class org.rafendb.concurrency.lock.TableLockManager {
+	{method} +cancelPending ( tx : TxId ) : void <<synchronized>> 
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +releaseAll ( tx : TxId ) : void <<synchronized>> 
+	{method} +tryAcquire ( tx : TxId , type : AccessType , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +waitForGraph () : Map <<synchronized>> 
+}
+
+
+class org.rafendb.concurrency.lock.WaitForDeadlockDetector {
+	{method} +selectVictim ( waitFor : Map ) : Optional
+}
+
+
+
+
+org.rafendb.concurrency.lock.TableLockManager ..|>  org.rafendb.concurrency.lock.LockManager
+org.rafendb.concurrency.lock.WaitForDeadlockDetector ..|>  org.rafendb.concurrency.lock.DeadlockDetector
+
+
+@enduml

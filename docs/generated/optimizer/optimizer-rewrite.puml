@@ -1,0 +1,29 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.rewrite.ProjectionPushdownRule {
+	{method} +apply ( root : PlanNode ) : PlanNode
+}
+
+
+interface org.rafendb.optimizer.rewrite.RewriteRule {
+	{method}  {abstract} +apply ( node : PlanNode ) : PlanNode
+}
+
+
+class org.rafendb.optimizer.rewrite.SelectionPushdownRule {
+	{method} +apply ( root : PlanNode ) : PlanNode
+}
+
+
+
+
+org.rafendb.optimizer.rewrite.ProjectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
+org.rafendb.optimizer.rewrite.SelectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
+
+
+@enduml

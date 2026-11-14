@@ -1,5 +1,6 @@
 /**
- * Expression evaluator (QP-04). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Evaluasi ekspresi dan kondisi QP-04 terhadap ResultRow menggunakan offset dari QO.
+ * DefaultExpressionEvaluator menyediakan aritmatika, perbandingan, dan AND tiga nilai.
  *
  * <p>Owner: G1 Query Processor (QP2).
  */

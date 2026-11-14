@@ -1,0 +1,253 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.api.ExecutionContext {
+	{method} +getConcurrencyControl () : ConcurrencyControl
+	{method} +getRecoveryManager () : RecoveryManager
+	{method} +getStorageManager () : StorageManager
+}
+
+
+class org.rafendb.processor.api.SessionContext {
+	{field} +currentTxId : TxId
+	{method} +invalidate () : void
+}
+
+
+class org.rafendb.processor.error.TransactionAbortedException {
+}
+
+
+interface org.rafendb.processor.execution.ExecutionPlan {
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$Command {
+	{method} +action () : CommandAction
+}
+
+
+interface org.rafendb.processor.execution.ExecutionPlan$CommandAction {
+	{method}  {abstract} +execute () : CommandResult
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$CommandResult {
+	{method} +affectedRows () : long
+	{method} +status () : String
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$Rows {
+	{method} +columns () : List
+	{method} +operator () : Operator
+}
+
+
+class org.rafendb.processor.expr.DefaultExpressionEvaluator {
+	{method} +evaluate ( expression : Expr , row : ResultRow , schema : List ) : Value
+	{method} +evaluateCondition ( condition : Expr , row : ResultRow , schema : List ) : TruthValue
+}
+
+
+interface org.rafendb.processor.expr.ExpressionEvaluator {
+	{method}  {abstract} +evaluate ( expression : Expr , row : ResultRow , schema : List ) : Value
+	{method}  {abstract} +evaluateCondition ( condition : Expr , row : ResultRow , schema : List ) : TruthValue
+	{method} +test ( condition : Expr , row : ResultRow , schema : List ) : boolean
+}
+
+
+enum org.rafendb.processor.expr.TruthValue {
+	{field} +FALSE
+	{field} +TRUE
+	{field} +UNKNOWN
+}
+
+
+interface org.rafendb.processor.operator.Operator {
+	{method}  {abstract} +close () : void
+	{method}  {abstract} +next () : ResultRow
+	{method}  {abstract} +open () : void
+	{method}  {abstract} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.filter.FilterOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.join.BnlJoinOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.scan.ProjectOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.sort.SortOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+interface org.rafendb.processor.operator.write.DMLOperator {
+	{method}  {abstract} +execute () : Long
+}
+
+
+class org.rafendb.processor.plan.DefaultPlanTranslator {
+	{method} +translate ( plan : QueryPlan ) : ExecutionPlan
+}
+
+
+interface org.rafendb.processor.plan.OperatorFactory {
+	{method}  {abstract} +createDelete ( node : DeletePlanNode , child : Operator ) : CommandAction
+	{method}  {abstract} +createFilter ( child : Operator , condition : Expr ) : Operator
+	{method}  {abstract} +createIndex ( node : CreateIndexPlanNode ) : CommandAction
+	{method}  {abstract} +createIndexScan ( node : IndexScanNode ) : Operator
+	{method}  {abstract} +createInsert ( node : InsertPlanNode ) : CommandAction
+	{method}  {abstract} +createJoin ( outer : Operator , inner : Operator , condition : Expr ) : Operator
+	{method}  {abstract} +createProject ( child : Operator , expressions : List ) : Operator
+	{method}  {abstract} +createScan ( node : TableScanNode ) : Operator
+	{method}  {abstract} +createSort ( child : Operator , keyIndex : int , ascending : boolean ) : Operator
+	{method}  {abstract} +createUpdate ( node : UpdatePlanNode , child : Operator ) : CommandAction
+}
+
+
+interface org.rafendb.processor.plan.PlanTranslator {
+	{method}  {abstract} +translate ( plan : QueryPlan ) : ExecutionPlan
+}
+
+
+class org.rafendb.processor.plan.command.CreateIndexPlanNode {
+	{method} +children () : List
+	{method} +column () : ColumnRef
+	{method} +describe () : String
+	{method} +kind () : IndexKind
+	{method} +name () : String
+	{method} +table () : String
+}
+
+
+enum org.rafendb.processor.plan.command.CreateIndexPlanNode$IndexKind {
+	{field} +BTREE
+	{field} +HASH
+}
+
+
+class org.rafendb.processor.plan.command.DeletePlanNode {
+	{method} +children () : List
+	{method} +condition () : Optional
+	{method} +describe () : String
+	{method} +table () : String
+}
+
+
+class org.rafendb.processor.plan.command.InsertPlanNode {
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +table () : String
+	{method} +values () : List
+}
+
+
+class org.rafendb.processor.plan.command.TransactionPlanNode {
+	{method} +action () : Action
+	{method} +children () : List
+	{method} +describe () : String
+}
+
+
+enum org.rafendb.processor.plan.command.TransactionPlanNode$Action {
+	{field} +ABORT
+	{field} +BEGIN
+	{field} +COMMIT
+}
+
+
+class org.rafendb.processor.plan.command.UpdatePlanNode {
+	{method} +children () : List
+	{method} +column () : ColumnRef
+	{method} +condition () : Optional
+	{method} +describe () : String
+	{method} +table () : String
+	{method} +value () : Expr
+}
+
+
+class org.rafendb.processor.schema.ColumnSchema {
+	{method} +reference () : ColumnRef
+	{method} +type () : DataType
+}
+
+
+class org.rafendb.processor.tuple.ResultRow {
+	{method}  {static} +concat ( outer : ResultRow , inner : ResultRow ) : ResultRow
+	{method} +get ( index : int ) : Value
+	{method} +rid () : Rid
+	{method} +size () : int
+	{method} +values () : List
+}
+
+
+class org.rafendb.processor.txn.TransactionCoordinator {
+	{method} +abortTx () : void
+	{method} +beginTx () : void
+	{method} +commitTx () : void
+	{method} +getExecutionContext () : ExecutionContext
+}
+
+
+
+
+org.rafendb.processor.api.ExecutionContext *--  org.rafendb.processor.api.SessionContext : sContext
+org.rafendb.processor.execution.ExecutionPlan$Command *--  org.rafendb.processor.execution.ExecutionPlan$CommandAction : action
+org.rafendb.processor.execution.ExecutionPlan$Command ..|>  org.rafendb.processor.execution.ExecutionPlan
+org.rafendb.processor.execution.ExecutionPlan$Rows "1" o-- "0..*"  org.rafendb.processor.schema.ColumnSchema : columns
+org.rafendb.processor.execution.ExecutionPlan$Rows *--  org.rafendb.processor.operator.Operator : operator
+org.rafendb.processor.execution.ExecutionPlan$Rows ..|>  org.rafendb.processor.execution.ExecutionPlan
+org.rafendb.processor.expr.DefaultExpressionEvaluator ..|>  org.rafendb.processor.expr.ExpressionEvaluator
+org.rafendb.processor.operator.filter.FilterOp "1" o-- "0..*"  org.rafendb.processor.schema.ColumnSchema : childSchema
+org.rafendb.processor.operator.filter.FilterOp *--  org.rafendb.processor.expr.ExpressionEvaluator : evaluator
+org.rafendb.processor.operator.filter.FilterOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.filter.FilterOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.join.BnlJoinOp "1" o-- "0..*"  org.rafendb.processor.schema.ColumnSchema : joinedSchema
+org.rafendb.processor.operator.join.BnlJoinOp "1" o-- "0..*"  org.rafendb.processor.tuple.ResultRow : block
+org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.expr.ExpressionEvaluator : evaluator
+org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : inner
+org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : outer
+org.rafendb.processor.operator.join.BnlJoinOp -->  org.rafendb.processor.tuple.ResultRow : innerRow
+org.rafendb.processor.operator.join.BnlJoinOp -->  org.rafendb.processor.tuple.ResultRow : pendingOuterRow
+org.rafendb.processor.operator.join.BnlJoinOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.scan.ProjectOp "1" o-- "0..*"  org.rafendb.processor.schema.ColumnSchema : schema
+org.rafendb.processor.operator.scan.ProjectOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.scan.ProjectOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.sort.SortOp "1" o-- "0..*"  org.rafendb.processor.tuple.ResultRow : sorted
+org.rafendb.processor.operator.sort.SortOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.sort.SortOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.plan.DefaultPlanTranslator -->  org.rafendb.processor.plan.OperatorFactory : factory
+org.rafendb.processor.plan.DefaultPlanTranslator ..|>  org.rafendb.processor.plan.PlanTranslator
+org.rafendb.processor.plan.command.CreateIndexPlanNode *--  org.rafendb.processor.plan.command.CreateIndexPlanNode$IndexKind : kind
+org.rafendb.processor.plan.command.TransactionPlanNode *--  org.rafendb.processor.plan.command.TransactionPlanNode$Action : action
+org.rafendb.processor.txn.TransactionCoordinator *--  org.rafendb.processor.api.ExecutionContext : execContext
+
+
+@enduml

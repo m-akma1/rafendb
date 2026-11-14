@@ -45,9 +45,11 @@
 
 # Common codes
 /src/main/java/org/rafendb/common/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
-/src/main/java/org/rafendb/driver/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
-/src/main/java/org/rafendb/engine/              @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
-/src/main/java/org/resources/                   @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
-/src/test/                                      @m-akma1 @Celtors @achideon @Akram17t @staplesmaster @Tensai-033
+
+# No owner purposefully
+/src/main/java/org/rafendb/driver/
+/src/main/java/org/rafendb/engine/
+/src/main/java/org/resources/
+/src/test/
 
 # etc. TBD (masih bisa diedit lagi)

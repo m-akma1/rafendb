@@ -1,0 +1,320 @@
+package org.rafendb.recovery.pitr;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.rafendb.common.tuple.Rid;
+import org.rafendb.recovery.log.LogType;
+import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.WALRecord;
+
+/**
+ * In-memory snapshot-based PITR mock. It uses the production WAL record model and applies only
+ * after-images belonging to committed transactions at or before the requested boundary.
+ */
+public final class PitrManager {
+    private final Logger logger;
+    private Map<String, Map<Rid, String>> snapshotRows = Map.of();
+    private Map<String, Map<Rid, String>> currentRows = Map.of();
+    private long snapshotTimestamp;
+    private long snapshotLsn;
+    private boolean snapshotAvailable;
+    private int transactionsReplayed;
+    private int changesReplayed;
+    private long lastReplayLsn;
+    private int recoveredHighestTransactionId;
+    private long recoveredHighestTimestamp;
+
+    public PitrManager(Logger logger) {
+        this.logger = Objects.requireNonNull(logger, "logger");
+        captureSnapshot(0, Map.of());
+    }
+
+    /**
+     * Replaces the mock's stable starting snapshot. The supplied state is copied; later caller
+     * mutations do not alter the snapshot. Call only when the state represents the current WAL
+     * boundary.
+     */
+    public synchronized void captureSnapshot(
+            long timestamp, Map<String, ? extends Map<Rid, String>> rows) {
+        if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
+        Objects.requireNonNull(rows, "rows");
+        logger.flushAll();
+        snapshotRows = copyRows(rows);
+        currentRows = copyRows(rows);
+        snapshotTimestamp = timestamp;
+        List<WALRecord> wal = logger.getLogsSorted();
+        snapshotLsn = wal.isEmpty() ? 0 : wal.get(wal.size() - 1).getLSN();
+        snapshotAvailable = true;
+        clearResult();
+    }
+
+    /** Restores the state after every transaction whose COMMIT timestamp is at most the target. */
+    public synchronized boolean recoverToTimestamp(long targetTimestamp) {
+        if (!snapshotAvailable || targetTimestamp < snapshotTimestamp) return false;
+        List<WALRecord> wal = durableWal();
+        long latestCommitTimestamp = latestCommitTimestamp(wal);
+        if (targetTimestamp > latestCommitTimestamp && targetTimestamp != snapshotTimestamp) {
+            return false;
+        }
+        long boundaryLsn = 0;
+        for (WALRecord record : wal) {
+            if (record.getLogType() == LogType.COMMIT && record.getTimestamp() <= targetTimestamp) {
+                boundaryLsn = Math.max(boundaryLsn, record.getLSN());
+            }
+        }
+        return runRecovery(wal, targetTimestamp, boundaryLsn, null);
+    }
+
+    /**
+     * Restores through the target transaction's COMMIT LSN. Earlier LSNs define the boundary;
+     * transaction ID ordering is deliberately irrelevant.
+     */
+    public synchronized boolean recoverToTransaction(int transactionId) {
+        if (!snapshotAvailable || transactionId <= 0) return false;
+        List<WALRecord> wal = durableWal();
+        WALRecord targetCommit = null;
+        for (WALRecord record : wal) {
+            if (record.getIdTransaction() == transactionId
+                    && record.getLogType() == LogType.COMMIT) {
+                targetCommit = record;
+                break;
+            }
+        }
+        if (targetCommit == null || targetCommit.getTimestamp() < snapshotTimestamp) return false;
+        return runRecovery(wal, targetCommit.getTimestamp(), targetCommit.getLSN(), transactionId);
+    }
+
+    /** Restores through the latest durable COMMIT, or to the snapshot if there are no commits. */
+    public synchronized boolean recoverToLatestCommit() {
+        if (!snapshotAvailable) return false;
+        List<WALRecord> wal = durableWal();
+        WALRecord latest = null;
+        for (WALRecord record : wal) {
+            if (record.getLogType() == LogType.COMMIT
+                    && record.getTimestamp() >= snapshotTimestamp
+                    && (latest == null || record.getLSN() > latest.getLSN())) {
+                latest = record;
+            }
+        }
+        if (latest == null) return runRecovery(wal, snapshotTimestamp, 0, null);
+        return runRecovery(wal, latest.getTimestamp(), latest.getLSN(), null);
+    }
+
+    private boolean runRecovery(
+            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
+        if (!stopClientAdmission()) return false;
+        try {
+            if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
+            if (!reloadStorageAfterRestore()) return false;
+            if (!restore(wal, timestampBoundary, lsnBoundary, targetTx)) return false;
+            if (!rebuildIndexesAndStatistics()) return false;
+            return resetConcurrencyState(recoveredHighestTransactionId, recoveredHighestTimestamp);
+        } finally {
+            resumeClientAdmission();
+        }
+    }
+
+    /**
+     * QP integration seam. The current repository has no server-admission contract, so this
+     * in-memory manager cannot quiesce client connections.
+     */
+    private boolean stopClientAdmission() {
+        return true;
+    }
+
+    /**
+     * SM integration seam. The current StorageManager contract has no snapshot-copy or atomic
+     * restore operation; callers must supply the snapshot rows through {@link #captureSnapshot}.
+     */
+    private boolean restoreStorageSnapshot(long targetTimestamp, long targetLsn) {
+        return true;
+    }
+
+    /** Reloads storage state after a real snapshot restore; unavailable in this in-memory manager. */
+    private boolean reloadStorageAfterRestore() {
+        return true;
+    }
+
+    /** Rebuilds indexes and statistics after a real snapshot restore; unavailable here. */
+    private boolean rebuildIndexesAndStatistics() {
+        return true;
+    }
+
+    /** Resets CCM state and generators; unavailable without a CCM maintenance contract. */
+    private boolean resetConcurrencyState(int highestTransactionId, long highestTimestamp) {
+        return true;
+    }
+
+    /** Reopens QP admission after recovery; unavailable without a server-admission contract. */
+    private boolean resumeClientAdmission() {
+        return true;
+    }
+
+    private boolean restore(
+            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
+        Set<Integer> begun = new HashSet<>();
+        Set<Integer> finished = new HashSet<>();
+        Set<Integer> aborted = new HashSet<>();
+        Map<Integer, WALRecord> commits = new HashMap<>();
+        long previousLsn = 0;
+        int highTransactionId = 0;
+        long highTimestamp = 0;
+        for (WALRecord record : wal) {
+            if (record.getLSN() <= previousLsn) return false;
+            previousLsn = record.getLSN();
+            highTransactionId = Math.max(highTransactionId, record.getIdTransaction());
+            highTimestamp = Math.max(highTimestamp, record.getTimestamp());
+            switch (record.getLogType()) {
+                case BEGIN -> {
+                    if (!begun.add(record.getIdTransaction())
+                            || finished.contains(record.getIdTransaction())) return false;
+                }
+                case COMMIT -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || !finished.add(record.getIdTransaction())) return false;
+                    commits.put(record.getIdTransaction(), record);
+                }
+                case ABORT -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || !finished.add(record.getIdTransaction())) return false;
+                    aborted.add(record.getIdTransaction());
+                }
+                case INSERT, UPDATE, DELETE -> {
+                    if (!begun.contains(record.getIdTransaction())
+                            || finished.contains(record.getIdTransaction())) return false;
+                }
+                default -> {}
+            }
+        }
+        Set<Integer> eligible = new HashSet<>();
+        for (var item : commits.entrySet()) {
+            WALRecord commit = item.getValue();
+            boolean inBoundary =
+                    targetTx == null
+                            ? commit.getTimestamp() <= timestampBoundary
+                                    && commit.getLSN() <= lsnBoundary
+                            : commit.getLSN() <= lsnBoundary;
+            if (inBoundary && begun.contains(item.getKey()) && !aborted.contains(item.getKey())) {
+                eligible.add(item.getKey());
+            }
+        }
+
+        // Build off to the side so a malformed record or invalid target never partially mutates
+        // state.
+        Map<String, Map<Rid, String>> restored = copyRows(snapshotRows);
+        Set<Integer> replayedTransactions = new HashSet<>();
+        int replayed = 0;
+        long lastLsn = 0;
+        for (WALRecord record : wal) {
+            if (!record.getLogType().isDataChange()
+                    || record.getLSN() <= snapshotLsn
+                    || record.getLSN() > lsnBoundary
+                    || !eligible.contains(record.getIdTransaction())) continue;
+            WALRecord commit = commits.get(record.getIdTransaction());
+            if (commit == null || record.getLSN() >= commit.getLSN()) continue;
+            if (record.getTableName() == null || record.getRid() == null) return false;
+            if (record.getLogType() != LogType.DELETE && record.getAfterValue() == null)
+                return false;
+            Map<Rid, String> table =
+                    restored.computeIfAbsent(record.getTableName(), k -> new HashMap<>());
+            boolean rowExists = table.containsKey(record.getRid());
+            switch (record.getLogType()) {
+                case INSERT -> {
+                    if (rowExists) return false;
+                    table.put(record.getRid(), record.getAfterValue());
+                }
+                case UPDATE -> {
+                    if (!rowExists) return false;
+                    table.put(record.getRid(), record.getAfterValue());
+                }
+                case DELETE -> {
+                    if (!rowExists) return false;
+                    table.remove(record.getRid());
+                }
+                default -> throw new IllegalStateException("Not a data change");
+            }
+            replayed++;
+            replayedTransactions.add(record.getIdTransaction());
+            lastLsn = record.getLSN();
+        }
+        currentRows = restored;
+        transactionsReplayed = replayedTransactions.size();
+        changesReplayed = replayed;
+        lastReplayLsn = lastLsn;
+        recoveredHighestTransactionId = highTransactionId;
+        recoveredHighestTimestamp = highTimestamp;
+        return true;
+    }
+
+    private List<WALRecord> durableWal() {
+        logger.flushAll();
+        return logger.getLogsSorted();
+    }
+
+    private static long latestCommitTimestamp(List<WALRecord> wal) {
+        long latest = 0;
+        for (WALRecord record : wal) {
+            if (record.getLogType() == LogType.COMMIT) {
+                latest = Math.max(latest, record.getTimestamp());
+            }
+        }
+        return latest;
+    }
+
+    private static Map<String, Map<Rid, String>> copyRows(
+            Map<String, ? extends Map<Rid, String>> rows) {
+        Map<String, Map<Rid, String>> copy = new HashMap<>();
+        rows.forEach((table, records) -> copy.put(table, new HashMap<>(records)));
+        return copy;
+    }
+
+    private void clearResult() {
+        transactionsReplayed = 0;
+        changesReplayed = 0;
+        lastReplayLsn = 0;
+        recoveredHighestTransactionId = 0;
+        recoveredHighestTimestamp = 0;
+    }
+
+    /** Returns a defensive copy of the current mock database contents. */
+    public synchronized Map<String, Map<Rid, String>> getCurrentRows() {
+        return copyRows(currentRows);
+    }
+
+    public synchronized int getTransactionsReplayed() {
+        return transactionsReplayed;
+    }
+
+    public synchronized int getChangesReplayed() {
+        return changesReplayed;
+    }
+
+    public synchronized long getLastReplayLsn() {
+        return lastReplayLsn;
+    }
+
+    /** High-water marks include history after the selected target to prevent identifier reuse. */
+    public synchronized int getRecoveredHighestTransactionId() {
+        return recoveredHighestTransactionId;
+    }
+
+    public synchronized long getRecoveredHighestTimestamp() {
+        return recoveredHighestTimestamp;
+    }
+
+    public synchronized long getSnapshotTimestamp() {
+        return snapshotTimestamp;
+    }
+
+    public synchronized long getSnapshotLsn() {
+        return snapshotLsn;
+    }
+
+    public synchronized List<WALRecord> getWalRecords() {
+        return logger.getLogsSorted();
+    }
+}

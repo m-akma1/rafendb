@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.processor.Session;
-import org.rafendb.common.error.SyntaxException;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.QueryResult;
 
 class MockQueryProcessorTest {

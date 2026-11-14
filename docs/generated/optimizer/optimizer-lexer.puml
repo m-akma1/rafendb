@@ -1,0 +1,23 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.optimizer.lexer.Tokenizer {
+	{method}  {abstract} +tokenize ( Sql : String ) : List
+}
+
+
+class org.rafendb.optimizer.lexer.TokenizerImpl {
+	{method} +tokenize ( sql : String ) : List
+}
+
+
+
+
+org.rafendb.optimizer.lexer.TokenizerImpl ..|>  org.rafendb.optimizer.lexer.Tokenizer
+
+
+@enduml

@@ -1,0 +1,205 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.api.concurrency.ConcurrencyControl {
+	{method}  {abstract} +abort ( tx : TxId ) : TxResult
+	{method}  {abstract} +activeProtocol () : ProtocolType
+	{method}  {abstract} +awaitNoActive ( timeout : Duration ) : boolean
+	{method}  {abstract} +begin () : TxId
+	{method}  {abstract} +commit ( tx : TxId ) : TxResult
+	{method}  {abstract} +pauseNewTransactions () : void
+	{method}  {abstract} +requestAccess ( tx : TxId , type : AccessType , resource : ResourceId ) : AccessResult
+	{method}  {abstract} +resumeNewTransactions () : void
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyLogging {
+	{method}  {abstract} +logChange ( tx : TxId , change : ChangeRecord ) : long
+}
+
+
+interface org.rafendb.api.concurrency.ConcurrencyMaintenance {
+	{method}  {abstract} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void
+}
+
+
+enum org.rafendb.api.concurrency.ProtocolType {
+	{field} +LOCK_BASED
+	{field} +TIMESTAMP_BASED
+}
+
+
+class org.rafendb.concurrency.ConcurrencyControlManager {
+	{method} +abort ( tx : TxId ) : TxResult
+	{method} +activeProtocol () : ProtocolType
+	{method} +awaitNoActive ( timeout : Duration ) : boolean
+	{method} +begin () : TxId
+	{method} +commit ( tx : TxId ) : TxResult
+	{method} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void
+	{method} +logChange ( tx : TxId , change : ChangeRecord ) : long
+	{method} +pauseNewTransactions () : void
+	{method} +requestAccess ( tx : TxId , type : AccessType , resource : ResourceId ) : AccessResult
+	{method} +resumeNewTransactions () : void
+}
+
+
+class org.rafendb.concurrency.bridge.FrmBridge {
+	{method} +abort ( tx : TxId ) : TxResult
+	{method} +commit ( tx : TxId ) : TxResult
+	{method} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void <<synchronized>> 
+	{method} +logBegin ( tx : TxId ) : void
+	{method} +logChange ( tx : TxId , change : ChangeRecord ) : long
+}
+
+
+interface org.rafendb.concurrency.lock.DeadlockDetector {
+	{method}  {abstract} +selectVictim ( waitFor : Map ) : Optional
+}
+
+
+interface org.rafendb.concurrency.lock.LockManager {
+	{method}  {abstract} +cancelPending ( tx : TxId ) : void
+	{method}  {abstract} +releaseAll ( tx : TxId ) : void
+	{method}  {abstract} +tryAcquire ( tx : TxId , type : AccessType , resource : ResourceId ) : boolean
+	{method}  {abstract} +waitForGraph () : Map
+}
+
+
+class org.rafendb.concurrency.lock.TableLockManager {
+	{method} +cancelPending ( tx : TxId ) : void <<synchronized>> 
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +releaseAll ( tx : TxId ) : void <<synchronized>> 
+	{method} +tryAcquire ( tx : TxId , type : AccessType , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +waitForGraph () : Map <<synchronized>> 
+}
+
+
+class org.rafendb.concurrency.lock.WaitForDeadlockDetector {
+	{method} +selectVictim ( waitFor : Map ) : Optional
+}
+
+
+class org.rafendb.concurrency.protocol.LockBasedProtocol {
+	{method} +cancelPending ( tx : TxId ) : void
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean
+	{method} +release ( tx : TxId , outcome : TxStatus ) : void
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+	{method} +reset () : void
+	{method} +selectDeadlockVictim () : Optional
+	{method} +type () : ProtocolType
+}
+
+
+interface org.rafendb.concurrency.protocol.Protocol {
+	{method}  {abstract} +cancelPending ( tx : TxId ) : void
+	{method}  {abstract} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean
+	{method}  {abstract} +release ( tx : TxId , outcome : TxStatus ) : void
+	{method}  {abstract} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+	{method}  {abstract} +reset () : void
+	{method}  {abstract} +selectDeadlockVictim () : Optional
+	{method}  {abstract} +type () : ProtocolType
+}
+
+
+enum org.rafendb.concurrency.protocol.Protocol$Decision {
+	{field} +ABORT_REQUIRED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+class org.rafendb.concurrency.protocol.TimestampBasedProtocol {
+	{method} +cancelPending ( tx : TxId ) : void
+	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean <<synchronized>> 
+	{method} +release ( tx : TxId , outcome : TxStatus ) : void <<synchronized>> 
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision <<synchronized>> 
+	{method} +reset () : void <<synchronized>> 
+	{method} +selectDeadlockVictim () : Optional
+	{method} +type () : ProtocolType
+}
+
+
+class org.rafendb.concurrency.timestamp.StrictTimestampProtocol {
+	{method} +checkWrite ( tx : TxId , timestamp : long , resource : ResourceId ) : Decision
+	{method} +complete ( tx : TxId , status : TxStatus ) : void
+	{method} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+}
+
+
+interface org.rafendb.concurrency.timestamp.TimestampProtocol {
+	{method}  {abstract} +complete ( tx : TxId , status : TxStatus ) : void
+	{method}  {abstract} +requestAccess ( tx : TxId , timestamp : long , type : AccessType , resource : ResourceId ) : Decision
+}
+
+
+enum org.rafendb.concurrency.timestamp.TimestampProtocol$Decision {
+	{field} +ABORT_REQUIRED
+	{field} +ALLOWED
+	{field} +WAITING
+}
+
+
+class org.rafendb.concurrency.txn.TransactionManager {
+	{method} +awaitNoActive ( timeout : Duration ) : boolean <<synchronized>> 
+	{method} +begin () : TxId <<synchronized>> 
+	{method} +open ( highWater : long ) : void <<synchronized>> 
+	{method} +pause () : void <<synchronized>> 
+	{method} +resume () : void <<synchronized>> 
+	{method} +status ( tx : TxId ) : TxStatus <<synchronized>> 
+	{method} +timestamp ( tx : TxId ) : long <<synchronized>> 
+	{method} +transition ( tx : TxId , next : TxStatus ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.concurrency.verify.PrecedenceGraphVerifier {
+	{method} +verify ( schedule : List , committed : Set ) : Result
+}
+
+
+interface org.rafendb.concurrency.verify.SerializabilityVerifier {
+	{method}  {abstract} +verify ( schedule : List , committed : Set ) : Result
+}
+
+
+class org.rafendb.concurrency.verify.SerializabilityVerifier$Access {
+	{method} +resource () : ResourceId
+	{method} +tx () : TxId
+	{method} +type () : AccessType
+}
+
+
+class org.rafendb.concurrency.verify.SerializabilityVerifier$Result {
+	{method} +graph () : Map
+	{method} +serialOrder () : List
+	{method} +serializable () : boolean
+}
+
+
+
+
+org.rafendb.concurrency.ConcurrencyControlManager *--  org.rafendb.concurrency.bridge.FrmBridge : bridge
+org.rafendb.concurrency.ConcurrencyControlManager *--  org.rafendb.concurrency.protocol.Protocol : protocol
+org.rafendb.concurrency.ConcurrencyControlManager *--  org.rafendb.concurrency.txn.TransactionManager : txns
+org.rafendb.concurrency.ConcurrencyControlManager ..|>  org.rafendb.api.concurrency.ConcurrencyControl
+org.rafendb.concurrency.ConcurrencyControlManager ..|>  org.rafendb.api.concurrency.ConcurrencyLogging
+org.rafendb.concurrency.ConcurrencyControlManager ..|>  org.rafendb.api.concurrency.ConcurrencyMaintenance
+org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.protocol.Protocol : protocol
+org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.txn.TransactionManager : txns
+org.rafendb.concurrency.bridge.FrmBridge ..|>  org.rafendb.api.concurrency.ConcurrencyLogging
+org.rafendb.concurrency.bridge.FrmBridge ..|>  org.rafendb.api.concurrency.ConcurrencyMaintenance
+org.rafendb.concurrency.lock.TableLockManager ..|>  org.rafendb.concurrency.lock.LockManager
+org.rafendb.concurrency.lock.WaitForDeadlockDetector ..|>  org.rafendb.concurrency.lock.DeadlockDetector
+org.rafendb.concurrency.protocol.LockBasedProtocol *--  org.rafendb.concurrency.lock.WaitForDeadlockDetector : detector
+org.rafendb.concurrency.protocol.LockBasedProtocol -->  org.rafendb.concurrency.lock.TableLockManager : locks
+org.rafendb.concurrency.protocol.LockBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
+org.rafendb.concurrency.protocol.TimestampBasedProtocol -->  org.rafendb.concurrency.timestamp.StrictTimestampProtocol : timestamps
+org.rafendb.concurrency.protocol.TimestampBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
+org.rafendb.concurrency.timestamp.StrictTimestampProtocol ..|>  org.rafendb.concurrency.timestamp.TimestampProtocol
+org.rafendb.concurrency.verify.PrecedenceGraphVerifier ..|>  org.rafendb.concurrency.verify.SerializabilityVerifier
+
+
+@enduml
