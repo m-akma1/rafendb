@@ -183,4 +183,51 @@ class FRManagerTest {
         frm.rollbackTransaction(400);
         assertEquals(TxStatus.ABORTED, frm.getTransactionStatus(400));
     }
+
+    @Test
+    void testConnectedCheckpointFlushesStorageAndPreservesFullRid() throws Exception {
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        int[] flushCount = {0};
+
+        try (Logger connectedLogger = new Logger(tempDir.resolve("connected.log"));
+                org.rafendb.api.storage.StorageManager realSm =
+                        org.rafendb.engine.Engine.storage(
+                                tempDir.resolve("data"), 4, connectedLogger)) {
+            org.rafendb.api.storage.StorageManager countingSm =
+                    (org.rafendb.api.storage.StorageManager)
+                            java.lang.reflect.Proxy.newProxyInstance(
+                                    org.rafendb.api.storage.StorageManager.class.getClassLoader(),
+                                    new Class<?>[] {org.rafendb.api.storage.StorageManager.class},
+                                    (proxy, method, args) -> {
+                                        if ("flush".equals(method.getName())) {
+                                            flushCount[0]++;
+                                        }
+                                        return method.invoke(realSm, args);
+                                    });
+
+            try (FRManager connectedFrm = new FRManager(connectedLogger, countingSm, mockCc)) {
+                Rid largeSlotRid = new Rid(3L, 1500);
+                ChangeRecord change =
+                        new ChangeRecord(
+                                new ResourceId("users", largeSlotRid),
+                                Optional.empty(),
+                                Optional.of(
+                                        "row-bytes"
+                                                .getBytes(
+                                                        java.nio.charset.StandardCharsets.UTF_8)));
+                long lsn =
+                        connectedFrm.writeLog(
+                                new LogPayload(
+                                        new TxId(10),
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(change)));
+                assertEquals(1L, lsn);
+                assertEquals(largeSlotRid, connectedLogger.getLogsSorted().getFirst().getRid());
+
+                assertTrue(connectedFrm.createCheckpoint());
+                assertEquals(1, flushCount[0]);
+            }
+        }
+    }
 }

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -16,8 +17,8 @@ import org.rafendb.recovery.log.WALRecord;
  */
 public final class PitrManager {
     private final Logger logger;
-    private Map<String, Map<Integer, String>> snapshotRows = Map.of();
-    private Map<String, Map<Integer, String>> currentRows = Map.of();
+    private Map<String, Map<Rid, String>> snapshotRows = Map.of();
+    private Map<String, Map<Rid, String>> currentRows = Map.of();
     private long snapshotTimestamp;
     private long snapshotLsn;
     private boolean snapshotAvailable;
@@ -38,7 +39,7 @@ public final class PitrManager {
      * boundary.
      */
     public synchronized void captureSnapshot(
-            long timestamp, Map<String, ? extends Map<Integer, String>> rows) {
+            long timestamp, Map<String, ? extends Map<Rid, String>> rows) {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
         logger.flushAll();
@@ -204,7 +205,7 @@ public final class PitrManager {
 
         // Build off to the side so a malformed record or invalid target never partially mutates
         // state.
-        Map<String, Map<Integer, String>> restored = copyRows(snapshotRows);
+        Map<String, Map<Rid, String>> restored = copyRows(snapshotRows);
         Set<Integer> replayedTransactions = new HashSet<>();
         int replayed = 0;
         long lastLsn = 0;
@@ -215,24 +216,24 @@ public final class PitrManager {
                     || !eligible.contains(record.getIdTransaction())) continue;
             WALRecord commit = commits.get(record.getIdTransaction());
             if (commit == null || record.getLSN() >= commit.getLSN()) continue;
-            if (record.getTableName() == null || record.getIdRecord() < 0) return false;
+            if (record.getTableName() == null || record.getRid() == null) return false;
             if (record.getLogType() != LogType.DELETE && record.getAfterValue() == null)
                 return false;
-            Map<Integer, String> table =
+            Map<Rid, String> table =
                     restored.computeIfAbsent(record.getTableName(), k -> new HashMap<>());
-            boolean rowExists = table.containsKey(record.getIdRecord());
+            boolean rowExists = table.containsKey(record.getRid());
             switch (record.getLogType()) {
                 case INSERT -> {
                     if (rowExists) return false;
-                    table.put(record.getIdRecord(), record.getAfterValue());
+                    table.put(record.getRid(), record.getAfterValue());
                 }
                 case UPDATE -> {
                     if (!rowExists) return false;
-                    table.put(record.getIdRecord(), record.getAfterValue());
+                    table.put(record.getRid(), record.getAfterValue());
                 }
                 case DELETE -> {
                     if (!rowExists) return false;
-                    table.remove(record.getIdRecord());
+                    table.remove(record.getRid());
                 }
                 default -> throw new IllegalStateException("Not a data change");
             }
@@ -264,9 +265,9 @@ public final class PitrManager {
         return latest;
     }
 
-    private static Map<String, Map<Integer, String>> copyRows(
-            Map<String, ? extends Map<Integer, String>> rows) {
-        Map<String, Map<Integer, String>> copy = new HashMap<>();
+    private static Map<String, Map<Rid, String>> copyRows(
+            Map<String, ? extends Map<Rid, String>> rows) {
+        Map<String, Map<Rid, String>> copy = new HashMap<>();
         rows.forEach((table, records) -> copy.put(table, new HashMap<>(records)));
         return copy;
     }
@@ -280,7 +281,7 @@ public final class PitrManager {
     }
 
     /** Returns a defensive copy of the current mock database contents. */
-    public synchronized Map<String, Map<Integer, String>> getCurrentRows() {
+    public synchronized Map<String, Map<Rid, String>> getCurrentRows() {
         return copyRows(currentRows);
     }
 
