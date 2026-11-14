@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.RecoveryInternalException;
@@ -88,20 +89,42 @@ public class FRManager implements RecoveryManager {
      * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
      */
     public FRManager(Logger logger, StorageManager storageManager) {
-        this(
-                logger,
-                (tableName, idRecord, image, lsn) -> {
-                    Rid rid =
-                            new Rid(
-                                    Math.max(0L, (long) idRecord / 1000),
-                                    Math.max(0, idRecord % 1000));
-                    Optional<Row> rowOpt = Optional.empty();
-                    try {
-                        storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
-                    } catch (Exception e) {
-                        throw new RuntimeException("StorageManager applyRecovery failed", e);
-                    }
-                });
+        this(logger, storageAdapter(storageManager));
+    }
+
+    /**
+     * Konstruktor terintegrasi penuh dengan {@link StorageManager} dan {@link ConcurrencyControl}
+     * sehingga checkpoint quiescent dapat menunggu transaksi aktif dan mem-flush storage.
+     *
+     * @param logger logger WAL, tidak boleh null
+     * @param storageManager implementasi StorageManager untuk recovery apply &amp; flush, tidak boleh
+     *     null
+     * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
+     */
+    public FRManager(
+            Logger logger, StorageManager storageManager, ConcurrencyControl concurrencyControl) {
+        this.logger = Objects.requireNonNull(logger, "logger must not be null");
+        Objects.requireNonNull(storageManager, "storageManager must not be null");
+        Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
+        UndoStorage adapter = storageAdapter(storageManager);
+        this.rollbackManager = new RollbackManager(logger, adapter);
+        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
+        this.crashRecoveryManager = new CrashRecoveryEngine(logger, adapter);
+    }
+
+    private static UndoStorage storageAdapter(StorageManager storageManager) {
+        Objects.requireNonNull(storageManager, "storageManager must not be null");
+        return (tableName, idRecord, image, lsn) -> {
+            Rid rid = new Rid(Math.max(0L, (long) idRecord / 1000), Math.max(0, idRecord % 1000));
+            // TODO(PR#43): decode image via RowImageCodec.DEFAULT.decode(...) once RowImageCodec
+            // is merged into org.rafendb.common.tuple.
+            Optional<Row> rowOpt = Optional.empty();
+            try {
+                storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+            } catch (Exception e) {
+                throw new RuntimeException("StorageManager applyRecovery failed", e);
+            }
+        };
     }
 
     @Override
@@ -116,12 +139,7 @@ public class FRManager implements RecoveryManager {
             if (payload.change().isPresent()) {
                 var change = payload.change().get();
                 String table = change.resource().table();
-                int idRecord =
-                        change.resource().rid() != null
-                                ? (int)
-                                        (change.resource().rid().block() * 1000
-                                                + change.resource().rid().slot())
-                                : -1;
+                Rid rid = change.resource().rid();
                 String beforeStr =
                         change.beforeImage()
                                 .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
@@ -130,8 +148,12 @@ public class FRManager implements RecoveryManager {
                         change.afterImage()
                                 .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
                                 .orElse(null);
+                if (rid != null) {
+                    return logger.logDataChange(
+                            txId, logType, payload.timestamp(), table, rid, beforeStr, afterStr);
+                }
                 return logger.logDataChange(
-                        txId, logType, payload.timestamp(), table, idRecord, beforeStr, afterStr);
+                        txId, logType, payload.timestamp(), table, -1, beforeStr, afterStr);
             } else {
                 logger.logTransactionEvent(txId, logType);
                 return logger.getCurrentLSN();

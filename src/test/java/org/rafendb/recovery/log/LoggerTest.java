@@ -2,11 +2,14 @@ package org.rafendb.recovery.log;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.rafendb.common.tuple.Rid;
 
 class LoggerTest {
 
@@ -89,6 +92,53 @@ class LoggerTest {
             logger2.logTransactionEvent(2, LogType.BEGIN);
             assertEquals(4L, logger2.getCurrentLSN());
             assertEquals(4, logger2.getLogsSorted().size());
+        }
+    }
+
+    @Test
+    void testWalRecordV2ChecksumTableGenerationAndLargeRid() {
+        Rid largeRid = new Rid(42L, 1250);
+        WALRecord original =
+                new WALRecord(7L, 3, LogType.UPDATE, 123456L, "orders", 9L, largeRid, "old", "new");
+        byte[] serialized = original.serialize();
+        WALRecord decoded = WALRecord.deserialize(serialized);
+
+        assertEquals(7L, decoded.getLSN());
+        assertEquals(9L, decoded.getTableGeneration());
+        assertEquals(largeRid, decoded.getRid());
+        assertEquals("old", decoded.getBeforeValue());
+        assertEquals("new", decoded.getAfterValue());
+        assertEquals(original.getChecksum(), decoded.getChecksum());
+    }
+
+    @Test
+    void testWalRecordChecksumDetectsCorruption() {
+        WALRecord original =
+                new WALRecord(1L, 1, LogType.INSERT, 100L, "users", 2L, new Rid(1L, 5), null, "v");
+        byte[] corrupted = original.serialize();
+        corrupted[corrupted.length - 10] ^= 0x55;
+
+        assertThrows(IllegalArgumentException.class, () -> WALRecord.deserialize(corrupted));
+    }
+
+    @Test
+    void testTornTailIsTruncatedOnReload() throws Exception {
+        long validFileSize;
+        try (Logger logger1 = new Logger(logPath)) {
+            logger1.logTransactionEvent(1, LogType.BEGIN);
+            logger1.logDataChange(1, LogType.INSERT, 1000L, "tbl", 5L, new Rid(0L, 1), null, "v1");
+            logger1.flushAll();
+        }
+        validFileSize = Files.size(logPath);
+
+        // Simulasikan torn-tail akibat crash saat menulis record ke-3
+        Files.write(logPath, new byte[] {0, 0, 0, 50, 1, 2, 3, 4}, StandardOpenOption.APPEND);
+        assertTrue(Files.size(logPath) > validFileSize);
+
+        try (Logger logger2 = new Logger(logPath)) {
+            assertEquals(2, logger2.getLogsSorted().size());
+            assertEquals(validFileSize, Files.size(logPath));
+            assertEquals(5L, logger2.getLogsSorted().get(1).getTableGeneration());
         }
     }
 }
