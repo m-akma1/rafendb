@@ -10,19 +10,23 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.error.QueryExecutionException;
+import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
+import org.rafendb.processor.txn.TableLocks;
 
 /**
  * Operator FROM tabel (QP-05). Baca semua baris tabel lewat SM, kolomnya urut katalog dan RID-nya
  * ikut. Qualifier di schema = alias, atau nama tabel kalau alias-nya null.
  *
- * <p>Lock baca belum dipanggil, ditambahin setelah helper QP5 ada. Ga thread-safe, satu instance
- * buat satu eksekusi.
+ * <p>Tiap open() minta lock baca tabel dulu lewat TableLocks, baru buka scan. Ga thread-safe, satu
+ * instance buat satu eksekusi.
  */
 public final class TableScanOp implements Operator {
+    private final ExecutionContext context;
     private final StorageManager storage;
     private final String table;
     private final List<ColumnSchema> schema;
@@ -31,14 +35,15 @@ public final class TableScanOp implements Operator {
     /**
      * Bikin TableScanOp. Schema langsung disiapin dari katalog, cursor belum dibuka.
      *
-     * @param storage storage manager buat baca tabel
+     * @param context konteks eksekusi session, sumber storage manager sama transaksinya
      * @param table nama tabel
      * @param alias alias tabel, boleh null
-     * @throws NullPointerException kalau storage atau table null
+     * @throws NullPointerException kalau context, storage manager-nya, atau table null
      * @throws org.rafendb.common.error.StorageRuntimeException kalau tabelnya ga ada
      */
-    public TableScanOp(StorageManager storage, String table, String alias) {
-        this.storage = Objects.requireNonNull(storage, "storage");
+    public TableScanOp(ExecutionContext context, String table, String alias) {
+        this.context = Objects.requireNonNull(context, "context");
+        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         String qualifier = table;
         if (alias != null) {
@@ -54,14 +59,17 @@ public final class TableScanOp implements Operator {
     }
 
     /**
-     * Buka scan baru dari awal, cursor lama ditutup dulu. Kalau scan gagal, operator ini tetap
-     * ketutup, jadi next() bakal error.
+     * Buka scan baru dari awal: cursor lama ditutup, minta lock baca, baru scan. Kalau lock atau
+     * scan gagal, operator ini tetap ketutup, jadi next() bakal error.
      *
+     * @throws TransactionAbortedException kalau CCM bilang transaksinya batal
+     * @throws IllegalStateException kalau ga ada transaksi aktif
      * @throws QueryExecutionException kalau SM gagal buka scan
      */
     @Override
     public void open() {
         closeCursor();
+        TableLocks.acquireRead(context, table);
         try {
             cursor = storage.scan(table);
         } catch (StorageInternalException e) {

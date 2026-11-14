@@ -2,15 +2,12 @@ package org.rafendb.processor.operator.write;
 
 import java.util.Objects;
 import java.util.Optional;
-import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.RowImageCodec;
-import org.rafendb.common.txn.AccessResult;
-import org.rafendb.common.txn.AccessType;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
@@ -19,6 +16,7 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.TransactionAbortedException;
+import org.rafendb.processor.txn.TableLocks;
 
 /**
  * Shared plumbing of {@link InsertOp}, {@link UpdateOp}, and {@link DeleteOp}: find the session's
@@ -30,8 +28,6 @@ import org.rafendb.processor.error.TransactionAbortedException;
  * ({@link #abortAfterLoggedFailure}).
  */
 final class WriteSupport {
-    private static final long WAIT_MILLIS = 5;
-
     private final ExecutionContext ctx;
     private final RowImageCodec codec;
 
@@ -61,23 +57,7 @@ final class WriteSupport {
      * @param table contains table name with type {@code String}
      */
     void acquireWrite(TxId tx, String table) {
-        ConcurrencyControl ccm = ctx.getConcurrencyControl();
-        ResourceId resource = ResourceId.ofTable(table);
-        while (true) {
-            AccessResult result = ccm.requestAccess(tx, AccessType.WRITE, resource);
-            switch (result.status()) {
-                case ALLOWED -> {
-                    return;
-                }
-                case WAITING -> pause();
-                case ABORTED -> {
-                    TransactionAbortedException e =
-                            new TransactionAbortedException(result.message());
-                    syncAfterAbort(tx, e);
-                    throw e;
-                }
-            }
-        }
+        TableLocks.acquireWrite(ctx, table);
     }
 
     long logInsert(TxId tx, String table, Rid rid, Row row) {
@@ -156,18 +136,6 @@ final class WriteSupport {
             }
         } catch (ConcurrencyInternalException | RuntimeException e) {
             primary.addSuppressed(e);
-        }
-    }
-
-    private void pause() {
-        if (!ctx.getSContext().isValid()) {
-            throw new IllegalStateException("The session was closed while waiting for access");
-        }
-        try {
-            Thread.sleep(WAIT_MILLIS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while waiting for access", e);
         }
     }
 }

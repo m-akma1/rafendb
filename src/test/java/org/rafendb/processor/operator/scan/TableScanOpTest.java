@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
@@ -13,10 +14,16 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.AccessResult;
+import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.storage.MockStorageManager;
+import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.QueryExecutionException;
+import org.rafendb.processor.error.TransactionAbortedException;
+import org.rafendb.processor.operator.FakeCcm;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -34,6 +41,16 @@ class TableScanOpTest {
                     new Row(List.of(Value.ofInt(1), Value.ofText(DataType.VARCHAR, "Budi"))));
 
     private final MockStorageManager mock = new MockStorageManager();
+    private final FakeCcm ccm = new FakeCcm();
+    private final SessionContext session = new SessionContext(1);
+
+    TableScanOpTest() {
+        session.setCurrentTxId(new TxId(1));
+    }
+
+    private ExecutionContext contextWith(StorageManager storage) {
+        return new ExecutionContext(session, ccm, storage, null);
+    }
 
     private static List<ResultRow> readAll(TableScanOp scan) {
         List<ResultRow> rows = new ArrayList<>();
@@ -52,7 +69,7 @@ class TableScanOpTest {
                         new Rid(1, 1),
                         new Row(List.of(Value.ofInt(2), Value.ofText(DataType.VARCHAR, "Ani"))));
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI, ani));
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         List<ResultRow> expected =
                 List.of(
                         new ResultRow(BUDI.row().values(), BUDI.rid()),
@@ -64,7 +81,7 @@ class TableScanOpTest {
 
     @Test
     void schemaFollowsCatalogOrder() {
-        TableScanOp scan = new TableScanOp(mock, "mahasiswa", null);
+        TableScanOp scan = new TableScanOp(contextWith(mock), "mahasiswa", null);
         List<ColumnSchema> expected =
                 List.of(
                         new ColumnSchema(new Expr.ColumnRef("mahasiswa", "nim"), DataType.INTEGER),
@@ -77,7 +94,7 @@ class TableScanOpTest {
 
     @Test
     void aliasBecomesQualifier() {
-        TableScanOp scan = new TableScanOp(mock, "mahasiswa", "m");
+        TableScanOp scan = new TableScanOp(contextWith(mock), "mahasiswa", "m");
         assertEquals(4, scan.schema().size());
         for (ColumnSchema column : scan.schema()) {
             assertEquals("m", column.reference().table());
@@ -87,7 +104,7 @@ class TableScanOpTest {
     @Test
     void emptyTableStillHasHeader() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of());
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         List<ColumnSchema> expected =
                 List.of(
                         new ColumnSchema(new Expr.ColumnRef("dosen", "id"), DataType.INTEGER),
@@ -99,7 +116,7 @@ class TableScanOpTest {
 
     @Test
     void rescanGivesSameRows() {
-        TableScanOp scan = new TableScanOp(mock, "prodi", null);
+        TableScanOp scan = new TableScanOp(contextWith(mock), "prodi", null);
         scan.open();
         List<ResultRow> first = readAll(scan);
         scan.open();
@@ -115,7 +132,7 @@ class TableScanOpTest {
     @Test
     void reopenClosesOldCursor() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         scan.open();
         scan.next();
         scan.open();
@@ -127,7 +144,7 @@ class TableScanOpTest {
     @Test
     void closeClosesCursorAndIsSafeToRepeat() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         scan.close();
         scan.open();
         scan.close();
@@ -138,7 +155,7 @@ class TableScanOpTest {
 
     @Test
     void nextThrowsWhenNotOpen() {
-        TableScanOp scan = new TableScanOp(mock, "prodi", null);
+        TableScanOp scan = new TableScanOp(contextWith(mock), "prodi", null);
         assertThrows(IllegalStateException.class, scan::next);
 
         scan.open();
@@ -149,16 +166,18 @@ class TableScanOpTest {
 
     @Test
     void unknownTableIsRejected() {
+        ExecutionContext context = contextWith(mock);
         StorageRuntimeException error =
                 assertThrows(
-                        StorageRuntimeException.class, () -> new TableScanOp(mock, "dosen", null));
+                        StorageRuntimeException.class,
+                        () -> new TableScanOp(context, "dosen", null));
         assertTrue(error.getMessage().contains("dosen"));
     }
 
     @Test
     void scanFailureIsWrappedAndOldCursorIsClosed() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         scan.open();
         storage.failNextScan();
         QueryExecutionException error = assertThrows(QueryExecutionException.class, scan::open);
@@ -172,7 +191,7 @@ class TableScanOpTest {
     @Test
     void readFailureIsWrapped() {
         FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
-        TableScanOp scan = new TableScanOp(storage, "dosen", null);
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
         storage.failNextRead();
         scan.open();
         QueryExecutionException error = assertThrows(QueryExecutionException.class, scan::next);
@@ -185,13 +204,16 @@ class TableScanOpTest {
 
     @Test
     void nullArgumentsAreRejected() {
+        ExecutionContext context = contextWith(mock);
+        ExecutionContext noStorage = contextWith(null);
         assertThrows(NullPointerException.class, () -> new TableScanOp(null, "prodi", null));
-        assertThrows(NullPointerException.class, () -> new TableScanOp(mock, null, null));
+        assertThrows(NullPointerException.class, () -> new TableScanOp(context, null, null));
+        assertThrows(NullPointerException.class, () -> new TableScanOp(noStorage, "prodi", null));
     }
 
     @Test
     void schemaIsAlwaysAvailable() {
-        TableScanOp scan = new TableScanOp(mock, "prodi", null);
+        TableScanOp scan = new TableScanOp(contextWith(mock), "prodi", null);
         List<ColumnSchema> expected =
                 List.of(
                         new ColumnSchema(new Expr.ColumnRef("prodi", "kode"), DataType.CHAR),
@@ -200,5 +222,39 @@ class TableScanOpTest {
         scan.open();
         scan.close();
         assertEquals(expected, scan.schema());
+    }
+
+    @Test
+    void readLockIsRequestedBeforeScan() {
+        FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
+        storage.recordEventsTo(ccm.getEvents());
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
+        scan.open();
+        assertEquals(List.of("request READ dosen", "scan dosen"), ccm.getEvents());
+    }
+
+    @Test
+    void abortedLockDoesNotOpenCursor() {
+        FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
+        ccm.answerNext(AccessResult.aborted("Deadlock"));
+        assertThrows(TransactionAbortedException.class, scan::open);
+        assertEquals(0, storage.getOpenedCursorCount());
+        assertEquals(1, ccm.getAbortCount());
+        assertNull(session.getCurrentTxId());
+        assertThrows(IllegalStateException.class, scan::next);
+    }
+
+    @Test
+    void noActiveTransactionIsRejectedBeforeScan() {
+        FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI));
+        TableScanOp scan = new TableScanOp(contextWith(storage), "dosen", null);
+        session.setCurrentTxId(null);
+        IllegalStateException error = assertThrows(IllegalStateException.class, scan::open);
+        assertEquals(
+                "No active transaction: run the statement inside AutoCommit.run(...) or after"
+                        + " BEGIN",
+                error.getMessage());
+        assertEquals(0, storage.getOpenedCursorCount());
     }
 }

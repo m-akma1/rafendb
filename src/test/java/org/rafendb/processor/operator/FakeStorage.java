@@ -27,6 +27,7 @@ public final class FakeStorage implements StorageManager {
     private final List<FakeCursor> cursors = new ArrayList<>();
     private boolean failNextScan;
     private boolean failNextRead;
+    private List<String> events;
 
     /** Bikin storage palsu dengan satu tabel. */
     public FakeStorage(TableSchema schema, List<StoredRow> rows) {
@@ -42,6 +43,11 @@ public final class FakeStorage implements StorageManager {
     /** Bikin next() di cursor berikutnya gagal pakai StorageInternalException. */
     public void failNextRead() {
         failNextRead = true;
+    }
+
+    /** Catat tiap scan ke list ini (misalnya list kejadian FakeCcm) biar urutannya bisa dicek. */
+    public void recordEventsTo(List<String> events) {
+        this.events = events;
     }
 
     /** Berapa cursor yang pernah dibuka. */
@@ -71,6 +77,9 @@ public final class FakeStorage implements StorageManager {
     @Override
     public RecordCursor scan(String table) throws StorageInternalException {
         getSchema(table);
+        if (events != null) {
+            events.add("scan " + table);
+        }
         if (failNextScan) {
             failNextScan = false;
             throw new StorageInternalException("Disk read failed");
