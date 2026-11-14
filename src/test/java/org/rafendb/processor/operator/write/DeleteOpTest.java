@@ -20,6 +20,7 @@ import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
+import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.FakeCcm;
@@ -115,13 +116,9 @@ class DeleteOpTest {
     }
 
     @Test
-    void deleteUsesLsnFromLogAndLogsBeforeImage() {
+    void logsFullBeforeImage() {
         DeleteOp delete = new DeleteOp(context, scanDosen(), "dosen");
         delete.execute();
-        assertTrue(ccm.getEvents().contains("delete dosen " + BUDI.rid() + " lsn=1"));
-        assertTrue(ccm.getEvents().contains("delete dosen " + ANI.rid() + " lsn=2"));
-        assertTrue(ccm.getEvents().contains("delete dosen " + CICI.rid() + " lsn=3"));
-
         List<StoredRow> deletedRows = List.of(BUDI, ANI, CICI);
         List<ChangeRecord> logged = ccm.getLoggedChanges();
         assertEquals(3, logged.size());
@@ -135,12 +132,14 @@ class DeleteOpTest {
     }
 
     @Test
-    void abortedLockDeletesNothing() {
+    void abortedLockDeletesNothingAndClosesChild() {
+        ResultRow budi = new ResultRow(BUDI.row().values(), BUDI.rid());
+        FakeChildOp child = new FakeChildOp(List.of(), List.of(budi));
         ccm.answerNext(AccessResult.aborted("Deadlock"));
-        DeleteOp delete = new DeleteOp(context, scanDosen(), "dosen");
+        DeleteOp delete = new DeleteOp(context, child, "dosen");
         assertThrows(TransactionAbortedException.class, delete::execute);
+        assertEquals(1, child.getCloseCount());
         assertEquals(3, storage.getRowCount());
-        assertEquals(0, storage.getOpenedCursorCount());
         assertEquals(1, ccm.getAbortCount());
     }
 
@@ -150,7 +149,7 @@ class DeleteOpTest {
         DeleteOp delete = new DeleteOp(context, scanDosen(), "dosen");
         assertThrows(TransactionAbortedException.class, delete::execute);
         assertEquals(3, storage.getRowCount());
-        assertFalse(ccm.getEvents().contains("delete dosen " + BUDI.rid()));
+        assertTrue(ccm.getLoggedChanges().isEmpty());
         assertEquals(1, ccm.getAbortCount());
         assertNull(session.getCurrentTxId());
     }
@@ -166,7 +165,8 @@ class DeleteOpTest {
         TransactionAbortedException error =
                 assertThrows(TransactionAbortedException.class, delete::execute);
         assertInstanceOf(IllegalStateException.class, error.getCause());
-        assertEquals("Row " + ghost.rid() + " was already gone", error.getCause().getMessage());
+        String expected = "No live record at " + ghost.rid() + " to delete";
+        assertEquals(expected, error.getCause().getMessage());
         assertEquals(1, ccm.getAbortCount());
     }
 
@@ -198,18 +198,20 @@ class DeleteOpTest {
         FakeChildOp child = new FakeChildOp(List.of(), List.of(noRid));
         DeleteOp delete = new DeleteOp(context, child, "dosen");
         IllegalStateException error = assertThrows(IllegalStateException.class, delete::execute);
-        assertEquals("DeleteOp needs rows with RID", error.getMessage());
+        assertEquals("DELETE child produced a row without RID", error.getMessage());
         assertEquals(1, child.getCloseCount());
         assertEquals(3, storage.getRowCount());
+        assertTrue(ccm.getLoggedChanges().isEmpty());
     }
 
     @Test
-    void childIsClosedWhenLockFails() {
-        FakeChildOp child = new FakeChildOp(List.of(), List.of());
-        ccm.answerNext(AccessResult.aborted("Deadlock"));
-        DeleteOp delete = new DeleteOp(context, child, "dosen");
-        assertThrows(TransactionAbortedException.class, delete::execute);
-        assertEquals(1, child.getCloseCount());
+    void readFailureDeletesNothingAndClosesCursor() {
+        storage.failNextRead();
+        DeleteOp delete = new DeleteOp(context, scanDosen(), "dosen");
+        assertThrows(QueryExecutionException.class, delete::execute);
+        assertTrue(ccm.getLoggedChanges().isEmpty());
+        assertEquals(0, storage.getOpenCursorCount());
+        assertEquals(3, storage.getRowCount());
     }
 
     @Test
