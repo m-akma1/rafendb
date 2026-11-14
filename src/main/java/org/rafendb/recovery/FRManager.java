@@ -1,6 +1,7 @@
 package org.rafendb.recovery;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -42,6 +43,7 @@ public class FRManager implements RecoveryManager {
     private final RollbackManager rollbackManager;
     private final CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
+    private final boolean encodeBinaryImages;
     private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
 
     /**
@@ -66,6 +68,7 @@ public class FRManager implements RecoveryManager {
         this.crashRecoveryManager =
                 Objects.requireNonNull(
                         crashRecoveryManager, "crashRecoveryManager must not be null");
+        this.encodeBinaryImages = false;
     }
 
     /**
@@ -75,11 +78,16 @@ public class FRManager implements RecoveryManager {
      * @param storage adapter penyimpanan data SM untuk operasi undo/redo, tidak boleh null
      */
     public FRManager(Logger logger, UndoStorage storage) {
+        this(logger, storage, false);
+    }
+
+    private FRManager(Logger logger, UndoStorage storage, boolean encodeBinaryImages) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
         this.rollbackManager = new RollbackManager(logger, storage);
         this.checkpointManager = new CheckpointManager(logger);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
+        this.encodeBinaryImages = encodeBinaryImages;
     }
 
     /**
@@ -89,7 +97,7 @@ public class FRManager implements RecoveryManager {
      * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
      */
     public FRManager(Logger logger, StorageManager storageManager) {
-        this(logger, storageAdapter(storageManager));
+        this(logger, storageAdapter(storageManager), true);
     }
 
     /**
@@ -110,21 +118,60 @@ public class FRManager implements RecoveryManager {
         this.rollbackManager = new RollbackManager(logger, adapter);
         this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, adapter);
+        this.encodeBinaryImages = true;
     }
 
-    private static UndoStorage storageAdapter(StorageManager storageManager) {
+    private static final String BASE64_IMAGE_PREFIX = "B64:";
+
+    /**
+     * Membuat adapter {@link UndoStorage} yang men-decode image biner memakai {@link
+     * StorageManager#decodeRow(String, byte[])} lalu meneruskan ke {@link
+     * StorageManager#applyRecovery(String, Rid, Optional, long)}.
+     *
+     * @param storageManager implementasi StorageManager, tidak boleh null
+     * @return adapter UndoStorage yang siap dipakai oleh RollbackManager dan CrashRecoveryEngine
+     */
+    public static UndoStorage storageAdapter(StorageManager storageManager) {
         Objects.requireNonNull(storageManager, "storageManager must not be null");
-        return (tableName, idRecord, image, lsn) -> {
-            Rid rid = new Rid(Math.max(0L, (long) idRecord / 1000), Math.max(0, idRecord % 1000));
-            // TODO(PR#43): decode image via RowImageCodec.DEFAULT.decode(...) once RowImageCodec
-            // is merged into org.rafendb.common.tuple.
-            Optional<Row> rowOpt = Optional.empty();
-            try {
-                storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
-            } catch (Exception e) {
-                throw new RuntimeException("StorageManager applyRecovery failed", e);
+        return new UndoStorage() {
+            @Override
+            public void applyUndo(String tableName, int idRecord, String image, long lsn) {
+                Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
+                applyUndo(tableName, 0L, rid, image, lsn);
+            }
+
+            @Override
+            public void applyUndo(
+                    String tableName, long tableGeneration, Rid rid, String image, long lsn) {
+                try {
+                    Optional<Row> rowOpt;
+                    if (image == null) {
+                        rowOpt = Optional.empty();
+                    } else {
+                        byte[] rawBytes = decodeImageBytes(image);
+                        rowOpt = Optional.of(storageManager.decodeRow(tableName, rawBytes));
+                    }
+                    storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+                } catch (Exception e) {
+                    throw new RuntimeException("StorageManager applyRecovery failed", e);
+                }
             }
         };
+    }
+
+    private static String encodeImageBytes(Optional<byte[]> image, boolean base64) {
+        if (base64) {
+            return image.map(b -> BASE64_IMAGE_PREFIX + Base64.getEncoder().encodeToString(b))
+                    .orElse(null);
+        }
+        return image.map(b -> new String(b, StandardCharsets.UTF_8)).orElse(null);
+    }
+
+    private static byte[] decodeImageBytes(String image) {
+        if (image.startsWith(BASE64_IMAGE_PREFIX)) {
+            return Base64.getDecoder().decode(image.substring(BASE64_IMAGE_PREFIX.length()));
+        }
+        return image.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
@@ -140,14 +187,8 @@ public class FRManager implements RecoveryManager {
                 var change = payload.change().get();
                 String table = change.resource().table();
                 Rid rid = change.resource().rid();
-                String beforeStr =
-                        change.beforeImage()
-                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
-                                .orElse(null);
-                String afterStr =
-                        change.afterImage()
-                                .map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8))
-                                .orElse(null);
+                String beforeStr = encodeImageBytes(change.beforeImage(), encodeBinaryImages);
+                String afterStr = encodeImageBytes(change.afterImage(), encodeBinaryImages);
                 if (rid != null) {
                     return logger.logDataChange(
                             txId, logType, payload.timestamp(), table, rid, beforeStr, afterStr);

@@ -230,4 +230,124 @@ class FRManagerTest {
             }
         }
     }
+
+    @Test
+    void testRealStorageRollbackAndCrashRecoveryDecodeRow() throws Exception {
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        Path walPath = tempDir.resolve("real-wal.log");
+        Path dataDir = tempDir.resolve("real-data");
+
+        org.rafendb.common.tuple.Row beforeRow =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Original")));
+        org.rafendb.common.tuple.Row modifiedRow =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Modified")));
+        org.rafendb.common.tuple.Row redoneRow =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Redone")));
+
+        Rid rid;
+        try (Logger realLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager realSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, realLogger);
+                FRManager realFrm = new FRManager(realLogger, realSm, mockCc)) {
+            realSm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "name",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            50,
+                                            true,
+                                            false))));
+
+            // Tx 1: reserve -> writeLog -> insert & commit
+            TxId tx1 = new TxId(1);
+            assertTrue(realFrm.beginTransaction(tx1));
+            rid = realSm.reserveRid("items", beforeRow);
+            byte[] beforeBytes = realSm.encodeRow("items", beforeRow);
+            long lsn1 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx1,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("items", rid),
+                                                    Optional.empty(),
+                                                    Optional.of(beforeBytes)))));
+            realSm.insert("items", rid, beforeRow, lsn1);
+            assertTrue(realFrm.commitTransaction(tx1));
+
+            // Tx 2: update lalu rollback -> harus memulihkan beforeRow via decodeRow
+            TxId tx2 = new TxId(2);
+            assertTrue(realFrm.beginTransaction(tx2));
+            byte[] modifiedBytes = realSm.encodeRow("items", modifiedRow);
+            long lsn2 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx2,
+                                    org.rafendb.common.log.LogType.UPDATE,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("items", rid),
+                                                    Optional.of(beforeBytes),
+                                                    Optional.of(modifiedBytes)))));
+            realSm.update("items", rid, modifiedRow, lsn2);
+            assertEquals(
+                    Optional.of(modifiedRow),
+                    realSm.fetch("items", rid).map(org.rafendb.common.tuple.StoredRow::row));
+
+            assertTrue(realFrm.rollbackTransaction(tx2));
+            assertEquals(
+                    Optional.of(beforeRow),
+                    realSm.fetch("items", rid).map(org.rafendb.common.tuple.StoredRow::row));
+
+            // Tx 3: commit update di WAL tanpa menulis ke SM (simulasi crash sebelum flush)
+            TxId tx3 = new TxId(3);
+            assertTrue(realFrm.beginTransaction(tx3));
+            byte[] redoneBytes = realSm.encodeRow("items", redoneRow);
+            realFrm.writeLog(
+                    new LogPayload(
+                            tx3,
+                            org.rafendb.common.log.LogType.UPDATE,
+                            System.currentTimeMillis(),
+                            Optional.of(
+                                    new ChangeRecord(
+                                            new ResourceId("items", rid),
+                                            Optional.of(beforeBytes),
+                                            Optional.of(redoneBytes)))));
+            assertTrue(realFrm.commitTransaction(tx3));
+        }
+
+        // Restart: CrashRecoveryEngine harus me-redo Tx 3 via decodeRow
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+            assertTrue(restartedFrm.recoverFromCrash());
+            assertEquals(
+                    Optional.of(redoneRow),
+                    restartedSm.fetch("items", rid).map(org.rafendb.common.tuple.StoredRow::row));
+        }
+    }
 }

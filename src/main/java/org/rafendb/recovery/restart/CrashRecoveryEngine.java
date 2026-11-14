@@ -5,12 +5,10 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.LongSupplier;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.tuple.Rid;
-import org.rafendb.common.tuple.Row;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -107,34 +105,11 @@ public class CrashRecoveryEngine {
      * @param storageManager interface manajer storage
      */
     public CrashRecoveryEngine(Logger logger, StorageManager storageManager) {
-        this(logger, storageManager != null ? storageAdapter(storageManager) : null);
-    }
-
-    /**
-     * Membuat adapter {@link UndoStorage} yang meneruskan {@link Rid} penuh ke {@link
-     * StorageManager#applyRecovery}.
-     */
-    private static UndoStorage storageAdapter(StorageManager storageManager) {
-        return new UndoStorage() {
-            @Override
-            public void applyUndo(String tableName, int idRecord, String image, long lsn) {
-                Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
-                applyUndo(tableName, 0L, rid, image, lsn);
-            }
-
-            @Override
-            public void applyUndo(
-                    String tableName, long tableGeneration, Rid rid, String image, long lsn) {
-                // TODO(PR#43): decode image via RowImageCodec.DEFAULT.decode(...) once it is
-                // merged. TODO(SM No. 2): skip records whose tableGeneration no longer matches.
-                Optional<Row> row = Optional.empty();
-                try {
-                    storageManager.applyRecovery(tableName, rid, row, lsn);
-                } catch (Exception e) {
-                    throw new RuntimeException("StorageManager applyRecovery failed", e);
-                }
-            }
-        };
+        this(
+                logger,
+                storageManager != null
+                        ? org.rafendb.recovery.FRManager.storageAdapter(storageManager)
+                        : null);
     }
 
     /**
