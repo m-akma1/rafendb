@@ -86,7 +86,9 @@ final class PlanLayout {
         for (int i = 0; i < layout.size(); i++) {
             Col col = layout.get(i);
             if (!eq(col.name(), ref.column())) continue;
-            if (ref.table() != null && !eq(col.qualifier(), ref.table()) && !eq(col.table(), ref.table())) {
+            if (ref.table() != null
+                    && !eq(col.qualifier(), ref.table())
+                    && !eq(col.table(), ref.table())) {
                 continue;
             }
             if (found != NOT_FOUND) return AMBIGUOUS;
@@ -173,7 +175,8 @@ final class PlanLayout {
             return new Expr.ColumnRef(ref.table(), ref.column(), requireIndex(layout, ref));
         }
         if (expr instanceof Expr.Binary bin) {
-            return new Expr.Binary(bin.op(), rebind(bin.left(), layout), rebind(bin.right(), layout));
+            return new Expr.Binary(
+                    bin.op(), rebind(bin.left(), layout), rebind(bin.right(), layout));
         }
         return expr;
     }
