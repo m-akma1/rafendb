@@ -22,9 +22,11 @@ import org.rafendb.common.txn.TxStatus;
 public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     private final List<String> events = new ArrayList<>();
     private final List<AccessResult> answers = new ArrayList<>();
+    private final List<ChangeRecord> logged = new ArrayList<>();
     private long nextLsn = 1;
     private int abortCount;
     private boolean failNextLog;
+    private boolean failNextAbort;
 
     /** Atur jawaban requestAccess berikutnya. Kalau antriannya kosong, jawabannya ALLOWED. */
     public void answerNext(AccessResult answer) {
@@ -34,6 +36,11 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     /** Bikin logChange berikutnya gagal pakai ConcurrencyInternalException. */
     public void failNextLog() {
         failNextLog = true;
+    }
+
+    /** Bikin abort berikutnya gagal pakai ConcurrencyInternalException. */
+    public void failNextAbort() {
+        failNextAbort = true;
     }
 
     /** Urutan kejadian, misalnya "request READ dosen" atau "abort T1". */
@@ -46,6 +53,11 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
         return abortCount;
     }
 
+    /** ChangeRecord yang berhasil di-log, urut sesuai LSN-nya (1, 2, 3, ...). */
+    public List<ChangeRecord> getLoggedChanges() {
+        return logged;
+    }
+
     @Override
     public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
         events.add("request " + type + " " + resource.table());
@@ -56,9 +68,13 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     }
 
     @Override
-    public TxResult abort(TxId tx) {
+    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
         abortCount++;
         events.add("abort " + tx);
+        if (failNextAbort) {
+            failNextAbort = false;
+            throw new ConcurrencyInternalException("Rollback failed");
+        }
         return new TxResult(TxStatus.ABORTED, "");
     }
 
@@ -69,6 +85,7 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
             throw new ConcurrencyInternalException("Log write failed");
         }
         events.add("log " + change.resource().table() + " " + change.resource().rid());
+        logged.add(change);
         long lsn = nextLsn;
         nextLsn++;
         return lsn;

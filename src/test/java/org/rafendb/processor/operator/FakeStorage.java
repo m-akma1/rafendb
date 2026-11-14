@@ -28,11 +28,22 @@ public final class FakeStorage implements StorageManager {
     private boolean failNextScan;
     private boolean failNextRead;
     private List<String> events;
+    private boolean failNextDelete;
 
     /** Bikin storage palsu dengan satu tabel. */
     public FakeStorage(TableSchema schema, List<StoredRow> rows) {
         this.schema = schema;
-        this.rows = rows;
+        this.rows = new ArrayList<>(rows);
+    }
+
+    /** Bikin delete() berikutnya gagal pakai StorageInternalException. */
+    public void failNextDelete() {
+        failNextDelete = true;
+    }
+
+    /** Berapa baris yang masih ada di tabel. */
+    public int getRowCount() {
+        return rows.size();
     }
 
     /** Bikin scan() berikutnya gagal pakai StorageInternalException. */
@@ -84,7 +95,7 @@ public final class FakeStorage implements StorageManager {
             failNextScan = false;
             throw new StorageInternalException("Disk read failed");
         }
-        FakeCursor cursor = new FakeCursor(rows, failNextRead);
+        FakeCursor cursor = new FakeCursor(new ArrayList<>(rows), failNextRead);
         failNextRead = false;
         cursors.add(cursor);
         return cursor;
@@ -146,8 +157,22 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public boolean delete(String table, Rid rid, long lsn) {
-        throw new UnsupportedOperationException();
+    public boolean delete(String table, Rid rid, long lsn) throws StorageInternalException {
+        getSchema(table);
+        if (events != null) {
+            events.add("delete " + table + " " + rid + " lsn=" + lsn);
+        }
+        if (failNextDelete) {
+            failNextDelete = false;
+            throw new StorageInternalException("Disk write failed");
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).rid().equals(rid)) {
+                rows.remove(i);
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
