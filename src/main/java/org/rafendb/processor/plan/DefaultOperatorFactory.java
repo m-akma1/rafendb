@@ -156,6 +156,40 @@ public final class DefaultOperatorFactory implements OperatorFactory {
         DMLOperator create(ExecutionContext context, Operator child, String table);
     }
 
+    /** Constructor CREATE INDEX QP5; pembentukan belum meminta lock atau mengubah storage. */
+    @FunctionalInterface
+    public interface CreateIndexConstructor {
+        /**
+         * Menyiapkan aksi CREATE INDEX baru.
+         *
+         * @param context context sesi yang tidak null
+         * @param node payload CREATE INDEX yang tidak null
+         * @return aksi baru yang tidak null
+         */
+        ExecutionPlan.CommandAction create(ExecutionContext context, CreateIndexPlanNode node);
+    }
+
+    /**
+     * Mengikat QP5 ke context satu sesi.
+     * Node diteruskan utuh; konversi jenis indeks menjadi tipe storage dimiliki worker.
+     * Pemanggil menyiapkan transaksi aktif sebelum menjalankan aksi melalui factory.
+     *
+     * @param context context sesi yang tidak null
+     * @param constructor pembentuk aksi CREATE INDEX yang tidak null
+     * @return builder untuk parameter createIndexBuilder pada constructor factory
+     * @throws NullPointerException jika context, storage, constructor, node, atau hasil null
+     */
+    public static Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> bindCreateIndex(
+            ExecutionContext context, CreateIndexConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.getStorageManager(), "storage");
+        return node -> {
+            Objects.requireNonNull(node, "node");
+            return Objects.requireNonNull(constructor.create(context, node), "CREATE INDEX action");
+        };
+    }
+
     /**
      * Mengikat UPDATE QP5 dengan context sesi dan evaluator.
      * WHERE sudah diterapkan translator pada child. Target dan ekspresi SET diteruskan
@@ -179,8 +213,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             Objects.requireNonNull(child, "child");
             return Objects.requireNonNull(
                     constructor.create(
-                            node.table(), node.column(), node.value(), child, evaluator, context),
-                    "UPDATE operator");
+                            node.table(), node.column(), node.value(), child, evaluator, context), "UPDATE operator");
         };
     }
 

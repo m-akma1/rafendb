@@ -23,6 +23,7 @@ import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.FakeChildOp;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.write.DMLOperator;
+import org.rafendb.processor.plan.command.CreateIndexPlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
@@ -363,6 +364,137 @@ class DefaultOperatorFactoryTest {
         var noDelete = DefaultOperatorFactory.bindDelete(context, (ctx, source, table) -> null);
         assertThrows(NullPointerException.class, () -> noUpdate.apply(update, child));
         assertThrows(NullPointerException.class, () -> noDelete.apply(delete, child));
+    }
+
+    @Test
+    void createIndexBindingForwardsOriginalNodeAndLiveSessionWithoutExecuting() {
+        for (var kind : CreateIndexPlanNode.IndexKind.values()) {
+            var context = context(1);
+            var index =
+                    new CreateIndexPlanNode(
+                            "idx_salary", "employees", new Expr.ColumnRef(null, "salary"), kind);
+            int[] creations = {0};
+            int[] executions = {0};
+            var builder =
+                    DefaultOperatorFactory.bindCreateIndex(
+                            context,
+                            (ctx, receivedNode) -> {
+                                assertSame(context, ctx);
+                                assertSame(index, receivedNode);
+                                creations[0]++;
+                                return () -> {
+                                    assertEquals(new TxId(31), ctx.getSContext().getCurrentTxId());
+                                    executions[0]++;
+                                    return new ExecutionPlan.CommandResult(0, "CREATE INDEX");
+                                };
+                            });
+            var translator = new DefaultPlanTranslator(indexFactory(builder));
+            var first =
+                    assertInstanceOf(
+                            ExecutionPlan.Command.class,
+                            translator.translate(new QueryPlan(index, 0)));
+            var second =
+                    assertInstanceOf(
+                            ExecutionPlan.Command.class,
+                            translator.translate(new QueryPlan(index, 0)));
+
+            assertEquals(2, creations[0]);
+            assertEquals(0, executions[0]);
+            assertNull(context.getSContext().getCurrentTxId());
+            context.getSContext().setCurrentTxId(new TxId(31));
+            assertEquals(
+                    new ExecutionPlan.CommandResult(0, "CREATE INDEX"), first.action().execute());
+            assertThrows(IllegalStateException.class, first.action()::execute);
+            assertEquals(0, second.action().execute().affectedRows());
+            assertEquals(2, executions[0]);
+        }
+    }
+
+    @Test
+    void createIndexBindingRejectsMissingDependenciesInputsAndActions() {
+        var context = context(1);
+        var index =
+                new CreateIndexPlanNode(
+                        "idx_salary",
+                        "employees",
+                        new Expr.ColumnRef(null, "salary"),
+                        CreateIndexPlanNode.IndexKind.BTREE);
+        DefaultOperatorFactory.CreateIndexConstructor constructor =
+                (ctx, node) -> () -> new ExecutionPlan.CommandResult(0, "CREATE INDEX");
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindCreateIndex(null, constructor));
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindCreateIndex(context, null));
+        var noStorage =
+                new ExecutionContext(
+                        context.getSContext(),
+                        context.getConcurrencyControl(),
+                        null,
+                        context.getRecoveryManager());
+        assertThrows(
+                NullPointerException.class,
+                () -> DefaultOperatorFactory.bindCreateIndex(noStorage, constructor));
+        var builder = DefaultOperatorFactory.bindCreateIndex(context, constructor);
+        assertThrows(NullPointerException.class, () -> builder.apply(null));
+        var missingAction = DefaultOperatorFactory.bindCreateIndex(context, (ctx, node) -> null);
+        assertThrows(NullPointerException.class, () -> missingAction.apply(index));
+    }
+
+    @Test
+    void invalidOrFailedCreateIndexResultsCannotBeRetried() {
+        var index =
+                new CreateIndexPlanNode(
+                        "idx_salary",
+                        "employees",
+                        new Expr.ColumnRef(null, "salary"),
+                        CreateIndexPlanNode.IndexKind.HASH);
+        var failure = new IllegalStateException("Index build failed");
+        List<ExecutionPlan.CommandAction> workers =
+                List.of(
+                        () -> null,
+                        () -> new ExecutionPlan.CommandResult(1, "CREATE INDEX"),
+                        () -> {
+                            throw failure;
+                        });
+        for (var worker : workers) {
+            int[] executions = {0};
+            var builder =
+                    DefaultOperatorFactory.bindCreateIndex(
+                            context(1),
+                            (ctx, node) ->
+                                    () -> {
+                                        executions[0]++;
+                                        return worker.execute();
+                                    });
+            var action = indexFactory(builder).createIndex(index);
+            var error = assertThrows(RuntimeException.class, action::execute);
+            if (worker == workers.getLast()) assertSame(failure, error);
+            assertThrows(IllegalStateException.class, action::execute);
+            assertEquals(1, executions[0]);
+        }
+    }
+
+    private static DefaultOperatorFactory indexFactory(
+            Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> builder) {
+        return new DefaultOperatorFactory(
+                scan -> {
+                    throw new AssertionError("Unexpected Scan");
+                },
+                scan -> {
+                    throw new AssertionError("Unexpected Index Scan");
+                },
+                insert -> {
+                    throw new AssertionError("Unexpected INSERT");
+                },
+                (update, child) -> {
+                    throw new AssertionError("Unexpected UPDATE");
+                },
+                (delete, child) -> {
+                    throw new AssertionError("Unexpected DELETE");
+                },
+                builder);
     }
 
     private static ExecutionContext context(int sessionId) {
