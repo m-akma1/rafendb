@@ -37,10 +37,12 @@ public record TestReport(List<ScenarioResult> results) {
         for (ScenarioResult result : results) {
             sb.append(result.passed() ? "PASS" : "FAIL").append(": ");
             sb.append(result.detail()).append("\n");
-            if(!result.passed()) {
+            if (!result.passed()) {
                 sb.append(" (expected: ")
-                        .append(result.scenario().expected()).append(", actual: ")
-                        .append(result.actual()).append(")\n");
+                        .append(result.scenario().expected())
+                        .append(", actual: ")
+                        .append(result.actual())
+                        .append(")\n");
             }
         }
         sb.append(passCount()).append("/").append(results.size()).append(" scenarios passed.");
