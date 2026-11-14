@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.RecoveryInternalException;
@@ -88,20 +89,39 @@ public class FRManager implements RecoveryManager {
      * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
      */
     public FRManager(Logger logger, StorageManager storageManager) {
-        this(
-                logger,
-                (tableName, idRecord, image, lsn) -> {
-                    Rid rid =
-                            new Rid(
-                                    Math.max(0L, (long) idRecord / 1000),
-                                    Math.max(0, idRecord % 1000));
-                    Optional<Row> rowOpt = Optional.empty();
-                    try {
-                        storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
-                    } catch (Exception e) {
-                        throw new RuntimeException("StorageManager applyRecovery failed", e);
-                    }
-                });
+        this(logger, null, storageManager);
+    }
+
+    /**
+     * Konstruktor yang menghubungkan FRM dengan CCM dan kontrak resmi Storage Manager.
+     *
+     * <p>Checkpoint memakai CCM untuk menahan transaksi baru dan menunggu transaksi aktif selesai,
+     * lalu memakai Storage Manager untuk menulis halaman kotor secara durable.
+     *
+     * @param logger logger WAL, tidak boleh null
+     * @param concurrencyControl CCM untuk quiescent checkpoint, boleh null untuk mode tanpa CCM
+     * @param storageManager implementasi StorageManager, tidak boleh null
+     */
+    public FRManager(
+            Logger logger, ConcurrencyControl concurrencyControl, StorageManager storageManager) {
+        this.logger = Objects.requireNonNull(logger, "logger must not be null");
+        Objects.requireNonNull(storageManager, "storageManager must not be null");
+        UndoStorage storage = storageAdapter(storageManager);
+        this.rollbackManager = new RollbackManager(logger, storage);
+        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
+        this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
+    }
+
+    private static UndoStorage storageAdapter(StorageManager storageManager) {
+        return (tableName, idRecord, image, lsn) -> {
+            Rid rid = new Rid(Math.max(0L, (long) idRecord / 1000), Math.max(0, idRecord % 1000));
+            Optional<Row> rowOpt = Optional.empty();
+            try {
+                storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+            } catch (Exception e) {
+                throw new RuntimeException("StorageManager applyRecovery failed", e);
+            }
+        };
     }
 
     @Override
