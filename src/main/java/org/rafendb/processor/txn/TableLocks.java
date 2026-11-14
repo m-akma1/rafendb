@@ -1,7 +1,6 @@
 package org.rafendb.processor.txn;
 
 import java.util.Objects;
-
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.AccessResult;
