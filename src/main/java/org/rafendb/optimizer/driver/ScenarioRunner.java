@@ -13,6 +13,7 @@ import org.rafendb.optimizer.catalog.Catalog;
 import org.rafendb.optimizer.catalog.StorageManagerCatalog;
 import org.rafendb.optimizer.cost.CostModel;
 import org.rafendb.optimizer.cost.StatsCostModel;
+import org.rafendb.optimizer.explain.PlanExplainer;
 import org.rafendb.optimizer.join.JoinAccessPathOptimizer;
 import org.rafendb.optimizer.parser.QueryParser;
 import org.rafendb.optimizer.plan.InitialPlanBuilder;
@@ -52,8 +53,7 @@ public final class ScenarioRunner {
             if (bound instanceof SelectQuery select) {
                 QueryPlan plan = planBuilder.build(select);
                 QueryPlan optimized = optimizer.optimize(plan);
-                // String detail = plan.toString() + "\ncost: " + cost; // tungguin QO-15
-                String detail = "cost: " + optimized.totalCost();
+                String detail = "Pre-optimization plan:\n" + PlanExplainer.explain(plan) + "\n\nPost-optimization plan:\n" + PlanExplainer.explain(optimized);
                 return classify(scenario, ScenarioOutcome.VALID, detail);
             }
             return classify(
