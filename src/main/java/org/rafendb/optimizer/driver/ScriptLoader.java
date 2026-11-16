@@ -61,7 +61,7 @@ public final class ScriptLoader {
             }
             return scenarios;
         } catch (IOException e) {
-            throw new IOException("Failed to read script file: " + path, e);
+            throw new IOException("Failed to read script file: " + path + ": " + e.getMessage(), e);
         }
     }
 }

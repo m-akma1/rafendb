@@ -53,7 +53,11 @@ public final class ScenarioRunner {
             if (bound instanceof SelectQuery select) {
                 QueryPlan plan = planBuilder.build(select);
                 QueryPlan optimized = optimizer.optimize(plan);
-                String detail = "Pre-optimization plan:\n" + PlanExplainer.explain(plan) + "\n\nPost-optimization plan:\n" + PlanExplainer.explain(optimized);
+                String detail =
+                        "Pre-optimization plan:\n"
+                                + PlanExplainer.explain(plan)
+                                + "\nPost-optimization plan:\n"
+                                + PlanExplainer.explain(optimized);
                 return classify(scenario, ScenarioOutcome.VALID, detail);
             }
             return classify(
