@@ -1,4 +1,0 @@
-VALID | SELECT * FROM mahasiswa
-VALID | SELECT nama, ipk FROM mahasiswa WHERE ipk > 3.5
-SYNTAX_ERROR | SELEC * FROM mahasiswa
-VALIDATION_ERROR | SELECT * FROM notable
