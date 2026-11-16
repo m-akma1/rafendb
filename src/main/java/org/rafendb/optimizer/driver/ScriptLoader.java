@@ -52,7 +52,7 @@ public final class ScriptLoader {
                 if (parts.length != 2) {
                     throw new IOException("Malformed line " + lineNumber + ": " + trimmed);
                 }
-                ScenarioOutcome outcome = ScenarioOutcome.fromString(parts[0]);
+                ScenarioOutcome outcome = ScenarioOutcome.fromString(parts[0].trim());
                 String sql = parts[1].trim();
                 TestScenario scenario = new TestScenario("Line " + lineNumber, sql, outcome);
                 scenarios.add(scenario);
