@@ -17,6 +17,10 @@ enum org.rafendb.common.error.ErrorCode {
 }
 
 
+class org.rafendb.common.error.GeneralRuntimeException {
+}
+
+
 class org.rafendb.common.error.OptimizerInternalException {
 }
 
@@ -37,12 +41,16 @@ class org.rafendb.common.error.OptimizerRuntimeException$ValidationException {
 }
 
 
-class org.rafendb.common.error.RafenDBInternalException {
+class org.rafendb.common.error.ProcessorRuntimeException {
+}
+
+
+abstract class org.rafendb.common.error.RafenDBInternalException {
 	{method} +getMessage () : String
 }
 
 
-class org.rafendb.common.error.RafenDBRuntimeException {
+abstract class org.rafendb.common.error.RafenDBRuntimeException {
 	{method} +getMessage () : String
 }
 
@@ -62,6 +70,7 @@ class org.rafendb.common.error.StorageRuntimeException {
 
 
 org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.GeneralRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.error.OptimizerInternalException *--  org.rafendb.common.error.ErrorCode : code
 org.rafendb.common.error.OptimizerInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.OptimizerInternalException$CostEstimationException --|>  org.rafendb.common.error.OptimizerInternalException
@@ -69,6 +78,7 @@ org.rafendb.common.error.OptimizerRuntimeException *--  org.rafendb.common.error
 org.rafendb.common.error.OptimizerRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.error.OptimizerRuntimeException$SyntaxException --|>  org.rafendb.common.error.OptimizerRuntimeException
 org.rafendb.common.error.OptimizerRuntimeException$ValidationException --|>  org.rafendb.common.error.OptimizerRuntimeException
+org.rafendb.common.error.ProcessorRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
