@@ -162,9 +162,19 @@ Kontrak Antarmuka ada di `api/` dan tipe data didefinisikan di `common/`. Lapora
 ## 5. Drivers and mocks
 
 * Every component has an interactive driver: `scripts/run.sh driver <component>`.
-* **Drivers use the real components by default.** Pakai flag `--mock=storage,recovery` untuk diisi mocks. The driver prints which components are mocked at startup. Running your driver against the real system is integration testing for free. Mock bisa dipakai untuk sementara saja dan sebagai *fallback* ketika demo.
-* Untuk **mempermudah testing driver dan pengecekan beberapa skenario**, ada folder `test-scenarios/` untuk **script atau txt file per komponen**. Check `test-scenarios/<component>/` and run with `run <file>` inside the driver. They are plain files so they can change without a rebuild.
+* **Every driver extends `org.rafendb.driver.Driver`**, supaya flag, prompt, file runner, PASS/FAIL, error, dan exit code-nya sama. You write a constructor, `setup()` (read your flags, build your components, register your commands) and, if needed, `close()`, `fallback()` and `help()` (call `super.help()` first, then print your own flags or notes). See the `Driver` Javadoc for a full example.
+* **Drivers use the real components by default.** Pakai flag `--mock=sm,frm` untuk diisi mocks (short names `qp`, `qo`, `sm`, `ccm`, `frm`, or `all`). The driver prints `Mocked: ...` at startup; your `setup()` decides what to build with `mocked(Component.SM)`. Running your driver against the real system is integration testing for free. Mock bisa dipakai untuk sementara saja dan sebagai *fallback* ketika demo.
+* Untuk **mempermudah testing driver dan pengecekan beberapa skenario**, ada folder `test-scenarios/` untuk **file perintah per komponen**. Run one with `run <file>` inside the driver, or `--run=<file>` from the shell. They are plain files so they can change without a rebuild.
 * `mock/<component>/` is written by the group that owns the interface. Mocks only return dummy values, behaviour-rich fakes that a driver needs belong to the group that needs them.
+
+What every driver gets from `Driver`:
+
+* **Flags**: only `--name=value` or `--name`. Built in: `--mock=<list>`, `--run=<file>`, `--help`. Read your own with `option("frames", "64")` or `flag("verbose")` inside `setup()`; a flag nobody reads is reported as an unknown option. On Windows, quote flags with `=` or `,`: `scripts\run.cmd driver storage "--mock=sm,frm"`.
+* **Commands**: `help`, `run <file>`, `quit` (or `exit`), plus yours from `command(...)`. A command receives its words (double quotes keep spaces together) and the raw text after its name. Lines that are not a command go to `fallback()`, for example plain SQL.
+* **Files**: one command per line; blank lines and lines starting with `#` or `--` are skipped. Each line is echoed as `> line`, and the file ends with `RESULT: X passed, Y failed`.
+* **Checks**: `check("rows", 3, actual)` prints `PASS rows: expected 3, actual 3` or `FAIL ...`; `check("table exists", ok)` prints `PASS`/`FAIL` only. How checks are grouped into test scenarios is up to each group.
+* **Errors**: a failing command is printed and counted, and the driver goes on. RafenDB exceptions print their own message (`Runtime error at Storage Manager: ...`); anything else prints `Unexpected error: ...`. Throw `DriverException` for wrong input to your own commands.
+* **Exit code**: `0` if no check failed and no error was printed, `1` otherwise.
 
 ## 6. Tests and formatting
 
