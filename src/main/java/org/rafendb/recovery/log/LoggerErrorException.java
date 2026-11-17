@@ -1,13 +1,12 @@
 package org.rafendb.recovery.log;
 
-import org.rafendb.common.Component;
-import org.rafendb.common.error.RafenDBRuntimeException;
+import org.rafendb.common.error.RecoveryInternalException;
 
 /**
  * Dilempar ketika logger gagal menulis atau mem-flush record log. Pemanggil tidak boleh
  * melanjutkan operasi yang mensyaratkan record tersebut sudah tersimpan permanen (aturan WAL).
  */
-public class LoggerErrorException extends RafenDBRuntimeException {
+public class LoggerErrorException extends RecoveryInternalException {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -16,7 +15,7 @@ public class LoggerErrorException extends RafenDBRuntimeException {
      * @param errMessage penjelasan kesalahan
      */
     public LoggerErrorException(String errMessage) {
-        super(Component.FRM, errMessage, null);
+        super(errMessage);
     }
 
     /**
@@ -26,7 +25,7 @@ public class LoggerErrorException extends RafenDBRuntimeException {
      * @param cause kegagalan asalnya, misalnya error I/O
      */
     public LoggerErrorException(String errMessage, Throwable cause) {
-        super(Component.FRM, errMessage, cause);
+        super(errMessage, cause);
     }
 
     public String getErrMessage() {

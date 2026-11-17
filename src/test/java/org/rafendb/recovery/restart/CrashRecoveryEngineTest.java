@@ -31,14 +31,14 @@ class CrashRecoveryEngineTest {
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         logger = new Logger();
         storage = new TestStorage();
         engine = new CrashRecoveryEngine(logger, storage);
     }
 
     @Test
-    void testDefaultConstructor() {
+    void testDefaultConstructor() throws Exception {
         CrashRecoveryEngine defaultEngine = new CrashRecoveryEngine();
         assertFalse(defaultEngine.isCrashRecovered());
         assertFalse(defaultEngine.isRedoExecuted());
@@ -54,7 +54,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testMockRedoAndUndoOperations() {
+    void testMockRedoAndUndoOperations() throws Exception {
         // Tx 1: Committed transaction
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
@@ -81,7 +81,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testStandaloneRedoAndUndo() {
+    void testStandaloneRedoAndUndo() throws Exception {
         logger.logTransactionEvent(10, LogType.BEGIN);
         logger.logDataChange(10, LogType.INSERT, 1000L, "orders", 100, null, "Order-10");
         logger.logTransactionEvent(10, LogType.COMMIT);
@@ -98,7 +98,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testRecoveryHandlesAbortedAndLoserTransactions() {
+    void testRecoveryHandlesAbortedAndLoserTransactions() throws Exception {
         // Tx 1: Committed
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
