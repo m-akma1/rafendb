@@ -2,6 +2,7 @@ package org.rafendb.driver;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,22 +14,32 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.rafendb.common.Component;
+import org.rafendb.common.error.RafenDBRuntimeException;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 
+/**
+ * Tests {@link Driver} through a small subclass. Assertions use only exit codes, what the test
+ * driver records in {@code calls}, and text the test itself supplies; never the base class's own
+ * wording, so rewording a message or the help does not break them.
+ */
 class DriverTest {
+    /** Printed by the test driver's {@code help()} override. */
+    private static final String HELP_MARKER = "test-driver-help-marker";
+
     @TempDir Path dir;
 
     private String output = "";
 
-    /** A small driver exercising every hook and helper. */
+    /** A small driver that records what reaches it. */
     private static final class TestDriver extends Driver {
-        final List<String> calls = new ArrayList<>();
-        final List<String> fallbackLines = new ArrayList<>();
+        final List<String> calls = Collections.synchronizedList(new ArrayList<>());
         boolean useFallback;
         boolean failSetup;
         boolean failClose;
@@ -37,7 +48,7 @@ class DriverTest {
         private boolean loud;
 
         TestDriver() {
-            super("Test Driver", "test> ");
+            super(Component.QO);
         }
 
         @Override
@@ -59,19 +70,31 @@ class DriverTest {
                         if (args.size() != 1) {
                             throw new DriverException("usage: greet <name>");
                         }
-                        String text = greeting + " " + args.getFirst();
-                        out().println(loud ? text.toUpperCase() : text);
+                        calls.add("greet " + greeting + " " + args.getFirst() + (loud ? "!" : ""));
                     });
             command(
                     "words",
                     "words <w...>",
-                    "print the words",
-                    (args, rest) -> out().println(args));
+                    "record the words",
+                    (args, rest) -> calls.add("words " + args));
             command(
                     "raw",
                     "raw <text>",
-                    "print the raw text",
-                    (args, rest) -> out().println("[" + rest + "]"));
+                    "record the raw text",
+                    (args, rest) -> calls.add("raw [" + rest + "]"));
+            command(
+                    "mocks",
+                    "mocks",
+                    "record the mocked components",
+                    (args, rest) -> {
+                        List<String> mocked = new ArrayList<>();
+                        for (Component c : EnumSet.complementOf(EnumSet.of(Component.GENERAL))) {
+                            if (mocked(c)) {
+                                mocked.add(c.shortName());
+                            }
+                        }
+                        calls.add("mocks " + mocked);
+                    });
             command(
                     "sm-error",
                     "sm-error",
@@ -104,18 +127,12 @@ class DriverTest {
                     "check a condition",
                     (args, rest) -> check("condition", Boolean.parseBoolean(args.getFirst())));
             command(
-                    "mocked",
-                    "mocked <component>",
-                    "print whether a component is mocked",
-                    (args, rest) ->
-                            out().println(mocked(Component.fromShortName(args.getFirst()))));
-            command(
                     "parallel",
                     "parallel",
                     "check from two threads",
                     (args, rest) -> {
-                        Thread a = new Thread(() -> check("from a", true));
-                        Thread b = new Thread(() -> check("from b", 1, 2));
+                        Thread a = new Thread(() -> check("check-from-a", true));
+                        Thread b = new Thread(() -> check("check-from-b", 1, 2));
                         a.start();
                         b.start();
                         a.join();
@@ -129,15 +146,13 @@ class DriverTest {
                 super.fallback(line);
                 return;
             }
-            fallbackLines.add(line);
+            calls.add("fallback " + line);
         }
 
         @Override
         protected void help() {
             super.help();
-            out().println("Driver flags:");
-            out().println("  --greeting=<text>  greeting word (default hi)");
-            out().println("  --loud             shout");
+            out().println(HELP_MARKER);
         }
 
         @Override
@@ -164,119 +179,126 @@ class DriverTest {
         return Files.write(dir.resolve(name), List.of(lines));
     }
 
+    // ---- Flags ----
+
     @Test
-    void helpPrintsUsageWithoutSetup() {
+    void helpFlagPrintsHelpWithoutSetup() {
         TestDriver driver = new TestDriver();
         assertEquals(0, run(driver, "", "--help"));
-        assertTrue(output.contains("Test Driver"), output);
-        assertTrue(output.contains("Usage: Test Driver [options]"), output);
-        assertTrue(output.contains("--mock=<list>"), output);
-        assertTrue(output.contains("--greeting=<text>"), output);
-        assertTrue(output.contains("Built-in commands:"), output);
-        assertFalse(output.contains("greet someone"), "driver commands exist only after setup");
-        assertTrue(
-                output.indexOf("Built-in commands:") < output.indexOf("Driver flags:"),
-                "the override prints after super.help()");
+        assertTrue(output.contains(HELP_MARKER), output);
         assertEquals(List.of(), driver.calls);
     }
 
     @Test
-    void badCommandLinesExitOneWithUsage() {
-        assertEquals(1, run(new TestDriver(), "", "stray"));
-        assertTrue(output.contains("Runtime error at General: unexpected argument: stray"), output);
-        assertTrue(output.contains("Usage:"), output);
-        assertEquals(1, run(new TestDriver(), "", "--loud", "--loud"));
-        assertTrue(output.contains("--loud given more than once"), output);
-        assertEquals(1, run(new TestDriver(), "", "--"));
-        assertEquals(1, run(new TestDriver(), "", "--=x"));
-        assertEquals(1, run(new TestDriver(), "", "x=y"));
-        assertTrue(output.contains("unexpected argument: x=y"), output);
+    void malformedArgumentsStopBeforeSetup() {
+        for (String[] args :
+                List.of(
+                        new String[] {"stray"},
+                        new String[] {"--loud", "--loud"},
+                        new String[] {"--"},
+                        new String[] {"--=x"},
+                        new String[] {"x=y"})) {
+            TestDriver driver = new TestDriver();
+            assertEquals(1, run(driver, "", args), String.join(" ", args));
+            assertEquals(List.of(), driver.calls, String.join(" ", args));
+            assertTrue(output.contains(HELP_MARKER), "help is shown after a flag error");
+        }
     }
 
     @Test
-    void unreadFlagIsAnUnknownOption() {
+    void unreadFlagStopsAfterSetup() {
         TestDriver driver = new TestDriver();
-        assertEquals(1, run(driver, "", "--greting=hello"));
-        assertTrue(output.contains("Runtime error at General: unknown option: --greting"), output);
-        assertTrue(output.contains("Usage:"), output);
+        assertEquals(1, run(driver, "greet ana\n", "--greting=hello"));
+        assertTrue(output.contains("--greting"), output);
         assertEquals(List.of("setup", "close"), driver.calls);
     }
 
     @Test
-    void optionsAndFlagsReachTheDriver() {
-        assertEquals(0, run(new TestDriver(), "greet ana\n", "--greeting=hello", "--loud"));
-        assertTrue(output.contains("HELLO ANA"), output);
-        assertEquals(0, run(new TestDriver(), "greet ana\n"));
-        assertTrue(output.contains("hi ana"), output);
+    void optionsAndFlagsReachSetup() {
+        TestDriver driver = new TestDriver();
+        assertEquals(0, run(driver, "greet ana\n", "--greeting=hello", "--loud"));
+        assertTrue(driver.calls.contains("greet hello ana!"), driver.calls.toString());
+
+        TestDriver defaults = new TestDriver();
+        assertEquals(0, run(defaults, "greet ana\n"));
+        assertTrue(defaults.calls.contains("greet hi ana"), defaults.calls.toString());
     }
 
     @Test
-    void wrongFlagFormIsASetupError() {
-        TestDriver driver = new TestDriver();
-        assertEquals(1, run(driver, "", "--greeting"));
-        assertTrue(output.contains("--greeting needs a value: --greeting=<value>"), output);
-        assertEquals(List.of("setup", "close"), driver.calls);
-        assertEquals(1, run(new TestDriver(), "", "--loud=yes"));
-        assertTrue(output.contains("--loud takes no value"), output);
+    void wrongFlagFormFailsSetup() {
+        TestDriver bareValue = new TestDriver();
+        assertEquals(1, run(bareValue, "greet ana\n", "--greeting"));
+        assertEquals(List.of("setup", "close"), bareValue.calls);
+
+        TestDriver valuedSwitch = new TestDriver();
+        assertEquals(1, run(valuedSwitch, "greet ana\n", "--loud=yes"));
+        assertEquals(List.of("setup", "close"), valuedSwitch.calls);
     }
+
+    // ---- --mock ----
 
     @Test
     void mockFlagSelectsComponents() {
-        assertEquals(0, run(new TestDriver(), "mocked sm\nmocked qp\n", "--mock=sm,FRM"));
-        assertTrue(output.contains("Mocked: Storage Manager, Failure Recovery Manager"), output);
-        assertTrue(output.contains("true"), output);
-        assertTrue(output.contains("false"), output);
-        assertEquals(0, run(new TestDriver(), "", "--mock=all"));
-        assertTrue(
-                output.contains(
-                        "Mocked: Query Processor, Query Optimizer, Storage Manager,"
-                                + " Concurrency Control Manager, Failure Recovery Manager"),
-                output);
-        assertEquals(0, run(new TestDriver(), ""));
-        assertTrue(output.contains("Mocked: none"), output);
+        TestDriver some = new TestDriver();
+        assertEquals(0, run(some, "mocks\n", "--mock=sm,FRM"));
+        assertTrue(some.calls.contains("mocks [SM, FRM]"), some.calls.toString());
+
+        TestDriver all = new TestDriver();
+        assertEquals(0, run(all, "mocks\n", "--mock=all"));
+        assertTrue(all.calls.contains("mocks [QP, SM, CCM, FRM]"), all.calls.toString());
+
+        TestDriver none = new TestDriver();
+        assertEquals(0, run(none, "mocks\n"));
+        assertTrue(none.calls.contains("mocks []"), none.calls.toString());
     }
 
     @Test
-    void badMockNamesExitOne() {
-        assertEquals(1, run(new TestDriver(), "", "--mock=gen"));
-        assertTrue(output.contains("unknown component in --mock: gen"), output);
-        assertEquals(1, run(new TestDriver(), "", "--mock=sm,bogus"));
-        assertTrue(output.contains("unknown component in --mock: bogus"), output);
+    void badMockListsStopBeforeSetup() {
+        for (String list : List.of("--mock=gen", "--mock=sm,bogus", "--mock=sm,QO")) {
+            TestDriver driver = new TestDriver();
+            assertEquals(1, run(driver, "", list), list);
+            assertEquals(List.of(), driver.calls, list);
+        }
     }
 
     @Test
-    void promptCommentsWordsAndRawText() {
-        int code =
-                run(
-                        new TestDriver(),
-                        "# comment\n-- sql comment\n\n  WORDS one \"two three\"\nraw  a \"b\"  'c  d'\n");
-        assertEquals(0, code);
-        assertTrue(output.contains("test> "), output);
-        assertTrue(output.contains("[one, two three]"), output);
-        assertTrue(output.contains("[a \"b\"  'c  d']"), output);
-        assertFalse(output.contains("comment"), output);
+    void generalCannotHaveADriver() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new Driver(Component.GENERAL) {
+                            @Override
+                            protected void setup() {}
+                        });
+    }
+
+    // ---- Lines and commands ----
+
+    @Test
+    void commandsGetWordsAndRawTextAndCommentsAreSkipped() {
+        TestDriver driver = new TestDriver();
+        String input =
+                "# comment\n-- sql comment\n\n  WORDS one \"two three\"\nraw  a \"b\"  'c  d'\n";
+        assertEquals(0, run(driver, input));
+        assertEquals(
+                List.of("setup", "words [one, two three]", "raw [a \"b\"  'c  d']", "close"),
+                driver.calls);
     }
 
     @Test
-    void helpCommandListsDriverAndBuiltInCommands() {
-        run(new TestDriver(), "help\n");
-        assertTrue(output.contains("Commands:"), output);
+    void helpCommandListsTheDriversCommands() {
+        assertEquals(0, run(new TestDriver(), "help\n"));
         assertTrue(output.contains("greet <name>"), output);
         assertTrue(output.contains("greet someone"), output);
-        assertTrue(output.contains("Built-in commands:"), output);
-        assertTrue(output.contains("run <file>"), output);
-        assertTrue(output.contains("--mock=<list>"), output);
-        assertTrue(output.contains("Driver flags:"), output);
+        assertTrue(output.contains(HELP_MARKER), output);
     }
 
     @Test
-    void unknownCommandWithoutFallbackIsAnError() {
-        assertEquals(1, run(new TestDriver(), "tabels\ngreet bo\n"));
-        assertTrue(
-                output.contains(
-                        "Runtime error at General: unknown command: tabels (hint: type help)"),
-                output);
-        assertTrue(output.contains("hi bo"), output);
+    void unknownCommandWithoutFallbackFailsAndTheDriverGoesOn() {
+        TestDriver driver = new TestDriver();
+        assertEquals(1, run(driver, "tabels\ngreet bo\n"));
+        assertTrue(output.contains("tabels"), output);
+        assertTrue(driver.calls.contains("greet hi bo"), driver.calls.toString());
     }
 
     @Test
@@ -284,139 +306,126 @@ class DriverTest {
         TestDriver driver = new TestDriver();
         driver.useFallback = true;
         assertEquals(0, run(driver, "SELECT *  FROM t WHERE name = 'a  b'\n"));
-        assertEquals(List.of("SELECT *  FROM t WHERE name = 'a  b'"), driver.fallbackLines);
-    }
-
-    @Test
-    void errorsArePrintedByTheirKindAndTheDriverGoesOn() {
-        assertEquals(1, run(new TestDriver(), "sm-error\nfrm-error\nbug\ngreet bo\n"));
         assertTrue(
-                output.contains("Runtime error at Storage Manager: table not found: nosuch"),
-                output);
-        assertTrue(
-                output.contains("Internal error at Failure Recovery Manager: log is corrupt"),
-                output);
-        assertTrue(output.contains("Unexpected error: IllegalStateException: kaboom"), output);
-        assertTrue(output.contains("hi bo"), output);
-        assertFalse(output.contains("ERROR"), output);
-    }
-
-    @Test
-    void driverExceptionFromACommand() {
-        assertEquals(1, run(new TestDriver(), "greet\n"));
-        assertTrue(output.contains("Runtime error at General: usage: greet <name>"), output);
-    }
-
-    @Test
-    void checksShowExpectedAndActual() {
-        assertEquals(0, run(new TestDriver(), "equals x x\nok true\n"));
-        assertTrue(output.contains("PASS same: expected x, actual x"), output);
-        assertTrue(output.contains("PASS condition"), output);
-        assertEquals(1, run(new TestDriver(), "equals x y\nok false\n"));
-        assertTrue(output.contains("FAIL same: expected x, actual y"), output);
-        assertTrue(output.contains("FAIL condition"), output);
-    }
-
-    @Test
-    void checksFromTwoThreadsAreBothCounted() throws IOException {
-        Path f = file("threads.txt", "parallel");
-        assertEquals(1, run(new TestDriver(), "", "--run=" + f));
-        assertTrue(output.contains("PASS from a"), output);
-        assertTrue(output.contains("FAIL from b: expected 1, actual 2"), output);
-        assertTrue(output.contains("RESULT: 1 passed, 1 failed"), output);
-    }
-
-    @Test
-    void runFileEchoesLinesAndPrintsItsResult() throws IOException {
-        Path f =
-                file(
-                        "checks.txt",
-                        "# comment",
-                        "equals a a",
-                        "greet \"Uji Coba\"",
-                        "bug",
-                        "ok true");
-        run(new TestDriver(), "equals before before\nrun " + f + "\nquit\n");
-        assertTrue(output.contains("> equals a a"), output);
-        assertTrue(output.contains("hi Uji Coba"), output);
-        assertFalse(output.contains("> # comment"), output);
-        assertTrue(output.contains("RESULT: 2 passed, 1 failed"), output);
-    }
-
-    @Test
-    void runFlagRunsTheFileAndExits() throws IOException {
-        Path f = file("pass.txt", "equals a a", "greet bo");
-        TestDriver driver = new TestDriver();
-        assertEquals(0, run(driver, "greet never\n", "--run=" + f));
-        assertTrue(output.contains("RESULT: 1 passed, 0 failed"), output);
-        assertFalse(output.contains("never"), output);
-        assertEquals(List.of("setup", "close"), driver.calls);
-    }
-
-    @Test
-    void runInsideAFileIsAnError() throws IOException {
-        Path inner = file("inner.txt", "greet x");
-        Path outer = file("outer.txt", "run " + inner, "greet y");
-        assertEquals(1, run(new TestDriver(), "", "--run=" + outer));
-        assertTrue(output.contains("run cannot be used inside a file"), output);
-        assertTrue(output.contains("hi y"), output);
-        assertFalse(output.contains("hi x"), output);
-    }
-
-    @Test
-    void missingFileIsAnError() {
-        assertEquals(1, run(new TestDriver(), "", "--run=" + dir.resolve("nope.txt")));
-        assertTrue(output.contains("Unexpected error: NoSuchFileException"), output);
-        assertEquals(1, run(new TestDriver(), "run\n"));
-        assertTrue(output.contains("usage: run <file>"), output);
-    }
-
-    @Test
-    void quitStopsThePromptAndAFile() throws IOException {
-        assertEquals(0, run(new TestDriver(), "greet a\nquit\ngreet never\n"));
-        assertFalse(output.contains("never"), output);
-        Path f = file("quit.txt", "greet a", "exit", "greet never");
-        assertEquals(0, run(new TestDriver(), "", "--run=" + f));
-        assertFalse(output.contains("hi never"), output);
-    }
-
-    @Test
-    void closeIsAlwaysCalled() {
-        TestDriver normal = new TestDriver();
-        run(normal, "greet a\n");
-        assertEquals(List.of("setup", "close"), normal.calls);
-
-        TestDriver failedSetup = new TestDriver();
-        failedSetup.failSetup = true;
-        assertEquals(1, run(failedSetup, ""));
-        assertTrue(output.contains("Unexpected error: IOException: disk gone"), output);
-        assertEquals(List.of("setup", "close"), failedSetup.calls);
-
-        TestDriver failedClose = new TestDriver();
-        failedClose.failClose = true;
-        assertEquals(1, run(failedClose, "greet a\n"));
-        assertTrue(output.contains("Unexpected error: IOException: flush failed"), output);
+                driver.calls.contains("fallback SELECT *  FROM t WHERE name = 'a  b'"),
+                driver.calls.toString());
     }
 
     @Test
     void builtInNamesCannotBeRegistered() {
         TestDriver driver = new TestDriver();
         driver.registerHelp = true;
-        assertEquals(1, run(driver, ""));
-        assertTrue(
-                output.contains(
-                        "Unexpected error: IllegalArgumentException: command already registered"),
-                output);
+        assertEquals(1, run(driver, "greet ana\n"));
+        assertEquals(List.of("setup", "close"), driver.calls);
+    }
+
+    // ---- Errors ----
+
+    @Test
+    void errorsArePrintedCountedAndTheDriverGoesOn() {
+        TestDriver driver = new TestDriver();
+        assertEquals(1, run(driver, "sm-error\nfrm-error\nbug\ngreet bo\n"));
+        assertTrue(output.contains("table not found: nosuch"), output);
+        assertTrue(output.contains("log is corrupt"), output);
+        assertTrue(output.contains("kaboom"), output);
+        assertTrue(output.contains("IllegalStateException"), "unexpected errors show their type");
+        assertFalse(output.contains("StorageRuntimeException"), "RafenDB errors print as is");
+        assertTrue(driver.calls.contains("greet hi bo"), driver.calls.toString());
     }
 
     @Test
-    void driverExceptionIsAGeneralRuntimeError() {
-        DriverException e =
-                assertThrows(
-                        DriverException.class,
-                        () -> {
-                            throw new DriverException("bad input");
-                        });
-        assertEquals("Runtime error at General: bad input", e.getMessage());
+    void driverExceptionFromACommandIsReported() {
+        assertEquals(1, run(new TestDriver(), "greet\n"));
+        assertTrue(output.contains("usage: greet <name>"), output);
+    }
+
+    @Test
+    void driverExceptionIsARafenDBRuntimeError() {
+        DriverException e = new DriverException("bad input");
+        assertInstanceOf(RafenDBRuntimeException.class, e);
+        assertTrue(e.getMessage().contains("bad input"), e.getMessage());
+    }
+
+    // ---- Checks ----
+
+    @Test
+    void checksDecideTheExitCodeAndShowBothValues() {
+        assertEquals(0, run(new TestDriver(), "equals same-x same-x\nok true\n"));
+        assertEquals(1, run(new TestDriver(), "equals left-value right-value\n"));
+        assertTrue(output.contains("left-value"), output);
+        assertTrue(output.contains("right-value"), output);
+        assertEquals(1, run(new TestDriver(), "ok false\n"));
+    }
+
+    @Test
+    void checksFromTwoThreadsAreBothRecorded() {
+        assertEquals(1, run(new TestDriver(), "parallel\n"));
+        assertTrue(output.contains("check-from-a"), output);
+        assertTrue(output.contains("check-from-b"), output);
+    }
+
+    // ---- Files ----
+
+    @Test
+    void runCommandRunsAFileAndTheDriverGoesOn() throws IOException {
+        Path f = file("cmds.txt", "# comment", "greet a", "bug", "greet b");
+        TestDriver driver = new TestDriver();
+        assertEquals(1, run(driver, "run " + f + "\ngreet after\n"));
+        assertEquals(
+                List.of("setup", "greet hi a", "greet hi b", "greet hi after", "close"),
+                driver.calls);
+    }
+
+    @Test
+    void runFlagRunsTheFileInsteadOfTheInput() throws IOException {
+        Path f = file("pass.txt", "equals a a", "greet bo");
+        TestDriver driver = new TestDriver();
+        assertEquals(0, run(driver, "greet never\n", "--run=" + f));
+        assertEquals(List.of("setup", "greet hi bo", "close"), driver.calls);
+    }
+
+    @Test
+    void runInsideAFileFails() throws IOException {
+        Path inner = file("inner.txt", "greet x");
+        Path outer = file("outer.txt", "run " + inner, "greet y");
+        TestDriver driver = new TestDriver();
+        assertEquals(1, run(driver, "", "--run=" + outer));
+        assertEquals(List.of("setup", "greet hi y", "close"), driver.calls);
+    }
+
+    @Test
+    void missingFileOrMissingArgumentFails() {
+        assertEquals(1, run(new TestDriver(), "", "--run=" + dir.resolve("nope.txt")));
+        assertTrue(output.contains("nope.txt"), output);
+        assertEquals(1, run(new TestDriver(), "run\n"));
+    }
+
+    @Test
+    void quitStopsThePromptAndAFile() throws IOException {
+        TestDriver prompt = new TestDriver();
+        assertEquals(0, run(prompt, "greet a\nquit\ngreet never\n"));
+        assertEquals(List.of("setup", "greet hi a", "close"), prompt.calls);
+
+        Path f = file("quit.txt", "greet a", "exit", "greet never");
+        TestDriver fromFile = new TestDriver();
+        assertEquals(0, run(fromFile, "", "--run=" + f));
+        assertEquals(List.of("setup", "greet hi a", "close"), fromFile.calls);
+    }
+
+    // ---- Lifecycle ----
+
+    @Test
+    void closeIsAlwaysCalledAndItsFailureCounts() {
+        TestDriver failedSetup = new TestDriver();
+        failedSetup.failSetup = true;
+        assertEquals(1, run(failedSetup, "greet a\n"));
+        assertTrue(output.contains("disk gone"), output);
+        assertEquals(List.of("setup", "close"), failedSetup.calls);
+
+        TestDriver failedClose = new TestDriver();
+        failedClose.failClose = true;
+        assertEquals(1, run(failedClose, "greet a\n"));
+        assertTrue(output.contains("flush failed"), output);
+        assertEquals(List.of("setup", "greet hi a", "close"), failedClose.calls);
     }
 }

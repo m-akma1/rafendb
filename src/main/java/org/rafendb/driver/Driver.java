@@ -66,6 +66,7 @@ public abstract class Driver {
 
     private record Entry(String usage, String help, Command action) {}
 
+    private final Component component;
     private final String title;
     private final String prompt;
     private final Map<String, Entry> commands = new LinkedHashMap<>();
@@ -80,14 +81,20 @@ public abstract class Driver {
     private boolean inFile;
 
     /**
-     * Creates a driver.
+     * Creates the driver of a component. The banner title is derived from it, such as {@code
+     * "Storage Manager Driver"}, and so is the prompt, such as {@code "sm> "}. The component under
+     * test cannot be named in {@code --mock}.
      *
-     * @param title the name in the banner, such as {@code "Storage Manager Driver"}
-     * @param prompt the prompt shown before each command, such as {@code "sm> "}
+     * @param component the component this driver tests
+     * @throws IllegalArgumentException if the component is {@link Component#GENERAL}
      */
-    protected Driver(String title, String prompt) {
-        this.title = Objects.requireNonNull(title, "title");
-        this.prompt = Objects.requireNonNull(prompt, "prompt");
+    protected Driver(Component component) {
+        this.component = Objects.requireNonNull(component, "component");
+        if (component == Component.GENERAL) {
+            throw new IllegalArgumentException("a driver tests one component, not GENERAL");
+        }
+        this.title = component.displayName() + " Driver";
+        this.prompt = component.shortName().toLowerCase(Locale.ROOT) + "> ";
     }
 
     /**
@@ -128,7 +135,7 @@ public abstract class Driver {
      */
     protected void help() {
         out.println("Usage: " + title + " [options]");
-        out.println("  --mock=<list>   use mocks for these components: qp,qo,sm,ccm,frm or all");
+        out.println("  --mock=<list>   use mocks for other components: qp,qo,sm,ccm,frm or all");
         out.println("  --run=<file>    run a file of commands, then exit");
         out.println("  --help          show this help");
         List<String[]> rows = new ArrayList<>();
@@ -384,22 +391,27 @@ public abstract class Driver {
                 continue;
             }
             if (name.equalsIgnoreCase("all")) {
-                mocks.addAll(EnumSet.complementOf(EnumSet.of(Component.GENERAL)));
+                mocks.addAll(EnumSet.complementOf(EnumSet.of(Component.GENERAL, component)));
                 continue;
             }
-            Component component;
+            Component mock;
             try {
-                component = Component.fromShortName(name);
+                mock = Component.fromShortName(name);
             } catch (IllegalArgumentException e) {
-                component = Component.GENERAL;
+                mock = Component.GENERAL;
             }
-            if (component == Component.GENERAL) {
+            if (mock == Component.GENERAL) {
                 throw new DriverException(
                         "unknown component in --mock: "
                                 + name
                                 + " (use qp, qo, sm, ccm, frm or all)");
             }
-            mocks.add(component);
+            if (mock == component) {
+                throw new DriverException(
+                        "--mock cannot be the driver's own component: "
+                                + component.shortName().toLowerCase(Locale.ROOT));
+            }
+            mocks.add(mock);
         }
     }
 
