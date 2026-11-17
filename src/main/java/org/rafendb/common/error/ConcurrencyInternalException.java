@@ -6,7 +6,7 @@ import org.rafendb.common.Component;
  * Concurrency Control Manager's {@link RafenDBInternalException}: a failure while logging or rolling
  * back through the Failure Recovery Manager.
  */
-public class ConcurrencyInternalException extends RafenDBInternalException {
+public non-sealed class ConcurrencyInternalException extends RafenDBInternalException {
     private static final long serialVersionUID = 1L;
 
     /**

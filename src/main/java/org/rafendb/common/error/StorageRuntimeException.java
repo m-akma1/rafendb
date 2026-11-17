@@ -6,7 +6,7 @@ import org.rafendb.common.Component;
  * Storage Manager's {@link RafenDBRuntimeException}: an error in the client's statement, such as an
  * unknown table or a row that does not fit the schema. Thrown before any change.
  */
-public class StorageRuntimeException extends RafenDBRuntimeException {
+public non-sealed class StorageRuntimeException extends RafenDBRuntimeException {
     private static final long serialVersionUID = 1L;
 
     /**

@@ -14,7 +14,7 @@ import org.rafendb.common.Component;
  *   <li>{@link CostEstimationException} (QO-08, QO-12 to QO-14)
  * </ul>
  */
-public class OptimizerInternalException extends RafenDBInternalException {
+public non-sealed class OptimizerInternalException extends RafenDBInternalException {
     private static final long serialVersionUID = 1L;
 
     private final ErrorCode code;
