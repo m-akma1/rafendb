@@ -96,7 +96,7 @@ public final class RollbackManager {
      * @throws LoggerErrorException jika record log gagal ditulis atau di-flush
      * @throws RuntimeException jika storage gagal menerapkan undo
      */
-    public RollbackStatus rollback(int idTransaction) {
+    public RollbackStatus rollback(int idTransaction) throws LoggerErrorException {
         restoreLock.readLock().lock();
         try {
             synchronized (txLocks.computeIfAbsent(idTransaction, k -> new Object())) {
@@ -116,12 +116,12 @@ public final class RollbackManager {
      * @throws LoggerErrorException jika record log gagal ditulis atau di-flush
      * @throws RuntimeException jika storage gagal menerapkan undo
      */
-    public boolean rollbackTransaction(int idTransaction) {
+    public boolean rollbackTransaction(int idTransaction) throws LoggerErrorException {
         return rollback(idTransaction).isAborted();
     }
 
     /** Me-rollback satu transaksi; pemanggil sudah memegang monitor transaksinya. */
-    private RollbackStatus rollbackLocked(int idTransaction) {
+    private RollbackStatus rollbackLocked(int idTransaction) throws LoggerErrorException {
         Deque<Step> todo = pending.get(idTransaction);
         if (todo == null) {
             List<WALRecord> records = logger.getLogsByTransaction(idTransaction);
@@ -176,7 +176,7 @@ public final class RollbackManager {
      * @throws LoggerErrorException jika record log gagal ditulis atau di-flush
      * @throws RuntimeException jika storage gagal; perubahan yang sudah dipulihkan dibatalkan lagi
      */
-    public int recoverToPointInTime(long targetTimestamp) {
+    public int recoverToPointInTime(long targetTimestamp) throws LoggerErrorException {
         restoreLock.writeLock().lock();
         try {
             List<WALRecord> all = logger.getLogsSorted();
@@ -223,7 +223,7 @@ public final class RollbackManager {
      * @throws LoggerErrorException jika record log gagal ditulis atau di-flush
      * @throws RuntimeException jika storage gagal; perubahan yang sudah dipulihkan dibatalkan lagi
      */
-    public int recoverToTransaction(int idTransaction) {
+    public int recoverToTransaction(int idTransaction) throws LoggerErrorException {
         restoreLock.writeLock().lock();
         try {
             List<WALRecord> all = logger.getLogsSorted();
@@ -258,7 +258,7 @@ public final class RollbackManager {
      * diubah transaksi yang commit sesudah target, jadi membatalkan sisanya dari belakang
      * menghasilkan keadaan pada target.
      */
-    private int restore(List<WALRecord> all, Set<Integer> kept) {
+    private int restore(List<WALRecord> all, Set<Integer> kept) throws LoggerErrorException {
         Set<Integer> finished = new HashSet<>();
         Set<Integer> aborted = new HashSet<>();
         Set<Integer> unfinished = new TreeSet<>();
@@ -297,7 +297,7 @@ public final class RollbackManager {
             for (WALRecord r : toUndo) {
                 undo(systemTx, new Step(r));
             }
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LoggerErrorException e) {
             abortSystemTransaction(systemTx, e);
             throw e;
         }
@@ -311,7 +311,7 @@ public final class RollbackManager {
      * keadaan sebelum pemulihan dimulai. Kegagalan di sini ditempelkan ke {@code cause}; transaksi
      * sistem lalu tersisa tanpa ABORT dan akan dibatalkan oleh crash recovery.
      */
-    private void abortSystemTransaction(int systemTx, RuntimeException cause) {
+    private void abortSystemTransaction(int systemTx, Exception cause) {
         try {
             Deque<Step> todo = new ArrayDeque<>();
             for (WALRecord r : logger.getLogsByTransaction(systemTx)) {
@@ -323,7 +323,7 @@ public final class RollbackManager {
             // dibatalkan; menerapkan nilai lama dua kali aman karena applyUndo idempoten.
             pending.put(systemTx, todo);
             rollbackLocked(systemTx);
-        } catch (RuntimeException inner) {
+        } catch (RuntimeException | LoggerErrorException inner) {
             cause.addSuppressed(inner);
         }
     }
@@ -336,7 +336,7 @@ public final class RollbackManager {
      * Menulis record kompensasi untuk satu perubahan (cukup sekali walaupun dicoba ulang), lalu
      * mengembalikan nilai lamanya lewat Storage Manager.
      */
-    private void undo(int idTransaction, Step step) {
+    private void undo(int idTransaction, Step step) throws LoggerErrorException {
         WALRecord r = step.original;
         if (step.compensationLsn < 0) {
             step.compensationLsn =

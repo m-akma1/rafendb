@@ -15,6 +15,14 @@ public final class Version {
 
     /** One-line banner printed at startup by the server, the client and every driver. */
     public static String banner(String program) {
-        return "RafenDB " + current() + " - " + program;
+        return "RafenDB " + program + "\nVersion " + current();
+    }
+
+    /** Returns the full description for --version flags */
+    public static String version() {
+        return "RafenDB version "
+                + current()
+                + "\nA mini Database Management System (mDBMS) from scratch."
+                + "\nUse with --help to see all available commands and flags.";
     }
 }

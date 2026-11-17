@@ -19,7 +19,6 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
-import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
 import org.rafendb.recovery.restart.CrashRecoveryEngine;
 import org.rafendb.recovery.rollback.RollbackManager;
@@ -151,7 +150,7 @@ public class FRManager implements RecoveryManager {
      * @param beforeVal nilai sebelum
      * @param afterVal nilai sesudah
      * @return nomor LSN yang dialokasikan
-     * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
+     * @throws RecoveryInternalException jika terjadi kegagalan fatal pada WAL logger
      */
     public long writeLog(
             int idTransaction,
@@ -159,7 +158,8 @@ public class FRManager implements RecoveryManager {
             String tableName,
             int idRecord,
             String beforeVal,
-            String afterVal) {
+            String afterVal)
+            throws RecoveryInternalException {
         return writeLog(
                 idTransaction,
                 logType,
@@ -181,7 +181,7 @@ public class FRManager implements RecoveryManager {
      * @param beforeVal nilai sebelum
      * @param afterVal nilai sesudah
      * @return nomor LSN yang dialokasikan
-     * @throws LoggerErrorException jika terjadi kegagalan fatal pada WAL logger
+     * @throws RecoveryInternalException jika terjadi kegagalan fatal pada WAL logger
      */
     public long writeLog(
             int idTransaction,
@@ -190,7 +190,8 @@ public class FRManager implements RecoveryManager {
             String tableName,
             int idRecord,
             String beforeVal,
-            String afterVal) {
+            String afterVal)
+            throws RecoveryInternalException {
         Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
         ChangeRecord change =
                 new ChangeRecord(
@@ -209,11 +210,7 @@ public class FRManager implements RecoveryManager {
                 org.rafendb.common.log.LogType.valueOf(logType.name());
         LogPayload payload =
                 new LogPayload(new TxId(idTransaction), commonType, timestamp, Optional.of(change));
-        try {
-            return writeLog(payload);
-        } catch (RecoveryInternalException e) {
-            throw new LoggerErrorException("Failed to write log", e);
-        }
+        return writeLog(payload);
     }
 
     /**

@@ -44,7 +44,7 @@ class FRManagerTest {
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         logPath = tempDir.resolve("frm.log");
         logger = new Logger(logPath);
         storage = new TestStorage();
@@ -59,7 +59,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testBeginAndWriteLogAndCommit() {
+    void testBeginAndWriteLogAndCommit() throws Exception {
         assertTrue(frm.beginTransaction(1));
 
         long lsn = frm.writeLog(1, LogType.INSERT, "customers", 10, null, "Bob");
@@ -86,7 +86,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testRollbackTransaction() {
+    void testRollbackTransaction() throws Exception {
         assertTrue(frm.beginTransaction(2));
         storage.data.put("customers#20", "Charlie-Old");
 
@@ -104,7 +104,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testRecoverToPointInTime() {
+    void testRecoverToPointInTime() throws Exception {
         frm.beginTransaction(1);
         frm.writeLog(1, LogType.INSERT, "users", 1, null, "Alice");
         storage.data.put("users#1", "Alice");
@@ -126,8 +126,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testPitrExcludesOldChangeFromTransactionCommittedAfterTarget()
-            throws InterruptedException {
+    void testPitrExcludesOldChangeFromTransactionCommittedAfterTarget() throws Exception {
         frm.beginTransaction(1);
         frm.writeLog(1, LogType.INSERT, "users", 1, null, "Alice");
         storage.data.put("users#1", "Alice");
@@ -161,7 +160,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testWalSyncForceThrough() {
+    void testWalSyncForceThrough() throws Exception {
         frm.beginTransaction(1);
         long lsn = frm.writeLog(1, LogType.INSERT, "products", 2005, null, "Item1");
         assertTrue(lsn > 0);
