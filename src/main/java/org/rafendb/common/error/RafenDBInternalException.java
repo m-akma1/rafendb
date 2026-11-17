@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Root checked exception. An error the client did not cause, such as a disk failure or a broken
  * contract between components.

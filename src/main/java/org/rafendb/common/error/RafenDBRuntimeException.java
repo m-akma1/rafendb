@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Root unchecked exception: an error the client caused with its request. The
  * message is shown to the user.

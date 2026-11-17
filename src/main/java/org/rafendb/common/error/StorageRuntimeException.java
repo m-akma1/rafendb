@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Storage Manager's {@link RafenDBRuntimeException}: an error in the client's statement, such as an
  * unknown table or a row that does not fit the schema. Thrown before any change.

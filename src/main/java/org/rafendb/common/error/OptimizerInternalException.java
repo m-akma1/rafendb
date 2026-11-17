@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Query Optimizer's {@link RafenDBInternalException}: a failure the client did not cause. Checked:
  * must be handled by the internal caller, never shown to the user.

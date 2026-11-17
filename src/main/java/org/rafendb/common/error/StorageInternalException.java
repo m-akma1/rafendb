@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Storage Manager's {@link RafenDBInternalException}: a storage failure (disk I/O, corrupt data, or
  * a log that cannot be forced) or a call that breaks the {@link

@@ -1,6 +1,6 @@
 package org.rafendb.processor.error;
 
-import org.rafendb.common.error.Component;
+import org.rafendb.common.Component;
 import org.rafendb.common.error.RafenDBRuntimeException;
 
 /**

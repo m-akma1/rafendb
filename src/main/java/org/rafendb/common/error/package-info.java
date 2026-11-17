@@ -1,6 +1,6 @@
 /**
  * Exception hierarchy. A component extends each root it needs once, passing its {@link
- * org.rafendb.common.error.Component}.
+ * org.rafendb.common.Component}.
  *
  * <ul>
  *   <li>{@link org.rafendb.common.error.RafenDBRuntimeException} (unchecked): the client caused

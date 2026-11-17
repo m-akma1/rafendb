@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Concurrency Control Manager's {@link RafenDBInternalException}: a failure while logging or rolling
  * back through the Failure Recovery Manager.

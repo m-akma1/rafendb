@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Failure Recovery Manager's {@link RafenDBInternalException}: a failure while writing or forcing the
  * log, or while rolling back or recovering.

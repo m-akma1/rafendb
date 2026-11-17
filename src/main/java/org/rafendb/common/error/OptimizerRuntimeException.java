@@ -1,5 +1,6 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
 import org.rafendb.common.token.Token;
 
 /**
