@@ -2,6 +2,7 @@ package org.rafendb.api.optimizer;
 
 import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.query.ParsedQuery;
+import org.rafendb.common.error.OptimizerInternalException;
 
 /**
  * Entry point of the Query Optimizer (QO).
@@ -44,10 +45,12 @@ public interface QueryOptimizer {
      * to the Query Processor in the agreed form rather than causing a crash.</p>
      *
      * @param parsed the query from {@link #parse(String)}; must not be {@code null}
+     * @return the bound query, with schema-dependent information resolved
+     *         (e.g. {@code SELECT *} expanded to the actual column list)
      * @throws org.rafendb.common.error.ValidationException if the query is semantically
      *         invalid; the message names the offending table or column
      */
-    void bindAndValidate(ParsedQuery parsed);
+    ParsedQuery bindAndValidate(ParsedQuery parsed);
 
     /**
      * Produces the cheapest executable {@link QueryPlan} for a validated query by
@@ -60,10 +63,11 @@ public interface QueryOptimizer {
      * <p><b>Precondition:</b> {@code parsed} must have passed
      * {@link #bindAndValidate(ParsedQuery)}.</p>
      *
-     * @param parsed a validated parsed query; must not be {@code null}
+     * @param bound a validated parsed query; must not be {@code null}
      * @return the cheapest executable plan
+     * @throws OptimizerInternalException if an error occurs during optimization
      */
-    QueryPlan optimize(ParsedQuery parsed);
+    QueryPlan optimize(ParsedQuery bound) throws OptimizerInternalException;
 
     /**
      * Renders a plan as an indented, human-readable tree showing each node's operation
