@@ -64,11 +64,12 @@ public abstract class Driver {
         void execute(List<String> args, String rest) throws Exception;
     }
 
+    protected final Component component;
+    protected final String title;
+    protected String prompt;
+
     private record Entry(String usage, String help, Command action) {}
 
-    private final Component component;
-    private final String title;
-    private final String prompt;
     private final Map<String, Entry> commands = new LinkedHashMap<>();
     private final Map<String, String> options = new HashMap<>();
     private final Set<String> readOptions = new HashSet<>();
@@ -94,7 +95,7 @@ public abstract class Driver {
             throw new IllegalArgumentException("a driver tests one component, not GENERAL");
         }
         this.title = component.displayName() + " Driver";
-        this.prompt = component.shortName().toLowerCase(Locale.ROOT) + "> ";
+        this.prompt = "RafenDB-" + component.shortName().toLowerCase(Locale.ROOT) + "$> ";
     }
 
     /**
@@ -138,6 +139,7 @@ public abstract class Driver {
         out.println("  --mock=<list>   use mocks for other components: qp,qo,sm,ccm,frm or all");
         out.println("  --run=<file>    run a file of commands, then exit");
         out.println("  --help          show this help");
+        out.println("  --version       show the version");
         List<String[]> rows = new ArrayList<>();
         commands.values().forEach(e -> rows.add(new String[] {e.usage(), e.help()}));
         int driverRows = rows.size();
@@ -276,6 +278,10 @@ public abstract class Driver {
         return out;
     }
 
+    protected final void setPrompt(String prompt) {
+        this.prompt = prompt;
+    }
+
     /**
      * Runs the driver on the standard streams and exits the JVM with its exit code. Call this from
      * {@code main}.
@@ -296,10 +302,14 @@ public abstract class Driver {
      */
     public final int run(String[] args, InputStream in, PrintStream out) {
         reset(out);
-        out.println(Version.banner(title));
         String runFile;
         try {
             parseArgs(args);
+            if (flag("version")) {
+                out.println(Version.version());
+                return 0;
+            }
+            out.println(Version.banner(title));
             if (flag("help")) {
                 help();
                 return 0;
@@ -311,7 +321,10 @@ public abstract class Driver {
             help();
             return 1;
         }
-        out.println("Mocked: " + describeMocks());
+
+        out.println("Mocked components: " + describeMocks());
+        out.println("Type help to see all available commands and flags.");
+        out.println();
 
         try {
             try {

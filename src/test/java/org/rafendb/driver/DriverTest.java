@@ -23,6 +23,7 @@ import org.rafendb.common.Component;
 import org.rafendb.common.error.RafenDBRuntimeException;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
+import org.rafendb.engine.Version;
 
 /**
  * Tests {@link Driver} through a small subclass. Assertions use only exit codes, what the test
@@ -186,6 +187,15 @@ class DriverTest {
         TestDriver driver = new TestDriver();
         assertEquals(0, run(driver, "", "--help"));
         assertTrue(output.contains(HELP_MARKER), output);
+        assertEquals(List.of(), driver.calls);
+    }
+
+    @Test
+    void versionFlagPrintsOnlyTheVersionWithoutSetup() {
+        TestDriver driver = new TestDriver();
+        assertEquals(0, run(driver, "", "--version", "--help"));
+        assertTrue(output.contains(Version.current()), output);
+        assertFalse(output.contains(HELP_MARKER), "--version wins over --help");
         assertEquals(List.of(), driver.calls);
     }
 

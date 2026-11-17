@@ -5,6 +5,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Arrays;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.processor.Session;
 import org.rafendb.common.error.RafenDBRuntimeException;
@@ -21,6 +22,10 @@ public final class ServerMain {
     private ServerMain() {}
 
     public static void main(String[] args) {
+        if (Arrays.asList(args).contains("--version")) {
+            System.out.println(Version.version());
+            return;
+        }
         Engine engine = Engine.withMocks();
         try (ServerSocket mainPort = new ServerSocket(3140)) {
             System.out.println(Version.banner("Server"));
