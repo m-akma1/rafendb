@@ -8,7 +8,14 @@ package org.rafendb.common.query;
  * {@code TransactionQuery} (BEGIN/COMMIT/ABORT), and {@code CreateIndexQuery}.
  * Instances are produced by the Query Optimizer's parser and are immutable.</p>
  */
-public interface ParsedQuery {
+public sealed interface ParsedQuery
+        permits SelectQuery,
+                UpdateQuery,
+                InsertQuery,
+                DeleteQuery,
+                TransactionQuery,
+                CreateIndexQuery,
+                ExplainQuery {
 
     /**
      * Returns the original SQL text from which this query was parsed.

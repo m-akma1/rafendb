@@ -7,6 +7,7 @@ import org.rafendb.api.optimizer.QueryOptimizer;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.query.ParsedQuery;
+import org.rafendb.optimizer.parser.QueryParser;
 
 /**
  * Mock {@link QueryOptimizer} for testing and integration without a real optimizer.
@@ -44,10 +45,10 @@ public class MockQueryOptimizer implements QueryOptimizer {
     public ParsedQuery parse(String sql) {
         Objects.requireNonNull(sql, "sql");
         calls.add("parse");
-        return new MockParsedQuery(sql);
+        QueryParser parser = new QueryParser();
+        return parser.parse(sql);
     }
 
-    @Override
     public void bindAndValidate(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
         calls.add("bindAndValidate");
