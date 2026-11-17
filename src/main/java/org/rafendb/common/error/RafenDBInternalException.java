@@ -9,7 +9,11 @@ import org.rafendb.common.Component;
  * <p>
  * DO NOT SHOW TO CLIENT, INTERNAL MUST BE HANDLED BY INTERNAL CALLER.
  */
-public class RafenDBInternalException extends Exception {
+public abstract sealed class RafenDBInternalException extends Exception
+        permits StorageInternalException,
+                RecoveryInternalException,
+                ConcurrencyInternalException,
+                OptimizerInternalException {
     private static final long serialVersionUID = 1L;
     private final Component component;
 

@@ -6,10 +6,12 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.restart.CrashRecoveryEngine;
 import org.rafendb.recovery.rollback.RollbackManager;
 import org.rafendb.recovery.rollback.UndoStorage;
@@ -77,7 +79,7 @@ public class FRManagerDriver {
             CrashRecoveryEngine crashRecoveryEngine = new CrashRecoveryEngine(logger, storage);
             this.frm =
                     new FRManager(logger, rollbackManager, checkpointManager, crashRecoveryEngine);
-        } catch (IOException e) {
+        } catch (IOException | LoggerErrorException e) {
             throw new RuntimeException("Failed to initialize driver environment", e);
         }
     }
@@ -105,7 +107,7 @@ public class FRManagerDriver {
     /**
      * Menguji mekanisme Undo untuk transaksi yang dibatalkan (rollback).
      */
-    public boolean testUndo() {
+    public boolean testUndo() throws RecoveryInternalException {
         storage.clear();
         initNewEnvironment();
 
@@ -139,7 +141,7 @@ public class FRManagerDriver {
      * - T2 menulis perubahan kotor (dirty data) namun sistem mengalami CRASH sebelum COMMIT.
      * - Sistem restart dari file WAL dan menjalankan recoverFromCrash (Redo T1, Undo T2).
      */
-    public boolean testRecovery() {
+    public boolean testRecovery() throws RecoveryInternalException {
         storage.clear();
         initNewEnvironment();
 
@@ -171,7 +173,7 @@ public class FRManagerDriver {
      * - T2 di-rollback
      * - T3 commit
      */
-    public boolean testInterleavedTransactionsRecovery() {
+    public boolean testInterleavedTransactionsRecovery() throws RecoveryInternalException {
         storage.clear();
         initNewEnvironment();
 
@@ -209,7 +211,7 @@ public class FRManagerDriver {
     /**
      * Menguji pemulihan point-in-time ke timestamp sebelum perubahan tertentu terjadi.
      */
-    public boolean testPointInTime() {
+    public boolean testPointInTime() throws RecoveryInternalException {
         storage.clear();
         initNewEnvironment();
 
@@ -241,7 +243,7 @@ public class FRManagerDriver {
      *
      * @return true jika seluruh pengujian berhasil
      */
-    public boolean runAllTests() {
+    public boolean runAllTests() throws RecoveryInternalException {
         System.out.println("==================================================");
         System.out.println("       RUNNING FRM INTEGRATION TEST SUITE         ");
         System.out.println("==================================================");
@@ -283,7 +285,7 @@ public class FRManagerDriver {
         return storage;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws RecoveryInternalException {
         FRManagerDriver driver = new FRManagerDriver();
         driver.runAllTests();
     }
