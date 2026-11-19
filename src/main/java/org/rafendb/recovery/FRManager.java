@@ -132,31 +132,47 @@ public class FRManager implements RecoveryManager {
      * @return adapter UndoStorage yang siap dipakai oleh RollbackManager dan CrashRecoveryEngine
      */
     public static UndoStorage storageAdapter(StorageManager storageManager) {
-        Objects.requireNonNull(storageManager, "storageManager must not be null");
-        return new UndoStorage() {
-            @Override
-            public void applyUndo(String tableName, int idRecord, String image, long lsn) {
-                Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
-                applyUndo(tableName, 0L, rid, image, lsn);
-            }
+        return new StorageManagerUndoAdapter(storageManager);
+    }
 
-            @Override
-            public void applyUndo(
-                    String tableName, long tableGeneration, Rid rid, String image, long lsn) {
-                try {
-                    Optional<Row> rowOpt;
-                    if (image == null) {
-                        rowOpt = Optional.empty();
-                    } else {
-                        byte[] rawBytes = decodeImageBytes(image);
-                        rowOpt = Optional.of(storageManager.decodeRow(tableName, rawBytes));
-                    }
-                    storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
-                } catch (Exception e) {
-                    throw new RuntimeException("StorageManager applyRecovery failed", e);
+    /**
+     * Adapter eksplisit yang menghubungkan antarmuka {@link UndoStorage} milik FRM ke
+     * implementasi resmi {@link StorageManager}.
+     */
+    public static final class StorageManagerUndoAdapter implements UndoStorage {
+        private final StorageManager storageManager;
+
+        public StorageManagerUndoAdapter(StorageManager storageManager) {
+            this.storageManager =
+                    Objects.requireNonNull(storageManager, "storageManager must not be null");
+        }
+
+        @Override
+        public void applyUndo(String tableName, int idRecord, String image, long lsn) {
+            Rid rid = idRecord >= 0 ? new Rid((long) idRecord / 1000, idRecord % 1000) : null;
+            applyUndo(tableName, 0L, rid, image, lsn);
+        }
+
+        @Override
+        public void applyUndo(
+                String tableName, long tableGeneration, Rid rid, String image, long lsn) {
+            try {
+                Optional<Row> rowOpt;
+                if (image == null) {
+                    rowOpt = Optional.empty();
+                } else {
+                    byte[] rawBytes = decodeImageBytes(image);
+                    rowOpt = Optional.of(storageManager.decodeRow(tableName, rawBytes));
                 }
+                storageManager.applyRecovery(tableName, rid, rowOpt, lsn);
+            } catch (Exception e) {
+                throw new RuntimeException("StorageManager applyRecovery failed", e);
             }
-        };
+        }
+
+        public StorageManager getStorageManager() {
+            return storageManager;
+        }
     }
 
     private static String encodeImageBytes(Optional<byte[]> image, boolean base64) {
