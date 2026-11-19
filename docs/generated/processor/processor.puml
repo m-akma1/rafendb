@@ -208,6 +208,11 @@ class org.rafendb.processor.tuple.ResultRow {
 }
 
 
+class org.rafendb.processor.txn.AutoCommit {
+	{method}  {static} +run ( coordinator : TransactionCoordinator , statement : Supplier ) : Object
+}
+
+
 class org.rafendb.processor.txn.TransactionCoordinator {
 	{method} +abortTx () : void
 	{method} +beginTx () : void

@@ -2,164 +2,137 @@ package org.rafendb.optimizer.rewrite;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeSet;
+import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
 import org.rafendb.common.plan.SelectionPlanNode;
 import org.rafendb.common.plan.SortPlanNode;
+import org.rafendb.optimizer.catalog.Catalog;
 
-public class ProjectionPushdownRule implements RewriteRule {
+public final class ProjectionPushdownRule implements RewriteRule {
+
+    private final PlanLayout layout;
+
+    public ProjectionPushdownRule(Catalog catalog) {
+        this.layout = new PlanLayout(catalog);
+    }
 
     @Override
     public PlanNode apply(PlanNode root) {
-        if (root == null) return null;
-        return pushdown(root);
+        if (root == null || !PlanLayout.supports(root)) return root;
+        return layout.rebind(prune(root, null));
     }
 
-    private PlanNode pushdown(PlanNode node) {
-        if (node.children().isEmpty()) {
-            return node;
+    private PlanNode prune(PlanNode node, List<Expr.ColumnRef> required) {
+        if (node instanceof ProjectionPlanNode proj) return pruneProjection(proj, required);
+        if (node instanceof SelectionPlanNode sel) {
+            List<Expr.ColumnRef> need = union(required, PlanLayout.refs(sel.condition()));
+            return new SelectionPlanNode(sel.condition(), prune(sel.child(), need));
         }
-
-        List<PlanNode> rewrittenChildren = new ArrayList<>();
-        for (PlanNode child : node.children()) {
-            rewrittenChildren.add(pushdown(child));
+        if (node instanceof SortPlanNode sort) {
+            List<Expr.ColumnRef> need = union(required, List.of(sort.column()));
+            return new SortPlanNode(prune(sort.child(), need), sort.column(), sort.direction());
         }
-
-        PlanNode reconstructedNode = reconstructNode(node, rewrittenChildren);
-
-        if (reconstructedNode instanceof ProjectionPlanNode projNode) {
-            return attemptPushdown(projNode);
+        if (node instanceof JoinPlanNode join) {
+            List<Expr.ColumnRef> need =
+                    join.condition() == null
+                            ? null
+                            : union(required, PlanLayout.refs(join.condition()));
+            return new JoinPlanNode(
+                    join.algorithm(),
+                    join.condition(),
+                    pruneSide(join.left(), need),
+                    pruneSide(join.right(), need));
         }
-
-        return reconstructedNode;
+        if (node instanceof CartesianPlanNode cart) {
+            return new CartesianPlanNode(
+                    cart.algorithm(),
+                    pruneSide(cart.left(), required),
+                    pruneSide(cart.right(), required));
+        }
+        return node;
     }
 
-    private PlanNode reconstructNode(PlanNode original, List<PlanNode> newChildren) {
-        return switch (original) {
-            case SelectionPlanNode sel ->
-                    new SelectionPlanNode(sel.condition(), newChildren.get(0));
-            case ProjectionPlanNode proj ->
-                    new ProjectionPlanNode(proj.columns(), newChildren.get(0));
-            case JoinPlanNode join ->
-                    new JoinPlanNode(
-                            join.algorithm(),
-                            join.condition(),
-                            newChildren.get(0),
-                            newChildren.get(1));
-            case CartesianPlanNode cart ->
-                    new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
-            case SortPlanNode sort ->
-                    new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());
-            default -> original;
-        };
-    }
-
-    private PlanNode attemptPushdown(ProjectionPlanNode proj) {
+    private PlanNode pruneProjection(ProjectionPlanNode proj, List<Expr.ColumnRef> required) {
+        List<Expr> columns = proj.columns();
         PlanNode child = proj.child();
 
-        if (child instanceof JoinPlanNode join) {
-            java.util.Set<String> leftTables = getProvidedTables(join.left());
-            java.util.Set<String> rightTables = getProvidedTables(join.right());
-
-            List<org.rafendb.common.expr.Expr> leftCols =
-                    extractRequiredColumns(proj.columns(), join.condition(), leftTables);
-            List<org.rafendb.common.expr.Expr> rightCols =
-                    extractRequiredColumns(proj.columns(), join.condition(), rightTables);
-
-            PlanNode newLeft =
-                    leftCols.isEmpty()
-                            ? join.left()
-                            : attemptPushdown(new ProjectionPlanNode(leftCols, join.left()));
-            PlanNode newRight =
-                    rightCols.isEmpty()
-                            ? join.right()
-                            : attemptPushdown(new ProjectionPlanNode(rightCols, join.right()));
-
-            JoinPlanNode newJoin =
-                    new JoinPlanNode(join.algorithm(), join.condition(), newLeft, newRight);
-
-            return new ProjectionPlanNode(proj.columns(), newJoin);
+        while (child instanceof ProjectionPlanNode inner) {
+            List<PlanLayout.Col> innerOut = layout.of(inner);
+            List<Expr> composed = new ArrayList<>();
+            for (Expr expr : columns) {
+                int index = PlanLayout.find(innerOut, (Expr.ColumnRef) expr);
+                composed.add(inner.columns().get(index));
+            }
+            columns = composed;
+            child = inner.child();
         }
 
-        if (child instanceof CartesianPlanNode cart) {
-            java.util.Set<String> leftTables = getProvidedTables(cart.left());
-            java.util.Set<String> rightTables = getProvidedTables(cart.right());
+        if (required != null) columns = keepRequired(columns, child, required);
 
-            List<org.rafendb.common.expr.Expr> leftCols =
-                    extractRequiredColumns(proj.columns(), null, leftTables);
-            List<org.rafendb.common.expr.Expr> rightCols =
-                    extractRequiredColumns(proj.columns(), null, rightTables);
-
-            PlanNode newLeft =
-                    leftCols.isEmpty()
-                            ? cart.left()
-                            : attemptPushdown(new ProjectionPlanNode(leftCols, cart.left()));
-            PlanNode newRight =
-                    rightCols.isEmpty()
-                            ? cart.right()
-                            : attemptPushdown(new ProjectionPlanNode(rightCols, cart.right()));
-
-            CartesianPlanNode newCart = new CartesianPlanNode(cart.algorithm(), newLeft, newRight);
-            return new ProjectionPlanNode(proj.columns(), newCart);
-        }
-
-        return proj;
+        List<Expr.ColumnRef> needed = new ArrayList<>();
+        for (Expr expr : columns) needed.add((Expr.ColumnRef) expr);
+        return new ProjectionPlanNode(columns, prune(child, needed));
     }
 
-    private List<org.rafendb.common.expr.Expr> extractRequiredColumns(
-            List<org.rafendb.common.expr.Expr> outputCols,
-            org.rafendb.common.expr.Expr joinCondition,
-            java.util.Set<String> availableTables) {
-
-        List<org.rafendb.common.expr.Expr> requiredForThisSide = new ArrayList<>();
-        for (org.rafendb.common.expr.Expr expr : outputCols) {
-            if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col
-                    && availableTables.contains(col.table())) {
-                if (!requiredForThisSide.contains(col)) requiredForThisSide.add(col);
+    private List<Expr> keepRequired(
+            List<Expr> columns, PlanNode child, List<Expr.ColumnRef> required) {
+        List<PlanLayout.Col> input = layout.of(child);
+        List<PlanLayout.Col> output = new ArrayList<>();
+        for (Expr expr : columns) {
+            output.add(input.get(PlanLayout.find(input, (Expr.ColumnRef) expr)));
+        }
+        List<Expr> kept = new ArrayList<>();
+        for (int i = 0; i < columns.size(); i++) {
+            for (Expr.ColumnRef ref : required) {
+                if (PlanLayout.find(output, ref) == i) {
+                    kept.add(columns.get(i));
+                    break;
+                }
             }
         }
-
-        if (joinCondition != null) {
-            extractColumnsFromExpr(joinCondition, availableTables, requiredForThisSide);
-        }
-
-        return requiredForThisSide;
+        if (kept.isEmpty()) kept.add(columns.get(0));
+        return kept;
     }
 
-    private void extractColumnsFromExpr(
-            org.rafendb.common.expr.Expr expr,
-            java.util.Set<String> availableTables,
-            List<org.rafendb.common.expr.Expr> collectedCols) {
+    private PlanNode pruneSide(PlanNode side, List<Expr.ColumnRef> need) {
+        if (need == null) return prune(side, null);
 
-        if (expr instanceof org.rafendb.common.expr.Expr.Binary bin) {
-            extractColumnsFromExpr(bin.left(), availableTables, collectedCols);
-            extractColumnsFromExpr(bin.right(), availableTables, collectedCols);
-        } else if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col) {
-            if (col.table() != null
-                    && availableTables.contains(col.table())
-                    && !collectedCols.contains(col)) {
-                collectedCols.add(col);
-            }
+        List<PlanLayout.Col> before = layout.of(side);
+        List<Expr.ColumnRef> sideNeed = new ArrayList<>();
+        for (Expr.ColumnRef ref : need) {
+            if (PlanLayout.find(before, ref) >= 0) sideNeed.add(ref);
         }
+        if (sideNeed.isEmpty()) {
+            PlanLayout.Col first = before.get(0);
+            sideNeed.add(new Expr.ColumnRef(first.qualifier(), first.name()));
+        }
+
+        PlanNode pruned = prune(side, sideNeed);
+        List<PlanLayout.Col> carried = layout.of(pruned);
+        TreeSet<Integer> keep = new TreeSet<>();
+        for (Expr.ColumnRef ref : sideNeed) {
+            int index = PlanLayout.find(carried, ref);
+            if (index >= 0) keep.add(index);
+        }
+        if (keep.size() >= carried.size()) return pruned;
+
+        List<Expr> columns = new ArrayList<>();
+        for (int index : keep) {
+            PlanLayout.Col col = carried.get(index);
+            columns.add(new Expr.ColumnRef(col.qualifier(), col.name()));
+        }
+        return new ProjectionPlanNode(columns, pruned);
     }
 
-    private java.util.Set<String> getProvidedTables(PlanNode node) {
-        java.util.Set<String> tables = new java.util.HashSet<>();
-        extractTablesFromPlan(node, tables);
-        return tables;
-    }
-
-    private void extractTablesFromPlan(PlanNode node, java.util.Set<String> tables) {
-        if (node instanceof org.rafendb.common.plan.TableScanNode scan) {
-            tables.add(scan.alias() != null ? scan.alias() : scan.table());
-        } else if (node instanceof org.rafendb.common.plan.IndexScanNode idxScan) {
-            tables.add(idxScan.alias() != null ? idxScan.alias() : idxScan.table());
-        } else {
-            for (PlanNode child : node.children()) {
-                extractTablesFromPlan(child, tables);
-            }
-        }
+    private static List<Expr.ColumnRef> union(
+            List<Expr.ColumnRef> required, List<Expr.ColumnRef> extra) {
+        if (required == null) return null;
+        List<Expr.ColumnRef> out = new ArrayList<>(required);
+        out.addAll(extra);
+        return out;
     }
 }

@@ -23,5 +23,7 @@ public final class OptimizerDriver {
                 System.err.println("Error: " + e.getMessage());
             }
         }
+
+        scanner.close();
     }
 }

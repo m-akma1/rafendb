@@ -6,6 +6,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.InsertQuery;
 import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.query.UpdateQuery;
@@ -17,41 +18,39 @@ import org.rafendb.mock.optimizer.catalog.MockCatalog;
 class QueryBinderTest {
     private final QueryBinder binder = new QueryBinder(MockCatalog.defaults());
 
+    private static SelectQuery select(List<Expr> projection, FromItem from, Expr where) {
+        return new SelectQuery("", projection, from, where, List.of());
+    }
+
+    private static FromItem tables(String... names) {
+        FromItem from = new FromItem.TableRef(names[0]);
+        for (int i = 1; i < names.length; i++) {
+            from = new FromItem.CartesianProduct(from, new FromItem.TableRef(names[i]));
+        }
+        return from;
+    }
+
     @Test
     void rejectsUnknownTableAndColumn() {
         assertThrows(
                 ValidationException.class,
-                () ->
-                        binder.bind(
-                                new SelectQuery(
-                                        "", List.of(), List.of("missing"), null, null, List.of())));
+                () -> binder.bind(select(List.of(), tables("missing"), null)));
         assertThrows(
                 ValidationException.class,
                 () ->
                         binder.bind(
-                                new SelectQuery(
-                                        "",
+                                select(
                                         List.of(new Expr.ColumnRef(null, "absent")),
-                                        List.of("mahasiswa"),
-                                        null,
-                                        null,
-                                        List.of())));
+                                        tables("mahasiswa"),
+                                        null)));
     }
 
     @Test
     void expandsStarAndResolvesCanonicalNames() {
         SelectQuery bound =
-                (SelectQuery)
-                        binder.bind(
-                                new SelectQuery(
-                                        "",
-                                        List.of(),
-                                        List.of("MAHASISWA"),
-                                        null,
-                                        null,
-                                        List.of()));
+                binder.bind(select(List.of(), new FromItem.TableRef("MAHASISWA"), null));
         assertEquals(4, bound.projection().size());
-        assertEquals(new Expr.ColumnRef("mahasiswa", "nim"), bound.projection().get(0));
+        assertEquals(new Expr.ColumnRef("mahasiswa", "nim", 0), bound.projection().get(0));
         assertEquals(bound, binder.bind(bound));
     }
 
@@ -61,39 +60,29 @@ class QueryBinderTest {
                 ValidationException.class,
                 () ->
                         binder.bind(
-                                new SelectQuery(
-                                        "",
+                                select(
                                         List.of(new Expr.ColumnRef(null, "nama")),
-                                        List.of("mahasiswa", "prodi"),
-                                        null,
-                                        null,
-                                        List.of())));
+                                        tables("mahasiswa", "prodi"),
+                                        null)));
     }
 
     @Test
     void validatesQualifiedColumnsAndTableQualifiedStar() {
         SelectQuery projection =
-                (SelectQuery)
-                        binder.bind(
-                                new SelectQuery(
-                                        "",
-                                        List.of(new Expr.ColumnRef("MAHASISWA", "*")),
-                                        List.of("mahasiswa", "prodi"),
-                                        null,
-                                        null,
-                                        List.of()));
+                binder.bind(
+                        select(
+                                List.of(new Expr.ColumnRef("MAHASISWA", "*")),
+                                tables("mahasiswa", "prodi"),
+                                null));
         assertEquals(4, projection.projection().size());
         assertThrows(
                 ValidationException.class,
                 () ->
                         binder.bind(
-                                new SelectQuery(
-                                        "",
+                                select(
                                         List.of(new Expr.ColumnRef("absent", "nama")),
-                                        List.of("mahasiswa"),
-                                        null,
-                                        null,
-                                        List.of())));
+                                        tables("mahasiswa"),
+                                        null)));
     }
 
     @Test
@@ -114,14 +103,12 @@ class QueryBinderTest {
                 ValidationException.class,
                 () ->
                         testBinder.bind(
-                                new SelectQuery(
-                                        "",
+                                select(
                                         List.of(),
-                                        List.of("left_table", "right_table"),
-                                        null,
-                                        null,
-                                        List.of()),
-                                true));
+                                        new FromItem.NaturalJoin(
+                                                new FromItem.TableRef("left_table"),
+                                                new FromItem.TableRef("right_table")),
+                                        null)));
     }
 
     @Test
@@ -153,17 +140,15 @@ class QueryBinderTest {
     void naturalJoinUsesSharedColumnsAndDeduplicatesStar() {
         SelectQuery natural =
                 binder.bind(
-                        new SelectQuery(
-                                "",
+                        select(
                                 List.of(),
-                                List.of("mahasiswa", "prodi"),
-                                null,
-                                null,
-                                List.of()),
-                        true);
-        assertNotNull(natural.joinCondition());
+                                new FromItem.NaturalJoin(
+                                        new FromItem.TableRef("mahasiswa"),
+                                        new FromItem.TableRef("prodi")),
+                                null));
+        assertInstanceOf(FromItem.Join.class, natural.from());
         assertEquals(5, natural.projection().size());
-        assertEquals(natural, binder.bind(natural, true));
+        assertEquals(natural, binder.bind(natural));
     }
 
     @Test
@@ -175,15 +160,7 @@ class QueryBinderTest {
                         new Expr.Literal(Value.ofInt(3)));
         assertThrows(
                 ValidationException.class,
-                () ->
-                        binder.bind(
-                                new SelectQuery(
-                                        "",
-                                        List.of(),
-                                        List.of("mahasiswa"),
-                                        null,
-                                        bad,
-                                        List.of())));
+                () -> binder.bind(select(List.of(), tables("mahasiswa"), bad)));
         Expr arithmetic =
                 new Expr.Binary(
                         Expr.Op.ADD,
@@ -197,27 +174,17 @@ class QueryBinderTest {
     @Test
     void rejectsNonBooleanConditionsAndTypesNullFromContext() {
         SelectQuery nonBoolean =
-                new SelectQuery(
-                        "",
-                        List.of(),
-                        List.of("mahasiswa"),
-                        null,
-                        new Expr.ColumnRef(null, "nim"),
-                        List.of());
+                select(List.of(), tables("mahasiswa"), new Expr.ColumnRef(null, "nim"));
         assertThrows(ValidationException.class, () -> binder.bind(nonBoolean));
         SelectQuery nullComparison =
-                new SelectQuery(
-                        "",
+                select(
                         List.of(),
-                        List.of("mahasiswa"),
-                        null,
+                        tables("mahasiswa"),
                         new Expr.Binary(
                                 Expr.Op.EQ,
                                 new Expr.ColumnRef(null, "nama"),
-                                new Expr.Literal(Value.nullOf(DataType.INTEGER))),
-                        List.of());
-        Expr.Binary bound =
-                (Expr.Binary) ((SelectQuery) binder.bind(nullComparison)).whereCondition();
+                                new Expr.Literal(Value.nullOf(DataType.INTEGER))));
+        Expr.Binary bound = (Expr.Binary) binder.bind(nullComparison).whereCondition();
         assertEquals(DataType.VARCHAR, ((Expr.Literal) bound.right()).value().type());
     }
 
@@ -237,15 +204,13 @@ class QueryBinderTest {
         SelectQuery query =
                 new QueryBinder(catalog)
                         .bind(
-                                new SelectQuery(
-                                        "",
+                                select(
                                         List.of(),
-                                        List.of("first", "second"),
-                                        null,
-                                        null,
-                                        List.of()),
-                                true);
-        assertNull(query.joinCondition());
+                                        new FromItem.NaturalJoin(
+                                                new FromItem.TableRef("first"),
+                                                new FromItem.TableRef("second")),
+                                        null));
+        assertInstanceOf(FromItem.CartesianProduct.class, query.from());
         assertEquals(2, query.projection().size());
     }
 

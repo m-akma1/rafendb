@@ -1,57 +1,92 @@
 package org.rafendb.optimizer.binder;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.expr.Expr.Op;
+import org.rafendb.common.schema.Column;
 
-/** Builds equality predicates for identically named columns in natural joins. */
+/**
+ * Derives the equality condition of one {@code left NATURAL JOIN right} node from the catalog.
+ *
+ * <p>Every column of the right side whose name also appears among the visible columns of the left
+ * side becomes {@code left.col = right.col}; the right-hand copy is then hidden from {@code SELECT
+ * *}. Columns already merged by an earlier NATURAL JOIN on the left count once, through their
+ * surviving copy.
+ */
 final class NaturalJoinResolver {
     private NaturalJoinResolver() {}
 
-    static Expr resolve(Scope scope) {
+    /**
+     * @param condition the AND chain of equalities, or {@code null} if no column is shared
+     * @param merged {@code table.column} keys (lower case) of the right-hand copies to hide
+     */
+    record Result(Expr condition, Set<String> merged) {}
+
+    /**
+     * @param scope the scope that holds both sides; must contain every table named below
+     * @param leftTables tables of the left subtree, in FROM order
+     * @param rightTables tables of the right subtree, in FROM order
+     * @throws ValidationException if a shared column is ambiguous on the left or its types are
+     *     incompatible
+     */
+    static Result resolve(Scope scope, List<String> leftTables, List<String> rightTables) {
         List<Expr> terms = new ArrayList<>();
-        for (int i = 1; i < scope.tables().size(); i++) {
-            Scope.Table right = scope.tables().get(i);
-            for (var rc : right.schema().columns()) {
-                for (int j = 0; j < i; j++) {
-                    Scope.Table left = scope.tables().get(j);
-                    var matching =
-                            left.schema().columns().stream()
-                                    .filter(column -> Scope.eq(column.name(), rc.name()))
-                                    .findFirst();
-                    if (matching.isPresent()) {
-                        var lc = matching.get();
-                        if (lc.type().isNumeric() != rc.type().isNumeric()
-                                || lc.type().isText() != rc.type().isText())
+        Set<String> merged = new HashSet<>();
+        for (String rightName : rightTables) {
+            Scope.Table right = scope.table(rightName);
+            for (Column rc : right.schema().columns()) {
+                if (scope.isHidden(right, rc)) continue;
+                Scope.Table matchTable = null;
+                Column match = null;
+                for (String leftName : leftTables) {
+                    Scope.Table left = scope.table(leftName);
+                    for (Column lc : left.schema().columns()) {
+                        if (scope.isHidden(left, lc) || !Scope.eq(lc.name(), rc.name())) continue;
+                        if (match != null)
                             throw new ValidationException(
-                                    "NATURAL JOIN column '"
-                                            + left.name()
-                                            + "."
-                                            + lc.name()
-                                            + "' and '"
-                                            + right.name()
-                                            + "."
+                                    "Ambiguous column '"
                                             + rc.name()
-                                            + "' have incompatible types "
-                                            + lc.type()
-                                            + " and "
-                                            + rc.type());
-                        terms.add(
-                                new Binary(
-                                        Op.EQ,
-                                        new ColumnRef(left.name(), lc.name()),
-                                        new ColumnRef(right.name(), rc.name())));
-                        break;
+                                            + "' in NATURAL JOIN: found in both '"
+                                            + matchTable.name()
+                                            + "' and '"
+                                            + left.name()
+                                            + "'");
+                        matchTable = left;
+                        match = lc;
                     }
                 }
+                if (match == null) continue;
+                if (match.type().isNumeric() != rc.type().isNumeric()
+                        || match.type().isText() != rc.type().isText())
+                    throw new ValidationException(
+                            "NATURAL JOIN column '"
+                                    + matchTable.name()
+                                    + "."
+                                    + match.name()
+                                    + "' and '"
+                                    + right.name()
+                                    + "."
+                                    + rc.name()
+                                    + "' have incompatible types "
+                                    + match.type()
+                                    + " and "
+                                    + rc.type());
+                terms.add(
+                        new Binary(
+                                Op.EQ,
+                                new ColumnRef(matchTable.name(), match.name()),
+                                new ColumnRef(right.name(), rc.name())));
+                merged.add(Scope.key(right.name(), rc.name()));
             }
         }
         Expr result = null;
         for (Expr term : terms) result = result == null ? term : new Binary(Op.AND, result, term);
-        return result;
+        return new Result(result, merged);
     }
 }
