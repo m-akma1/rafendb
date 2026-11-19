@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -15,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.concurrency.ConcurrencyControl;
@@ -28,7 +30,6 @@ import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
@@ -55,6 +56,10 @@ import org.rafendb.processor.tuple.ResultRow;
  * sm.reserve | sm.cancel | sm.update lsn=N | sm.delete lsn=N | sm.insert lsn=N
  * sm.&lt;method&gt; (fails)  -- an injected failure
  * </pre>
+ *
+ * <p>Successful {@code encodeRow} and {@code decodeRow} calls are not events: the fake SM turns a
+ * row into an opaque image and remembers which row it came from, so a test can decode a logged
+ * image back to the exact row UpdateOp handed to SM. Only an injected encode failure shows up.
  */
 class UpdateOpBehaviorTest {
     private static final String TABLE = "t";
@@ -92,7 +97,7 @@ class UpdateOpBehaviorTest {
         ctx = new ExecutionContext(session, cc, sm, null);
     }
 
-    // ================================================================ in place
+    //in place
 
     @Test
     void shorterValueIsUpdatedInPlace() {
@@ -135,7 +140,7 @@ class UpdateOpBehaviorTest {
         assertTrue(first("ccm.log") > last("ccm.access"));
     }
 
-    // =========================================================== relocation
+    //relocation
 
     @Test
     void growingValueIsRelocatedAsDeleteThenInsert() {
@@ -205,7 +210,7 @@ class UpdateOpBehaviorTest {
         assertEquals(row(2, "alexander", 2f).values(), storage.rows.get(R2).values());
     }
 
-    // ================================ failures we can foresee: nothing is logged
+    //failures we can foresee: nothing is logged
 
     @Test
     void nullInNotNullColumnIsRejectedBeforeAnyLog() {
@@ -287,7 +292,72 @@ class UpdateOpBehaviorTest {
         assertEquals(TX, session.getCurrentTxId());
     }
 
-    // ============================== failures after a record is logged: abort
+    //SM.encodeRow fails
+    //
+    // UpdateOp encodes every log image while collecting, before anything is logged. It calls
+    // encodeRow twice per target row (before image, then after image), so failOn("encodeRow", n)
+    // counts 2 calls per row.
+
+    @Test
+    void encodeFailureOnAnInPlaceRowIsReportedBeforeAnyLog() {
+        Row old = row(1, "alice", 1f);
+        storage.rows.put(R1, old);
+        storage.failOn("encodeRow", 1, new StorageRuntimeException("cannot encode row for t"));
+        TrackedOperator child = child(old, R1);
+
+        assertThrows(StorageRuntimeException.class, () -> setName(text("bob"), child).execute());
+
+        assertEquals(List.of("ccm.access WRITE", "sm.encodeRow (fails)"), events);
+        assertEquals(0, count("sm.reserve"));
+        assertEquals(0, count("ccm.abort"));
+        assertEquals(TX, session.getCurrentTxId(), "transaction must stay usable");
+        assertEquals(old.values(), storage.rows.get(R1).values());
+        assertChildClosed(child);
+    }
+
+    @Test
+    void encodeFailureOnARelocatedRowReleasesItsReservationBeforeAnyLog() {
+        Row old = row(1, "al", 1f);
+        storage.rows.put(R1, old);
+        // 1st call encodes the DELETE's before image, 2nd the INSERT's after image
+        storage.failOn("encodeRow", 2, new StorageRuntimeException("cannot encode row for t"));
+        TrackedOperator child = child(old, R1);
+
+        assertThrows(
+                StorageRuntimeException.class, () -> setName(text("alexander"), child).execute());
+
+        assertEquals(
+                List.of("ccm.access WRITE", "sm.reserve", "sm.encodeRow (fails)", "sm.cancel"),
+                events);
+        assertEquals(List.of(storage.reserved.get(0)), storage.cancelled);
+        assertEquals(0, count("ccm.log"));
+        assertEquals(0, count("ccm.abort"));
+        assertEquals(TX, session.getCurrentTxId(), "transaction must stay usable");
+        assertEquals(old.values(), storage.rows.get(R1).values());
+        assertChildClosed(child);
+    }
+
+    @Test
+    void encodeFailureOnALaterRowReleasesEveryReservation() {
+        storage.rows.put(R1, row(1, "a", 1f));
+        storage.rows.put(R2, row(2, "b", 2f));
+        // calls 1-2 belong to the first row; call 3 is the second row's before image
+        storage.failOn("encodeRow", 3, new StorageRuntimeException("cannot encode row for t"));
+        TrackedOperator child = child(row(1, "a", 1f), R1, row(2, "b", 2f), R2);
+
+        assertThrows(
+                StorageRuntimeException.class, () -> setName(text("alexander"), child).execute());
+
+        assertEquals(2, storage.reserved.size(), "both rows reserved a slot");
+        assertEquals(2, storage.cancelled.size());
+        assertEquals(Set.copyOf(storage.reserved), Set.copyOf(storage.cancelled));
+        assertEquals(0, count("ccm.log"));
+        assertEquals(0, count("ccm.abort"));
+        assertEquals(TX, session.getCurrentTxId(), "transaction must stay usable");
+        assertChildClosed(child);
+    }
+
+    //failures after a record is logged: abort
 
     @Test
     void updateFailingAfterLogAbortsTheTransaction() {
@@ -366,7 +436,7 @@ class UpdateOpBehaviorTest {
         assertEquals(null, session.getCurrentTxId());
     }
 
-    // ============================================================ CCM / session
+    //CCM / session
 
     @Test
     void abortedByCcmClearsTheSessionAndTouchesNothing() {
@@ -391,7 +461,7 @@ class UpdateOpBehaviorTest {
         assertEquals(List.of(), events);
     }
 
-    // ===================================================================== helpers
+    //helpers
 
     private void assertNothingChanged() {
         assertEquals(List.of("ccm.access WRITE"), events, "only the access request may happen");
@@ -431,8 +501,13 @@ class UpdateOpBehaviorTest {
                         Value.ofFloat(score)));
     }
 
-    private static Row decode(Optional<byte[]> image) {
-        return RowImageCodec.DEFAULT.decode(image.orElseThrow());
+    /** Reads a logged image back through the same SM the operator used. */
+    private Row decode(Optional<byte[]> image) {
+        try {
+            return ctx.getStorageManager().decodeRow(TABLE, image.orElseThrow());
+        } catch (StorageInternalException e) {
+            throw new AssertionError("logged image cannot be decoded", e);
+        }
     }
 
     private static Expr text(String s) {
@@ -473,7 +548,7 @@ class UpdateOpBehaviorTest {
         return "UPDATE";
     }
 
-    // ================================================================= test doubles
+    //test doubles
 
     /** Counts open and close so tests can prove the child is always closed. */
     private static final class TrackedOperator implements Operator {
@@ -562,7 +637,10 @@ class UpdateOpBehaviorTest {
         }
     }
 
-    /** In-memory storage; any method can be made to fail on its n-th call. */
+    /**
+     * In-memory storage; any method can be made to fail on its n-th call. encodeRow hands out an
+     * opaque image and remembers its row; decodeRow gives that row back.
+     */
     private static final class Storage extends Fake {
         private record Failure(int nth, Throwable error) {}
 
@@ -570,6 +648,7 @@ class UpdateOpBehaviorTest {
         final Map<Rid, Row> rows = new LinkedHashMap<>();
         final List<Rid> reserved = new ArrayList<>();
         final List<Rid> cancelled = new ArrayList<>();
+        final Map<String, Row> images = new HashMap<>();
         final Map<String, Integer> calls = new HashMap<>();
         final Map<String, Failure> failures = new HashMap<>();
         boolean deleteFindsNothing;
@@ -579,7 +658,10 @@ class UpdateOpBehaviorTest {
             this.events = events;
         }
 
-        /** @param method SM method name, e.g. "reserveRid", "update", "delete", "insert" */
+        /**
+         * @param method SM method name, e.g. "reserveRid", "update", "delete", "insert",
+         *     "encodeRow"
+         */
         void failOn(String method, int nth, Throwable error) {
             failures.put(method, new Failure(nth, error));
         }
@@ -595,6 +677,21 @@ class UpdateOpBehaviorTest {
             switch (name) {
                 case "getSchema":
                     return SCHEMA;
+                case "encodeRow":
+                    {
+                        String key = "image-" + images.size();
+                        images.put(key, (Row) a[1]);
+                        return key.getBytes(StandardCharsets.UTF_8);
+                    }
+                case "decodeRow":
+                    {
+                        String key = new String((byte[]) a[1], StandardCharsets.UTF_8);
+                        Row decoded = images.get(key);
+                        if (decoded == null) {
+                            throw new StorageInternalException("invalid row image for " + a[0]);
+                        }
+                        return decoded;
+                    }
                 case "reserveRid":
                     Rid fresh = new Rid(7, nextSlot++);
                     reserved.add(fresh);

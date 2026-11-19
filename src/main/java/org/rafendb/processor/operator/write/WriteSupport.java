@@ -7,7 +7,6 @@ import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
@@ -29,11 +28,9 @@ import org.rafendb.processor.txn.TableLocks;
  */
 final class WriteSupport {
     private final ExecutionContext ctx;
-    private final RowImageCodec codec;
 
-    WriteSupport(ExecutionContext ctx, RowImageCodec codec) {
+    WriteSupport(ExecutionContext ctx) {
         this.ctx = Objects.requireNonNull(ctx, "ctx");
-        this.codec = Objects.requireNonNull(codec, "codec");
     }
 
     /** The session's active transaction; DML never creates one (see AutoCommit). */
@@ -66,7 +63,7 @@ final class WriteSupport {
                 tx,
                 new ChangeRecord(
                         ResourceId.ofRow(table, rid),
-                        Optional.of(codec.encode(after)),
+                        Optional.of(ctx.getStorageManager().encodeRow(table, after)),
                         Optional.empty()));
     }
 
@@ -93,19 +90,23 @@ final class WriteSupport {
 
     ChangeRecord insertChange(String table, Rid rid, Row row) {
         return new ChangeRecord(
-                ResourceId.ofRow(table, rid), Optional.empty(), Optional.of(codec.encode(row)));
+                ResourceId.ofRow(table, rid),
+                Optional.empty(),
+                Optional.of(ctx.getStorageManager().encodeRow(table, row)));
     }
 
     ChangeRecord updateChange(String table, Rid rid, Row before, Row after) {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
-                Optional.of(codec.encode(before)),
-                Optional.of(codec.encode(after)));
+                Optional.of(ctx.getStorageManager().encodeRow(table, before)),
+                Optional.of(ctx.getStorageManager().encodeRow(table, after)));
     }
 
     ChangeRecord deleteChange(String table, Rid rid, Row before) {
         return new ChangeRecord(
-                ResourceId.ofRow(table, rid), Optional.of(codec.encode(before)), Optional.empty());
+                ResourceId.ofRow(table, rid),
+                Optional.of(ctx.getStorageManager().encodeRow(table, before)),
+                Optional.empty());
     }
 
     public long logInsert(TxId tx, String table, Rid rid, Row row) {
