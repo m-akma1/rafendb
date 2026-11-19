@@ -10,14 +10,14 @@ import org.junit.jupiter.api.Test;
 class RecoveryDriverTest {
 
     @Test
-    void testFRManagerDriverRunAllTests() {
+    void testFRManagerDriverRunAllTests() throws Exception {
         FRManagerDriver driver = new FRManagerDriver();
         boolean success = driver.runAllTests();
         assertTrue(success, "All integration tests in FRManagerDriver should pass");
     }
 
     @Test
-    void testRecoveryDriverCliArguments() {
+    void testRecoveryDriverCliArguments() throws Exception {
         assertDoesNotThrow(() -> RecoveryDriver.main(new String[] {"--help"}));
         assertDoesNotThrow(() -> RecoveryDriver.main(new String[] {"--test"}));
         assertDoesNotThrow(() -> RecoveryDriver.main(new String[] {"--crash"}));
@@ -26,7 +26,7 @@ class RecoveryDriverTest {
     }
 
     @Test
-    void testRecoveryDriverNonInteractiveDefault() {
+    void testRecoveryDriverNonInteractiveDefault() throws Exception {
         assertDoesNotThrow(() -> RecoveryDriver.main(new String[] {}));
     }
 }

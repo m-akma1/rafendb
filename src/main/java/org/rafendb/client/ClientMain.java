@@ -4,6 +4,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.Arrays;
 import java.util.Scanner;
 import org.rafendb.engine.Version;
 import org.rafendb.net.Protocol;
@@ -21,6 +22,10 @@ public final class ClientMain {
     }
 
     public static void main(String[] args) {
+        if (Arrays.asList(args).contains("--version")) {
+            System.out.println(Version.version());
+            return;
+        }
         try {
             System.out.println(Version.banner("Client"));
 
