@@ -85,6 +85,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         }
 
         long validOffset = 0;
+        long fileLength = file.length();
         boolean tornTailDetected = false;
         try (DataInputStream in =
                 new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
@@ -95,7 +96,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                 try {
                     length = in.readInt();
                 } catch (EOFException e) {
-                    if (validOffset < file.length()) {
+                    if (validOffset < fileLength) {
                         tornTailDetected = true;
                     }
                     break;
@@ -121,6 +122,15 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                         lastCommit = record.getLSN();
                     }
                 } catch (IllegalArgumentException e) {
+                    long recordEndOffset = validOffset + Integer.BYTES + (long) length;
+                    if (recordEndOffset < fileLength) {
+                        throw new LoggerErrorException(
+                                "Corrupt WAL record detected in middle of log at offset "
+                                        + validOffset
+                                        + " in: "
+                                        + logFilePath,
+                                e);
+                    }
                     // Record terdistorsi/checksum mismatch di batas akhir log
                     tornTailDetected = true;
                     break;

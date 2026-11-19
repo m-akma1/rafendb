@@ -6,11 +6,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
@@ -43,6 +45,7 @@ public class FRManager implements RecoveryManager {
     private final RollbackManager rollbackManager;
     private final CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
+    private final StorageManager storageManager;
     private final boolean encodeBinaryImages;
     private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
 
@@ -68,6 +71,7 @@ public class FRManager implements RecoveryManager {
         this.crashRecoveryManager =
                 Objects.requireNonNull(
                         crashRecoveryManager, "crashRecoveryManager must not be null");
+        this.storageManager = null;
         this.encodeBinaryImages = false;
     }
 
@@ -78,15 +82,20 @@ public class FRManager implements RecoveryManager {
      * @param storage adapter penyimpanan data SM untuk operasi undo/redo, tidak boleh null
      */
     public FRManager(Logger logger, UndoStorage storage) {
-        this(logger, storage, false);
+        this(logger, storage, null, false);
     }
 
-    private FRManager(Logger logger, UndoStorage storage, boolean encodeBinaryImages) {
+    private FRManager(
+            Logger logger,
+            UndoStorage storage,
+            StorageManager storageManager,
+            boolean encodeBinaryImages) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
         this.rollbackManager = new RollbackManager(logger, storage);
         this.checkpointManager = new CheckpointManager(logger);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
+        this.storageManager = storageManager;
         this.encodeBinaryImages = encodeBinaryImages;
     }
 
@@ -97,7 +106,7 @@ public class FRManager implements RecoveryManager {
      * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
      */
     public FRManager(Logger logger, StorageManager storageManager) {
-        this(logger, storageAdapter(storageManager), true);
+        this(logger, storageAdapter(storageManager), storageManager, true);
     }
 
     /**
@@ -118,10 +127,32 @@ public class FRManager implements RecoveryManager {
         this.rollbackManager = new RollbackManager(logger, adapter);
         this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, adapter);
+        this.storageManager = storageManager;
         this.encodeBinaryImages = true;
     }
 
     private static final String BASE64_IMAGE_PREFIX = "B64:";
+
+    static long encodeTableGeneration(UUID generation) {
+        if (generation == null) {
+            return 0L;
+        }
+        long encoded = generation.getMostSignificantBits() ^ generation.getLeastSignificantBits();
+        return encoded != 0L ? encoded : 1L;
+    }
+
+    private static long resolveTableGeneration(StorageManager storageManager, String tableName) {
+        if (storageManager == null
+                || tableName == null
+                || !storageManager.listTables().contains(tableName)) {
+            return 0L;
+        }
+        try {
+            return encodeTableGeneration(storageManager.getTableGeneration(tableName));
+        } catch (StorageRuntimeException ignored) {
+            return 0L;
+        }
+    }
 
     /**
      * Membuat adapter {@link UndoStorage} yang men-decode image biner memakai {@link
@@ -156,6 +187,17 @@ public class FRManager implements RecoveryManager {
         @Override
         public void applyUndo(
                 String tableName, long tableGeneration, Rid rid, String image, long lsn) {
+            if (tableName == null || !storageManager.listTables().contains(tableName)) {
+                return;
+            }
+            try {
+                UUID currentGen = storageManager.getTableGeneration(tableName);
+                if (tableGeneration != 0L && tableGeneration != encodeTableGeneration(currentGen)) {
+                    return;
+                }
+            } catch (StorageRuntimeException ignored) {
+                return;
+            }
             try {
                 Optional<Row> rowOpt;
                 if (image == null) {
@@ -206,8 +248,16 @@ public class FRManager implements RecoveryManager {
                 String beforeStr = encodeImageBytes(change.beforeImage(), encodeBinaryImages);
                 String afterStr = encodeImageBytes(change.afterImage(), encodeBinaryImages);
                 if (rid != null) {
+                    long tableGeneration = resolveTableGeneration(storageManager, table);
                     return logger.logDataChange(
-                            txId, logType, payload.timestamp(), table, rid, beforeStr, afterStr);
+                            txId,
+                            logType,
+                            payload.timestamp(),
+                            table,
+                            tableGeneration,
+                            rid,
+                            beforeStr,
+                            afterStr);
                 }
                 return logger.logDataChange(
                         txId, logType, payload.timestamp(), table, -1, beforeStr, afterStr);
@@ -381,6 +431,35 @@ public class FRManager implements RecoveryManager {
      */
     public boolean recoverToPointInTime() {
         return recoverToPointInTime(System.currentTimeMillis());
+    }
+
+    /**
+     * Memulihkan basis data ke keadaan tepat setelah record COMMIT transaksi tertentu.
+     *
+     * @param idTransaction id transaksi yang sudah commit
+     * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
+     */
+    public boolean recoverToTransaction(int idTransaction) {
+        try {
+            rollbackManager.recoverToTransaction(idTransaction);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Memulihkan basis data ke keadaan tepat setelah record COMMIT transaksi tertentu.
+     *
+     * @param tx id transaksi yang sudah commit, tidak boleh null
+     * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
+     * @throws NullPointerException jika {@code tx} null
+     */
+    public boolean recoverToTransaction(TxId tx) {
+        if (tx == null) {
+            throw new NullPointerException("tx must not be null");
+        }
+        return recoverToTransaction((int) tx.value());
     }
 
     /**
