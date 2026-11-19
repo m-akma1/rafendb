@@ -12,7 +12,6 @@ import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
@@ -77,24 +76,13 @@ public final class UpdateOp implements DMLOperator {
             Operator child,
             ExpressionEvaluator evaluator,
             ExecutionContext ctx) {
-        this(table, column, valueExpr, child, evaluator, ctx, RowImageCodec.DEFAULT);
-    }
-
-    public UpdateOp(
-            String table,
-            Expr.ColumnRef column,
-            Expr valueExpr,
-            Operator child,
-            ExpressionEvaluator evaluator,
-            ExecutionContext ctx,
-            RowImageCodec codec) {
         this.table = Objects.requireNonNull(table, "table");
         this.column = Objects.requireNonNull(column, "column");
         this.valueExpr = Objects.requireNonNull(valueExpr, "valueExpr");
         this.child = Objects.requireNonNull(child, "child");
         this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
         this.ctx = Objects.requireNonNull(ctx, "ctx");
-        this.support = new WriteSupport(ctx, codec);
+        this.support = new WriteSupport(ctx);
     }
 
     /** @return the number of rows that matched and were updated */
@@ -267,9 +255,6 @@ public final class UpdateOp implements DMLOperator {
     /**
      * Whether the serialized record gets bigger, in which case it may not fit at the same Rid.
      * A record that does not grow always fits: SlottedPage writes it into the slot's capacity.
-     *
-     * <p>TODO(team): replace by an exact SM pre-check (e.g. {@code canUpdateInPlace}) once SM1
-     * offers one. This estimate relocates every growing row, even if its page had room.
      */
     static boolean growsRecord(Value before, Value after, Column column) {
         return storedSize(after, column) > storedSize(before, column);
@@ -309,7 +294,7 @@ public final class UpdateOp implements DMLOperator {
             return Value.ofFloat(v.asInt());
         }
         if (target == DataType.INTEGER && v.type() == DataType.FLOAT) {
-            return Value.ofInt(Math.round(v.asFloat())); // TODO(team): round or reject?
+            return Value.ofInt(Math.round(v.asFloat()));
         }
         if (target.isText() && v.type().isText()) return Value.ofText(target, v.asText());
         return v;

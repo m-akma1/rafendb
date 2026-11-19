@@ -15,6 +15,18 @@ public interface CostModel {
     /** Estimates only the work performed by {@code node}, excluding its children. */
     Cost estimateLocalCost(PlanNode node) throws CostEstimationException;
 
+    /**
+     * The plan's total estimated cost as one number in milliseconds ({@code get_cost} of QO-08),
+     * suitable for {@code QueryPlan.totalCost}, plan comparison and EXPLAIN.
+     *
+     * @param root the root of the plan to cost
+     * @return seeks and transfers of the whole subtree, weighted by {@link Cost#timeMs()}
+     * @throws CostEstimationException if the plan cannot be costed
+     */
+    default double getCost(PlanNode root) throws CostEstimationException {
+        return estimateTotalCost(root).timeMs();
+    }
+
     /** Sums local cost over the node's subtree, counting each node identity once. */
     default Cost estimateTotalCost(PlanNode node) throws CostEstimationException {
         Objects.requireNonNull(node, "plan node");

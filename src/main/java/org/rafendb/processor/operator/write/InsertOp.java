@@ -6,7 +6,6 @@ import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.api.ExecutionContext;
@@ -29,14 +28,10 @@ public final class InsertOp implements DMLOperator {
 
     /** {@code values} are already typed constants in table column order (InsertPlanNode). */
     public InsertOp(String table, List<Value> values, ExecutionContext ctx) {
-        this(table, values, ctx, RowImageCodec.DEFAULT);
-    }
-
-    public InsertOp(String table, List<Value> values, ExecutionContext ctx, RowImageCodec codec) {
         this.table = Objects.requireNonNull(table, "table");
         this.row = new Row(Objects.requireNonNull(values, "values"));
         this.ctx = Objects.requireNonNull(ctx, "ctx");
-        this.support = new WriteSupport(ctx, codec);
+        this.support = new WriteSupport(ctx);
     }
 
     /** @return 1, the number of inserted rows */

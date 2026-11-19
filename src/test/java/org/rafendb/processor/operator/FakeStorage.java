@@ -3,6 +3,7 @@ package org.rafendb.processor.operator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.ToLongFunction;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
@@ -15,6 +16,7 @@ import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.type.Value;
 
 /**
@@ -213,6 +215,26 @@ public final class FakeStorage implements StorageManager {
 
     @Override
     public void loadSampleDatabase() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public UUID getTableGeneration(String table) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public byte[] encodeRow(String table, Row row) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Row decodeRow(String table, byte[] image) throws StorageInternalException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void loadSampleDatabase(ToLongFunction<ChangeRecord> logInsert) {
         throw new UnsupportedOperationException();
     }
 

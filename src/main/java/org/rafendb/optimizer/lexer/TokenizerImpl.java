@@ -183,7 +183,12 @@ public class TokenizerImpl implements Tokenizer {
             } else {
                 sb.append(c);
                 offset++;
-                column++;
+                if (c == '\n') {
+                    line++;
+                    column = 1;
+                } else {
+                    column++;
+                }
             }
         }
         throw error(

@@ -116,8 +116,7 @@ public final class CheckpointManager {
                 }
 
                 logger.logTransactionEvent(CHECKPOINT_TRANSACTION, LogType.CHECKPOINT_BEGIN);
-                long beginLsn = logger.getCurrentLSN();
-                logger.forceThrough(beginLsn);
+                logger.forceThrough(logger.getCurrentLSN());
 
                 if (storageManager != null) {
                     storageManager.flush();
@@ -178,6 +177,11 @@ public final class CheckpointManager {
                     temporary,
                     Long.toString(lsn) + System.lineSeparator(),
                     StandardCharsets.US_ASCII);
+            try (var channel =
+                    java.nio.channels.FileChannel.open(
+                            temporary, java.nio.file.StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
                 Files.move(
                         temporary,
@@ -186,6 +190,16 @@ public final class CheckpointManager {
                         StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
                 Files.move(temporary, checkpointPointer, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (parent != null) {
+                try (var channel =
+                        java.nio.channels.FileChannel.open(
+                                parent, java.nio.file.StandardOpenOption.READ)) {
+                    channel.force(true);
+                } catch (UnsupportedOperationException
+                        | java.nio.file.FileSystemException ignored) {
+                    // Some filesystems do not support directory fsync.
+                }
             }
         } finally {
             Files.deleteIfExists(temporary);

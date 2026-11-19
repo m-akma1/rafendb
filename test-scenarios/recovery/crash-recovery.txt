@@ -1,0 +1,25 @@
+# FR-08 Scenario 1: Multi-Transaction Crash Recovery (Redo & Undo + Checkpoint)
+#
+# Kondisi Awal:
+#   Tabel `accounts(id INT, owner VARCHAR)` kosong.
+#
+# Urutan Eksekusi (Interleaved):
+#   1. T101 BEGIN
+#   2. T101 INSERT (1, "Alice") -> ditulis ke WAL & StorageManager
+#   3. T101 COMMIT -> WAL di-flush permanen
+#   4. CHECKPOINT -> checkpoint selesai tercatat di WAL & StorageManager di-flush
+#   5. T102 BEGIN
+#   6. T102 INSERT (2, "Bob") -> ditulis ke WAL & StorageManager
+#   7. T102 ABORT (Rollback) -> undo menghapus (2, "Bob") + menulis CLR & ABORT
+#   8. T103 BEGIN
+#   9. T103 UPDATE (1, "Alice") -> (1, "Alice-V2") -> ditulis ke WAL & COMMIT tanpa flush SM
+#  10. T104 BEGIN
+#  11. T104 INSERT (3, "Charlie") -> ditulis ke WAL & StorageManager tanpa COMMIT (simulasi crash)
+#
+# Hasil yang Diharapkan Setelah Restart & recoverFromCrash():
+#   - Record (1) == (1, "Alice-V2")  [REDO berhasil]
+#   - Record (2) == tidak ada        [ABORT tetap batal]
+#   - Record (3) == tidak ada        [UNDO berhasil]
+#
+# Cara Verifikasi Otomatis:
+#   Jalankan FRManagerDriver.runAllTests() -> [TEST] Real Storage Multi-Tx Recovery: PASSED

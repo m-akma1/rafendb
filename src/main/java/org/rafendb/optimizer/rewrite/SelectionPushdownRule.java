@@ -1,142 +1,156 @@
 package org.rafendb.optimizer.rewrite;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.JoinPlanNode;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.ProjectionPlanNode;
 import org.rafendb.common.plan.SelectionPlanNode;
 import org.rafendb.common.plan.SortPlanNode;
+import org.rafendb.optimizer.catalog.Catalog;
 
-public class SelectionPushdownRule implements RewriteRule {
+public final class SelectionPushdownRule implements RewriteRule {
+    public static final Comparator<Expr> KEEP_ORDER = (a, b) -> 0;
+    public static final Comparator<Expr> SELECTIVE_FIRST =
+            Comparator.comparingInt(SelectionPushdownRule::selectivityRank);
+
+    private final PlanLayout layout;
+    private final Comparator<Expr> order;
+
+    public SelectionPushdownRule(Catalog catalog) {
+        this(catalog, SELECTIVE_FIRST);
+    }
+
+    public SelectionPushdownRule(Catalog catalog, Comparator<Expr> order) {
+        this.layout = new PlanLayout(catalog);
+        this.order = Objects.requireNonNull(order, "order");
+    }
 
     @Override
     public PlanNode apply(PlanNode root) {
-        if (root == null) return null;
-        return pushdown(root);
+        if (root == null || !PlanLayout.supports(root)) return root;
+        return layout.rebind(rewrite(root));
     }
 
-    private PlanNode pushdown(PlanNode node) {
-        if (node.children().isEmpty()) {
-            return node;
+    private PlanNode rewrite(PlanNode node) {
+        if (node instanceof SelectionPlanNode) {
+            List<Expr> conditions = new ArrayList<>();
+            PlanNode base = node;
+            while (base instanceof SelectionPlanNode sel) {
+                List<Expr> parts = PlanLayout.conjuncts(sel.condition());
+                for (int i = parts.size() - 1; i >= 0; i--) conditions.add(parts.get(i));
+                base = sel.child();
+            }
+            Collections.reverse(conditions);
+            return place(conditions, rewrite(base));
         }
-
-        List<PlanNode> rewrittenChildren = new ArrayList<>();
-        for (PlanNode child : node.children()) {
-            rewrittenChildren.add(pushdown(child));
+        if (node instanceof ProjectionPlanNode proj) {
+            return new ProjectionPlanNode(proj.columns(), rewrite(proj.child()));
         }
-
-        PlanNode reconstructedNode = reconstructNode(node, rewrittenChildren);
-
-        if (reconstructedNode instanceof SelectionPlanNode selectionNode) {
-            return attemptPushdown(selectionNode);
+        if (node instanceof SortPlanNode sort) {
+            return new SortPlanNode(rewrite(sort.child()), sort.column(), sort.direction());
         }
-
-        return reconstructedNode;
+        if (node instanceof JoinPlanNode join) {
+            return new JoinPlanNode(
+                    join.algorithm(),
+                    join.condition(),
+                    rewrite(join.left()),
+                    rewrite(join.right()));
+        }
+        if (node instanceof CartesianPlanNode cart) {
+            return new CartesianPlanNode(
+                    cart.algorithm(), rewrite(cart.left()), rewrite(cart.right()));
+        }
+        return node;
     }
 
-    private PlanNode reconstructNode(PlanNode original, List<PlanNode> newChildren) {
-        return switch (original) {
-            case SelectionPlanNode sel ->
-                    new SelectionPlanNode(sel.condition(), newChildren.get(0));
-            case ProjectionPlanNode proj ->
-                    new ProjectionPlanNode(proj.columns(), newChildren.get(0));
-            case JoinPlanNode join ->
-                    new JoinPlanNode(
-                            join.algorithm(),
-                            join.condition(),
-                            newChildren.get(0),
-                            newChildren.get(1));
-            case CartesianPlanNode cart ->
-                    new CartesianPlanNode(cart.algorithm(), newChildren.get(0), newChildren.get(1));
-            case SortPlanNode sort ->
-                    new SortPlanNode(newChildren.get(0), sort.column(), sort.direction());
-            default -> original;
-        };
+    private PlanNode place(List<Expr> conditions, PlanNode node) {
+        if (conditions.isEmpty()) return node;
+
+        if (node instanceof ProjectionPlanNode proj && allResolve(conditions, proj.child())) {
+            return new ProjectionPlanNode(proj.columns(), place(conditions, proj.child()));
+        }
+        if (node instanceof SortPlanNode sort) {
+            return new SortPlanNode(
+                    place(conditions, sort.child()), sort.column(), sort.direction());
+        }
+        if (node instanceof JoinPlanNode join && join.condition() != null) {
+            return placeBelowBinary(
+                    conditions,
+                    join.left(),
+                    join.right(),
+                    (l, r) -> new JoinPlanNode(join.algorithm(), join.condition(), l, r));
+        }
+        if (node instanceof CartesianPlanNode cart) {
+            return placeBelowBinary(
+                    conditions,
+                    cart.left(),
+                    cart.right(),
+                    (l, r) -> new CartesianPlanNode(cart.algorithm(), l, r));
+        }
+        return wrap(conditions, node);
     }
 
-    private PlanNode attemptPushdown(SelectionPlanNode sel) {
-        PlanNode child = sel.child();
+    private interface BinaryFactory {
+        PlanNode create(PlanNode left, PlanNode right);
+    }
 
-        if (child instanceof ProjectionPlanNode proj) {
-            SelectionPlanNode newSel = new SelectionPlanNode(sel.condition(), proj.child());
-            return new ProjectionPlanNode(proj.columns(), attemptPushdown(newSel));
+    private PlanNode placeBelowBinary(
+            List<Expr> conditions, PlanNode left, PlanNode right, BinaryFactory factory) {
+        List<PlanLayout.Col> leftCols = layout.of(left);
+        List<PlanLayout.Col> rightCols = layout.of(right);
+        List<Expr> toLeft = new ArrayList<>();
+        List<Expr> toRight = new ArrayList<>();
+        List<Expr> stay = new ArrayList<>();
+        for (Expr condition : conditions) {
+            List<Expr.ColumnRef> refs = PlanLayout.refs(condition);
+            boolean onlyLeft = !refs.isEmpty();
+            boolean onlyRight = !refs.isEmpty();
+            for (Expr.ColumnRef ref : refs) {
+                int inLeft = PlanLayout.find(leftCols, ref);
+                int inRight = PlanLayout.find(rightCols, ref);
+                if (inLeft < 0 || inRight != PlanLayout.NOT_FOUND) onlyLeft = false;
+                if (inRight < 0 || inLeft != PlanLayout.NOT_FOUND) onlyRight = false;
+            }
+            if (onlyLeft) toLeft.add(condition);
+            else if (onlyRight) toRight.add(condition);
+            else stay.add(condition);
         }
+        PlanNode joined = factory.create(place(toLeft, left), place(toRight, right));
+        return wrap(stay, joined);
+    }
 
-        if (child instanceof SortPlanNode sort) {
-            SelectionPlanNode newSel = new SelectionPlanNode(sel.condition(), sort.child());
-            return new SortPlanNode(attemptPushdown(newSel), sort.column(), sort.direction());
-        }
-
-        if (child instanceof JoinPlanNode join) {
-            java.util.Set<String> condTables = getReferencedTables(sel.condition());
-            java.util.Set<String> leftTables = getProvidedTables(join.left());
-            java.util.Set<String> rightTables = getProvidedTables(join.right());
-
-            if (!condTables.isEmpty() && leftTables.containsAll(condTables)) {
-                SelectionPlanNode newLeft = new SelectionPlanNode(sel.condition(), join.left());
-                return new JoinPlanNode(
-                        join.algorithm(), join.condition(), attemptPushdown(newLeft), join.right());
-            } else if (!condTables.isEmpty() && rightTables.containsAll(condTables)) {
-                SelectionPlanNode newRight = new SelectionPlanNode(sel.condition(), join.right());
-                return new JoinPlanNode(
-                        join.algorithm(), join.condition(), join.left(), attemptPushdown(newRight));
+    private boolean allResolve(List<Expr> conditions, PlanNode input) {
+        List<PlanLayout.Col> cols = layout.of(input);
+        for (Expr condition : conditions) {
+            for (Expr.ColumnRef ref : PlanLayout.refs(condition)) {
+                if (PlanLayout.find(cols, ref) < 0) return false;
             }
         }
+        return true;
+    }
 
-        if (child instanceof CartesianPlanNode cart) {
-            java.util.Set<String> condTables = getReferencedTables(sel.condition());
-            java.util.Set<String> leftTables = getProvidedTables(cart.left());
-            java.util.Set<String> rightTables = getProvidedTables(cart.right());
+    private PlanNode wrap(List<Expr> conditions, PlanNode node) {
+        List<Expr> sorted = new ArrayList<>(conditions);
+        sorted.sort(order);
+        PlanNode result = node;
+        for (Expr condition : sorted) result = new SelectionPlanNode(condition, result);
+        return result;
+    }
 
-            if (!condTables.isEmpty() && leftTables.containsAll(condTables)) {
-                SelectionPlanNode newLeft = new SelectionPlanNode(sel.condition(), cart.left());
-                return new CartesianPlanNode(
-                        cart.algorithm(), attemptPushdown(newLeft), cart.right());
-            } else if (!condTables.isEmpty() && rightTables.containsAll(condTables)) {
-                SelectionPlanNode newRight = new SelectionPlanNode(sel.condition(), cart.right());
-                return new CartesianPlanNode(
-                        cart.algorithm(), cart.left(), attemptPushdown(newRight));
-            }
+    private static int selectivityRank(Expr condition) {
+        if (condition instanceof Expr.Binary bin) {
+            return switch (bin.op()) {
+                case EQ -> 0;
+                case GT, GE, LT, LE -> 1;
+                default -> 2;
+            };
         }
-
-        return sel;
-    }
-
-    private java.util.Set<String> getReferencedTables(org.rafendb.common.expr.Expr expr) {
-        java.util.Set<String> tables = new java.util.HashSet<>();
-        extractTablesFromExpr(expr, tables);
-        return tables;
-    }
-
-    private void extractTablesFromExpr(
-            org.rafendb.common.expr.Expr expr, java.util.Set<String> tables) {
-        if (expr instanceof org.rafendb.common.expr.Expr.Binary bin) {
-            extractTablesFromExpr(bin.left(), tables);
-            extractTablesFromExpr(bin.right(), tables);
-        } else if (expr instanceof org.rafendb.common.expr.Expr.ColumnRef col) {
-            if (col.table() != null) {
-                tables.add(col.table());
-            }
-        }
-    }
-
-    private java.util.Set<String> getProvidedTables(PlanNode node) {
-        java.util.Set<String> tables = new java.util.HashSet<>();
-        extractTablesFromPlan(node, tables);
-        return tables;
-    }
-
-    private void extractTablesFromPlan(PlanNode node, java.util.Set<String> tables) {
-        if (node instanceof org.rafendb.common.plan.TableScanNode scan) {
-            tables.add(scan.alias() != null ? scan.alias() : scan.table());
-        } else if (node instanceof org.rafendb.common.plan.IndexScanNode idxScan) {
-            tables.add(idxScan.alias() != null ? idxScan.alias() : idxScan.table());
-        } else {
-            for (PlanNode child : node.children()) {
-                extractTablesFromPlan(child, tables);
-            }
-        }
+        return 2;
     }
 }
