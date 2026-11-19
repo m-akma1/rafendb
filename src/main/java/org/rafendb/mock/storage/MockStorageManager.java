@@ -1,5 +1,6 @@
 package org.rafendb.mock.storage;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -7,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.ToLongFunction;
 import java.util.stream.IntStream;
 import org.rafendb.api.storage.RecordCursor;
@@ -24,8 +26,10 @@ import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+import org.rafendb.storage.record.RecordSerializer;
 
 /**
  * Mock {@link StorageManager} that returns dummy data. It serves two
@@ -84,6 +88,7 @@ public final class MockStorageManager implements StorageManager {
                     new IndexInfo("mahasiswa_nim_idx", "mahasiswa", "nim", IndexType.B_PLUS_TREE),
                     new IndexInfo("prodi_kode_idx", "prodi", "kode", IndexType.HASH));
 
+    private final RecordSerializer serializer = new RecordSerializer();
     private volatile boolean closed;
 
     /** Creates a mock Storage Manager that returns dummy data. */
@@ -111,6 +116,40 @@ public final class MockStorageManager implements StorageManager {
     public TableSchema getSchema(String table) {
         ensureOpen();
         return tableNamed(table).schema();
+    }
+
+    /** {@inheritDoc} Returns a stable identity for the immutable dummy table. */
+    @Override
+    public UUID getTableGeneration(String table) {
+        ensureOpen();
+        return UUID.nameUUIDFromBytes(
+                tableNamed(table).schema().table().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** {@inheritDoc} Uses the real binary row format with a dummy schema. */
+    @Override
+    public byte[] encodeRow(String table, Row row) {
+        ensureOpen();
+        Objects.requireNonNull(row, "row");
+        TableSchema schema = tableNamed(table).schema();
+        try {
+            return serializer.serialize(row, schema);
+        } catch (IllegalArgumentException e) {
+            throw new StorageRuntimeException("cannot encode row for " + table, e);
+        }
+    }
+
+    /** {@inheritDoc} Uses the real binary row format with a dummy schema. */
+    @Override
+    public Row decodeRow(String table, byte[] image) throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(image, "image");
+        TableSchema schema = tableNamed(table).schema();
+        try {
+            return serializer.deserialize(ByteBuffer.wrap(image), schema);
+        } catch (IllegalArgumentException e) {
+            throw new StorageInternalException("invalid row image for " + table, e);
+        }
     }
 
     /**
@@ -451,6 +490,14 @@ public final class MockStorageManager implements StorageManager {
     @Override
     public void loadSampleDatabase() throws StorageInternalException {
         ensureOpen();
+    }
+
+    /** {@inheritDoc} Does nothing because the dummy tables are always present. */
+    @Override
+    public void loadSampleDatabase(ToLongFunction<ChangeRecord> logInsert)
+            throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(logInsert, "logInsert");
     }
 
     /**

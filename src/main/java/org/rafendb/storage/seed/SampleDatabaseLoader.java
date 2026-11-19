@@ -1,7 +1,9 @@
 package org.rafendb.storage.seed;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.ToLongFunction;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
@@ -14,6 +16,8 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 
@@ -28,24 +32,34 @@ public class SampleDatabaseLoader {
     private static final int ROWS_PER_TABLE = 60;
 
     /**
-     * Populates an empty database with three related tables and sample rows covering all four
-     * SQL types (INTEGER, FLOAT, VARCHAR, CHAR).
-     *
-     * <p>LSN NOTE: {@link StorageManager#insert} requires the LSN of an already-created log
-     * record. This implementation assumes bootstrap reserves the LSN range beginning at 1 for
-     * seed inserts, with no possibility of collision with normal WAL records. If the WAL does
-     * not provide that convention, the facade must supply an LSN allocator/logger instead.
+     * Retains the legacy entry point for populated databases. An empty database needs an INSERT
+     * logging callback and is rejected before any DDL or row writes.
      */
     public void load(StorageManager storage) throws StorageInternalException {
-        if (storage == null) {
-            throw new NullPointerException("storage");
-        }
+        Objects.requireNonNull(storage, "storage");
         if (!storage.listTables().isEmpty()) {
             return;
         }
+        throw new StorageInternalException("sample loading requires an INSERT logging callback");
+    }
 
-        // Bootstrap-only sequence; see the LSN contract in the method Javadoc above.
-        AtomicLong nextLsn = new AtomicLong(1L);
+    /**
+     * Populates an empty database through a caller-supplied INSERT logger. The caller provides
+     * exclusive access and owns the transaction. Each row is reserved, logged, then inserted
+     * using the returned positive LSN. Failures leave earlier rows/DDL for the caller to handle.
+     *
+     * @param storage the storage facade, non-null
+     * @param logInsert the logger for the same WAL as storage, non-null
+     * @throws StorageInternalException on a storage failure or an invalid callback LSN
+     * @throws RuntimeException if the logger fails
+     */
+    public void load(StorageManager storage, ToLongFunction<ChangeRecord> logInsert)
+            throws StorageInternalException {
+        Objects.requireNonNull(storage, "storage");
+        Objects.requireNonNull(logInsert, "logInsert");
+        if (!storage.listTables().isEmpty()) {
+            return;
+        }
 
         TableSchema customers = customersSchema();
         TableSchema orders = ordersSchema();
@@ -65,7 +79,7 @@ public class SampleDatabaseLoader {
                                     Value.ofFloat(50.0f + i * 1.5f), // FLOAT
                                     Value.ofText(
                                             DataType.CHAR, i % 2 == 0 ? "A" : "I"))); // CHAR(1)
-            insertRow(storage, "customers", row, nextLsn);
+            insertRow(storage, "customers", row, logInsert);
         }
 
         // Child table: each order references an existing customer.
@@ -78,7 +92,7 @@ public class SampleDatabaseLoader {
                                     Value.ofInt(customerId), // INTEGER FK
                                     Value.ofFloat(10.0f + i), // FLOAT
                                     Value.ofText(DataType.VARCHAR, "Order-" + i))); // VARCHAR
-            insertRow(storage, "orders", row, nextLsn);
+            insertRow(storage, "orders", row, logInsert);
         }
 
         // Grandchild table: each item references an existing order.
@@ -92,7 +106,7 @@ public class SampleDatabaseLoader {
                                     Value.ofText(DataType.VARCHAR, "SKU-" + (1000 + i)), // VARCHAR
                                     Value.ofText(DataType.CHAR, i % 3 == 0 ? "Y" : "N"), // CHAR(1)
                                     Value.ofFloat(2.5f + i * 0.1f))); // FLOAT
-            insertRow(storage, "order_items", row, nextLsn);
+            insertRow(storage, "order_items", row, logInsert);
         }
 
         // Indexes are not implied by primary-key declarations in this storage API.
@@ -175,22 +189,29 @@ public class SampleDatabaseLoader {
      * cancellation; the space may be reused but the Rid is not. So a failed seed leaves a
      * harmless hole in the new table's heap, never a collision.
      */
-    private static Rid insertRow(StorageManager storage, String table, Row row, AtomicLong nextLsn)
+    private static Rid insertRow(
+            StorageManager storage, String table, Row row, ToLongFunction<ChangeRecord> logInsert)
             throws StorageInternalException {
         Rid rid = storage.reserveRid(table, row);
-        boolean inserted = false;
         try {
-            storage.insert(table, rid, row, nextLsn.getAndIncrement());
-            inserted = true;
-            return rid;
-        } finally {
-            if (!inserted) {
-                try {
-                    storage.cancelReservation(table, rid);
-                } catch (StorageInternalException | RuntimeException ignored) {
-                    // Best-effort cleanup; the original insertion exception propagates.
-                }
+            ChangeRecord change =
+                    new ChangeRecord(
+                            ResourceId.ofRow(table, rid),
+                            Optional.empty(),
+                            Optional.of(storage.encodeRow(table, row)));
+            long lsn = logInsert.applyAsLong(change);
+            if (lsn <= 0) {
+                throw new StorageInternalException(
+                        "INSERT logger returned a nonpositive LSN: " + lsn);
             }
+            return storage.insert(table, rid, row, lsn);
+        } catch (StorageInternalException | RuntimeException e) {
+            try {
+                storage.cancelReservation(table, rid);
+            } catch (StorageInternalException | RuntimeException cleanup) {
+                e.addSuppressed(cleanup);
+            }
+            throw e;
         }
     }
 
