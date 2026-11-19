@@ -2,10 +2,12 @@ package org.rafendb.engine;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import org.rafendb.api.concurrency.ProtocolType;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.api.storage.WalSync;
 import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.mock.processor.MockQueryProcessor;
 import org.rafendb.storage.StorageManagerImpl;
 import org.rafendb.storage.buffer.BufferManager;
@@ -22,9 +24,11 @@ import org.rafendb.storage.seed.SampleDatabaseLoader;
  */
 public final class Engine {
     private final QueryProcessor processor;
+    private final ProtocolType protocol;
 
-    private Engine(QueryProcessor processor) {
+    private Engine(QueryProcessor processor, ProtocolType protocol) {
         this.processor = Objects.requireNonNull(processor, "processor");
+        this.protocol = Objects.requireNonNull(protocol, "protocol");
     }
 
     /**
@@ -33,7 +37,7 @@ public final class Engine {
      * @return the engine
      */
     public static Engine withMocks() {
-        return new Engine(new MockQueryProcessor());
+        return new Engine(new MockQueryProcessor(), new MockConcurrencyControl().activeProtocol());
     }
 
     /**
@@ -68,5 +72,14 @@ public final class Engine {
      */
     public QueryProcessor processor() {
         return processor;
+    }
+
+    /**
+     * Returns the concurrency protocol the Concurrency Control Manager runs, announced to clients.
+     *
+     * @return the protocol, never {@code null}
+     */
+    public ProtocolType concurrencyProtocol() {
+        return protocol;
     }
 }

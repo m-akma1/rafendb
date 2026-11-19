@@ -1,6 +1,6 @@
 /**
- * Composition root: configuration, construction, wiring, startup order. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Composition root for runtime configuration, construction, wiring, startup order.
  *
- * <p>Owner: Supergroup.
+ * <p>Owner: QP1.
  */
 package org.rafendb.engine;
