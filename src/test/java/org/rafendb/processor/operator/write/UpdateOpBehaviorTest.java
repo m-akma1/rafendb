@@ -97,7 +97,7 @@ class UpdateOpBehaviorTest {
         ctx = new ExecutionContext(session, cc, sm, null);
     }
 
-    //in place
+    // in place
 
     @Test
     void shorterValueIsUpdatedInPlace() {
@@ -140,7 +140,7 @@ class UpdateOpBehaviorTest {
         assertTrue(first("ccm.log") > last("ccm.access"));
     }
 
-    //relocation
+    // relocation
 
     @Test
     void growingValueIsRelocatedAsDeleteThenInsert() {
@@ -210,7 +210,7 @@ class UpdateOpBehaviorTest {
         assertEquals(row(2, "alexander", 2f).values(), storage.rows.get(R2).values());
     }
 
-    //failures we can foresee: nothing is logged
+    // failures we can foresee: nothing is logged
 
     @Test
     void nullInNotNullColumnIsRejectedBeforeAnyLog() {
@@ -292,7 +292,7 @@ class UpdateOpBehaviorTest {
         assertEquals(TX, session.getCurrentTxId());
     }
 
-    //SM.encodeRow fails
+    // SM.encodeRow fails
     //
     // UpdateOp encodes every log image while collecting, before anything is logged. It calls
     // encodeRow twice per target row (before image, then after image), so failOn("encodeRow", n)
@@ -357,7 +357,7 @@ class UpdateOpBehaviorTest {
         assertChildClosed(child);
     }
 
-    //failures after a record is logged: abort
+    // failures after a record is logged: abort
 
     @Test
     void updateFailingAfterLogAbortsTheTransaction() {
@@ -436,7 +436,7 @@ class UpdateOpBehaviorTest {
         assertEquals(null, session.getCurrentTxId());
     }
 
-    //CCM / session
+    // CCM / session
 
     @Test
     void abortedByCcmClearsTheSessionAndTouchesNothing() {
@@ -461,7 +461,7 @@ class UpdateOpBehaviorTest {
         assertEquals(List.of(), events);
     }
 
-    //helpers
+    // helpers
 
     private void assertNothingChanged() {
         assertEquals(List.of("ccm.access WRITE"), events, "only the access request may happen");
@@ -548,7 +548,7 @@ class UpdateOpBehaviorTest {
         return "UPDATE";
     }
 
-    //test doubles
+    // test doubles
 
     /** Counts open and close so tests can prove the child is always closed. */
     private static final class TrackedOperator implements Operator {
