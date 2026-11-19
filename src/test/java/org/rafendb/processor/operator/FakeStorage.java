@@ -1,9 +1,7 @@
 package org.rafendb.processor.operator;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.function.ToLongFunction;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
@@ -31,6 +29,8 @@ public final class FakeStorage implements StorageManager {
     private boolean failNextRead;
     private List<String> events;
     private boolean failNextDelete;
+    private final Map<String, Row> encodedRows = new HashMap<>();
+    private int nextImageId;
 
     /** Bikin storage palsu dengan satu tabel. */
     public FakeStorage(TableSchema schema, List<StoredRow> rows) {
@@ -225,12 +225,26 @@ public final class FakeStorage implements StorageManager {
 
     @Override
     public byte[] encodeRow(String table, Row row) {
-        throw new UnsupportedOperationException();
+        getSchema(table);
+
+        String imageId = "fake-image-" + nextImageId++;
+        encodedRows.put(imageId, row);
+
+        return imageId.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
     public Row decodeRow(String table, byte[] image) throws StorageInternalException {
-        throw new UnsupportedOperationException();
+        getSchema(table);
+
+        String imageId = new String(image, StandardCharsets.UTF_8);
+        Row row = encodedRows.get(imageId);
+
+        if (row == null) {
+            throw new StorageInternalException("Unknown row image: " + imageId);
+        }
+
+        return row;
     }
 
     @Override

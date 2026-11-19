@@ -11,7 +11,6 @@ import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.ChangeRecord;
@@ -116,7 +115,7 @@ class DeleteOpTest {
     }
 
     @Test
-    void logsFullBeforeImage() {
+    void logsFullBeforeImage() throws StorageInternalException {
         DeleteOp delete = new DeleteOp(context, scanDosen(), "dosen");
         delete.execute();
         List<StoredRow> deletedRows = List.of(BUDI, ANI, CICI);
@@ -124,7 +123,7 @@ class DeleteOpTest {
         assertEquals(3, logged.size());
         for (int i = 0; i < deletedRows.size(); i++) {
             ChangeRecord change = logged.get(i);
-            Row before = RowImageCodec.DEFAULT.decode(change.beforeImage().get());
+            Row before = context.getStorageManager().decodeRow("dosen", change.beforeImage().get());
             assertEquals(deletedRows.get(i).rid(), change.resource().rid());
             assertEquals(deletedRows.get(i).row(), before);
             assertTrue(change.afterImage().isEmpty());

@@ -7,7 +7,6 @@ import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.processor.api.ExecutionContext;
@@ -42,7 +41,7 @@ public final class DeleteOp implements DMLOperator {
         this.child = Objects.requireNonNull(child, "child");
         this.table = Objects.requireNonNull(table, "table");
         this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
-        this.support = new WriteSupport(context, RowImageCodec.DEFAULT);
+        this.support = new WriteSupport(context);
     }
 
     /**
