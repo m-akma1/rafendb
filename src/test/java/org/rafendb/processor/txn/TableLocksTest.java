@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.processor.api.ExecutionContext;
@@ -77,5 +78,18 @@ class TableLocksTest {
                         IllegalStateException.class,
                         () -> TableLocks.acquireRead(context, "dosen"));
         assertEquals("The session is not valid", error.getMessage());
+    }
+
+    @Test
+    void failedAbortIsSuppressedAndTxIdIsKept() {
+        ccm.answerNext(AccessResult.aborted("Deadlock"));
+        ccm.failNextAbort();
+        TransactionAbortedException error =
+                assertThrows(
+                        TransactionAbortedException.class,
+                        () -> TableLocks.acquireRead(context, "dosen"));
+        assertEquals(1, error.getSuppressed().length);
+        assertInstanceOf(ConcurrencyInternalException.class, error.getSuppressed()[0]);
+        assertEquals(new TxId(1), session.getCurrentTxId());
     }
 }
