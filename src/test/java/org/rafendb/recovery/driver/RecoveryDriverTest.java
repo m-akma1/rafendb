@@ -5,15 +5,15 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pengujian unit untuk {@link RecoveryDriver} dan integrasi dengan {@link FRManagerDriver}.
+ * Pengujian unit untuk {@link RecoveryDriver}.
  */
 class RecoveryDriverTest {
 
     @Test
-    void testFRManagerDriverRunAllTests() throws Exception {
-        FRManagerDriver driver = new FRManagerDriver();
+    void testRecoveryDriverRunAllTests() throws Exception {
+        RecoveryDriver driver = new RecoveryDriver();
         boolean success = driver.runAllTests();
-        assertTrue(success, "All integration tests in FRManagerDriver should pass");
+        assertTrue(success, "All integration tests in RecoveryDriver should pass");
     }
 
     @Test
