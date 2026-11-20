@@ -9,6 +9,8 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.plan.IndexScanDescriptor;
+import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.plan.TableScanNode;
 import org.rafendb.common.txn.TxId;
@@ -65,6 +67,31 @@ class DefaultOperatorFactoryTest {
                 }
             }
         }
+    }
+
+    @Test
+    void indexScanBindingPreservesAliasAndDescriptorWithoutOpeningOperator() {
+        var context = context(1);
+        var condition =
+                new Expr.Binary(
+                        Expr.Op.GE,
+                        new Expr.ColumnRef("m", "nim", 0),
+                        new Expr.Literal(Value.ofInt(7)));
+        var descriptor = new IndexScanDescriptor("idx_nim", "nim", condition);
+        var operator = new FakeChildOp(List.of(), List.of());
+        var builder =
+                DefaultOperatorFactory.bindIndexScan(
+                        context,
+                        (ctx, table, alias, scan) -> {
+                            assertSame(context, ctx);
+                            assertEquals("mahasiswa", table);
+                            assertEquals("m", alias);
+                            assertSame(descriptor, scan);
+                            return operator;
+                        });
+
+        assertSame(operator, builder.apply(new IndexScanNode("m", "mahasiswa", descriptor)));
+        assertThrows(IllegalStateException.class, operator::next);
     }
 
     @Test

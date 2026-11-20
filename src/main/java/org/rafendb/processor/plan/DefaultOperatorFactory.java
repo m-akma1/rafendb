@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.SortPlanNode.Direction;
 import org.rafendb.common.plan.TableScanNode;
@@ -103,6 +104,25 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @return operator baru yang tidak null
          */
         Operator create(ExecutionContext context, String table, String alias);
+    }
+
+    /** Membentuk operator Index Scan tanpa menjalankan lookup indeks. */
+    @FunctionalInterface
+    public interface IndexScanConstructor {
+        /**
+         * Menyiapkan pembacaan tabel melalui indeks.
+         *
+         * @param context context sesi yang tidak null
+         * @param table nama tabel yang tidak null
+         * @param alias alias tabel, boleh null
+         * @param descriptor indeks dan kondisi pencarian dari plan, tidak null
+         * @return operator baru yang tidak null
+         */
+        Operator create(
+                ExecutionContext context,
+                String table,
+                String alias,
+                IndexScanDescriptor descriptor);
     }
 
     /** Constructor INSERT QP5; pembentukan tidak menjalankan operasi atau memulai transaksi. */
@@ -378,6 +398,25 @@ public final class DefaultOperatorFactory implements OperatorFactory {
 
             return Objects.requireNonNull(
                     constructor.create(context, node.table(), node.alias()), "Table Scan operator");
+        };
+    }
+
+    /**
+     * Mengikat {@code IndexScanOp::new} QP5 ke context sesi. Descriptor diteruskan utuh agar
+     * operator dapat memakai kondisi pencarian dari QO saat {@code open()} dipanggil.
+     *
+     * @param context context sesi yang tidak null
+     * @param constructor pembentuk Index Scan yang tidak null
+     * @return builder untuk parameter indexScanBuilder pada constructor factory
+     * @throws NullPointerException jika context, storage, constructor, node, atau hasil null
+     */
+    public static Function<IndexScanNode, Operator> bindIndexScan(ExecutionContext context, IndexScanConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.getStorageManager(), "storage");
+        return node -> {
+            Objects.requireNonNull(node, "node");
+            return Objects.requireNonNull(constructor.create(context, node.table(), node.alias(), node.descriptor()), "Index Scan operator");
         };
     }
 }
