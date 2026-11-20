@@ -9,7 +9,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
@@ -29,7 +29,7 @@ public final class CheckpointManager {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(1);
 
     private final Logger logger;
-    private final StorageManager storageManager;
+    private final StorageRecovery storageManager;
     private final Duration awaitTimeout;
     private final Path checkpointPointer;
     private final Object checkpointLock = new Object();
@@ -55,7 +55,7 @@ public final class CheckpointManager {
      * @param logger WAL logger, not null
      * @param storageManager storage manager to flush, not null
      */
-    public CheckpointManager(Logger logger, StorageManager storageManager) {
+    public CheckpointManager(Logger logger, StorageRecovery storageManager) {
         this(
                 logger,
                 Objects.requireNonNull(storageManager, "storageManager must not be null"),
@@ -70,7 +70,7 @@ public final class CheckpointManager {
      * @param storageManager storage manager to flush, not null
      * @param awaitTimeout maximum time to wait for active transactions, not null and non-negative
      */
-    public CheckpointManager(Logger logger, StorageManager storageManager, Duration awaitTimeout) {
+    public CheckpointManager(Logger logger, StorageRecovery storageManager, Duration awaitTimeout) {
         this(
                 logger,
                 Objects.requireNonNull(storageManager, "storageManager must not be null"),
@@ -80,7 +80,7 @@ public final class CheckpointManager {
 
     CheckpointManager(
             Logger logger,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             Duration awaitTimeout,
             Path checkpointPointer) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");

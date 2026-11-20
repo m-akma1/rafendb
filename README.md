@@ -29,6 +29,21 @@ scripts/run.sh driver <component>     # interactive driver for one component
 
 On Windows use `mvnw.cmd` and `scripts\run.cmd` with the same arguments.
 
+The storage driver keeps its database and `wal.log` in `data/` at the repository root when
+started through the launchers. Restarting the driver opens the same data and runs recovery.
+Use `--dir=<path>` for a different database and `--frames=<n>` to change the buffer size:
+
+```bash
+scripts/run.sh driver storage --run=test-scenarios/storage/basic.txt
+scripts/run.sh driver storage --dir=data --frames=8
+```
+
+The basic scenario expects a fresh database. `sample` loads the three example tables into an
+empty database; existing tables are kept. Only one storage driver may open a directory at a
+time. Every INSERT, DELETE, or clear command commits its own WAL transaction. DDL such as
+`drop` remains unlogged. The application server still uses its existing mock engine.
+The client's `--home` selects its history/config directory; it does not select the database.
+
 ## Layout
 
 ```

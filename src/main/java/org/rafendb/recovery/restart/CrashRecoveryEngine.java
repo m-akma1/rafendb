@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.LongSupplier;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
@@ -99,13 +99,13 @@ public class CrashRecoveryEngine {
     }
 
     /**
-     * Membuat instance CrashRecoveryEngine langsung dengan StorageManager. Alamat baris diteruskan
+     * Membuat instance CrashRecoveryEngine langsung dengan StorageRecovery. Alamat baris diteruskan
      * apa adanya sebagai {@link Rid}.
      *
      * @param logger logger WAL
      * @param storageManager interface manajer storage
      */
-    public CrashRecoveryEngine(Logger logger, StorageManager storageManager) {
+    public CrashRecoveryEngine(Logger logger, StorageRecovery storageManager) {
         this(
                 logger,
                 storageManager != null
