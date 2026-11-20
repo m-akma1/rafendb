@@ -1,40 +1,80 @@
 package org.rafendb.optimizer.driver;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.Component;
+import org.rafendb.driver.Driver;
 import org.rafendb.mock.storage.MockStorageManager;
 
-public final class OptimizerDriver {
-    private OptimizerDriver() {}
+public final class OptimizerDriver extends Driver {
+
+    private StorageManager storageManager;
+    private ScenarioRunner runner;
+    private int scenarioNumber;
+
+    private OptimizerDriver() {
+        super(Component.QO);
+    }
+
+    public static void main(String[] args) {
+        new OptimizerDriver().launch(args);
+    }
+
+    @Override
+    protected void setup() {
+        storageManager = createStorageManager();
+        runner = new ScenarioRunner(storageManager);
+        scenarioNumber = 0;
+    }
+
+    private StorageManager createStorageManager() {
+        if (mocked(Component.SM)) {
+            return new MockStorageManager();
+        }
+
+        throw new IllegalStateException(
+                "Real StorageManager initialization has not been configured. "
+                        + "Use --mock=sm for now.");
+    }
 
     /**
-     * Loads the script named in {@code args[0]}, runs every scenario, prints the report, and exits
-     * with status 1 if any scenario failed (so this can be wired into a build's test step).
-     *
-     * @param args {@code args[0]} is the script path
+     * Format: EXPECTED_OUTCOME | SQL
      */
-    public static void main(String[] args) {
-        if (args.length != 1) {
-            System.err.println("Usage: OptimizerDriver <script-path>");
-            System.exit(2);
+    @Override
+    protected void fallback(String line) {
+
+        String[] parts = line.split("\\|", 2);
+
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("Malformed scenario. Expected: OUTCOME | SQL");
         }
-        List<TestScenario> scenarios;
-        try {
-            scenarios = ScriptLoader.load(Path.of(args[0]));
-        } catch (IOException e) {
-            System.err.println("Error loading script: " + e.getMessage());
-            System.exit(2);
-            return;
+
+        ScenarioOutcome expected = ScenarioOutcome.fromString(parts[0].trim());
+        String sql = parts[1].trim();
+
+        if (sql.isEmpty()) {
+            throw new IllegalArgumentException("SQL query cannot be empty");
         }
-        List<ScenarioResult> results = new ArrayList<>();
-        ScenarioRunner runner = new ScenarioRunner(new MockStorageManager());
-        for (TestScenario scenario : scenarios) {
-            results.add(runner.run(scenario));
+
+        TestScenario scenario = new TestScenario("Scenario " + (++scenarioNumber), sql, expected);
+        ScenarioResult result = runner.run(scenario);
+
+        // Display details
+        out().println("  SQL: " + sql);
+        out().println("  Expected: " + expected);
+        out().println("  Actual: " + result.actual());
+
+        if (result.detail() != null && !result.detail().isBlank()) {
+            out().println("  Detail: \n" + result.detail());
         }
-        TestReport report = new TestReport(results);
-        System.out.println(report.render());
-        if (!report.allPassed()) System.exit(1);
+
+        check(scenario.name(), result.passed());
+    }
+
+    @Override
+    protected void close() throws Exception {
+        if (storageManager != null) {
+            storageManager.close();
+            storageManager = null;
+        }
     }
 }
