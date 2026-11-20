@@ -15,15 +15,15 @@ final class SelectParser {
 
     static ParsedQuery parse(String sql, List<Token> tokens) {
         TokenCursor in = new TokenCursor(tokens);
-        // Clause order is fixed: SELECT list -> FROM -> [WHERE] -> [ORDER BY].
         in.expectKeyword("SELECT");
         List<Expr> projection = selectList(in);
         in.expectKeyword("FROM");
         FromItem tables = new FromParser(in).parse();
         Expr where = optionalWhere(in);
         List<OrderByItem> orderBy = optionalOrderBy(in);
+        Integer limit = in.acceptWord("LIMIT") ? in.expectUnsignedInteger("LIMIT count") : null;
         in.expectEnd();
-        return new SelectQuery(sql, projection, tables, where, orderBy);
+        return new SelectQuery(sql, projection, tables, where, orderBy, limit);
     }
 
     private static List<Expr> selectList(TokenCursor in) {
