@@ -220,14 +220,33 @@ public class FRManager implements RecoveryManager {
         return image.getBytes(StandardCharsets.UTF_8);
     }
 
+    private static int toTxIdInt(TxId tx) {
+        Objects.requireNonNull(tx, "tx must not be null");
+        try {
+            return Math.toIntExact(tx.value());
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Transaction ID exceeds 32-bit int range supported by WAL: " + tx.value(), e);
+        }
+    }
+
+    private void updateCachedTxStatus(int txId, LogType logType) {
+        switch (logType) {
+            case BEGIN -> txStatuses.put(txId, TxStatus.ACTIVE);
+            case COMMIT -> txStatuses.put(txId, TxStatus.COMMITTED);
+            case ABORT -> txStatuses.put(txId, TxStatus.ABORTED);
+            default -> {}
+        }
+    }
+
     @Override
     public long writeLog(org.rafendb.common.log.LogPayload payload)
             throws RecoveryInternalException {
         if (payload == null) {
             throw new NullPointerException("payload must not be null");
         }
+        int txId = toTxIdInt(payload.tx());
         try {
-            int txId = (int) payload.tx().value();
             LogType logType = LogType.valueOf(payload.type().name());
             if (payload.change().isPresent()) {
                 var change = payload.change().get();
@@ -250,8 +269,9 @@ public class FRManager implements RecoveryManager {
                 return logger.logDataChange(
                         txId, logType, payload.timestamp(), table, -1, beforeStr, afterStr);
             } else {
-                logger.logTransactionEvent(txId, logType);
-                return logger.getCurrentLSN();
+                long lsn = logger.logTransactionEvent(txId, logType, payload.timestamp());
+                updateCachedTxStatus(txId, logType);
+                return lsn;
             }
         } catch (Exception e) {
             throw new RecoveryInternalException("Failed to write log record", e);
@@ -410,6 +430,8 @@ public class FRManager implements RecoveryManager {
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -434,6 +456,8 @@ public class FRManager implements RecoveryManager {
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -443,12 +467,10 @@ public class FRManager implements RecoveryManager {
      * @param tx id transaksi yang sudah commit, tidak boleh null
      * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
      * @throws NullPointerException jika {@code tx} null
+     * @throws IllegalArgumentException jika nilai {@code tx} melebihi batas 32-bit int
      */
     public boolean recoverToTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return recoverToTransaction((int) tx.value());
+        return recoverToTransaction(toTxIdInt(tx));
     }
 
     /**
@@ -461,6 +483,8 @@ public class FRManager implements RecoveryManager {
             return crashRecoveryManager.recoverFromCrash();
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -471,7 +495,14 @@ public class FRManager implements RecoveryManager {
 
     @Override
     public boolean undo() {
-        return crashRecoveryManager != null && crashRecoveryManager.undo();
+        if (crashRecoveryManager == null) {
+            return false;
+        }
+        try {
+            return crashRecoveryManager.undo();
+        } finally {
+            txStatuses.clear();
+        }
     }
 
     /** @return instance WAL Logger yang digunakan */
@@ -495,51 +526,40 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Mengembalikan informasi batas atas transaksi dan timestamp dari WAL saat ini untuk keperluan
-     * inisialisasi CCM pasca-recovery ({@code initializeAfterRecovery}).
+     * Mengembalikan informasi batas atas transaksi dan timestamp logis dari WAL saat ini untuk
+     * keperluan inisialisasi CCM pasca-recovery ({@code initializeAfterRecovery}).
+     *
+     * <p>Menggunakan batas atas ID transaksi sebagai {@code maxTimestamp} karena timestamp CCM
+     * bersifat logis (monotonik per transaksi), bukan wall-clock epoch milidetik.
      *
      * @return {@link RecoveryInfo} berisi {@code maxTransactionId} dan {@code maxTimestamp}
      */
     public RecoveryInfo getRecoveryInfo() {
         long maxTxId = 0L;
-        long maxTimestamp = 0L;
         for (WALRecord rec : logger.getLogsSorted()) {
             maxTxId = Math.max(maxTxId, rec.getIdTransaction());
-            maxTimestamp = Math.max(maxTimestamp, rec.getTimestamp());
         }
-        return new RecoveryInfo(maxTxId, maxTimestamp);
+        return new RecoveryInfo(maxTxId, maxTxId);
     }
 
     @Override
     public boolean beginTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return beginTransaction((int) tx.value());
+        return beginTransaction(toTxIdInt(tx));
     }
 
     @Override
     public boolean commitTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return commitTransaction((int) tx.value());
+        return commitTransaction(toTxIdInt(tx));
     }
 
     @Override
     public boolean rollbackTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return rollbackTransaction((int) tx.value());
+        return rollbackTransaction(toTxIdInt(tx));
     }
 
     @Override
     public TxStatus getTransactionStatus(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return getTransactionStatus((int) tx.value());
+        return getTransactionStatus(toTxIdInt(tx));
     }
 
     public TxStatus getTransactionStatus(int idTransaction) {

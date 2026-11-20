@@ -1100,4 +1100,251 @@ class FRManagerTest {
                     sm.fetch("accounts", rid1).map(org.rafendb.common.tuple.StoredRow::row));
         }
     }
+
+    @Test
+    void testRecoveryInfoLogicalHighWaterAfterRestartWithCcm() throws Exception {
+        Path walPath = tempDir.resolve("recovery-info-wal.log");
+        Path dataDir = tempDir.resolve("recovery-info-data");
+
+        org.rafendb.common.tuple.Row row1 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "One")));
+        org.rafendb.common.tuple.Row row2 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(2),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Two")));
+        org.rafendb.common.tuple.Row row3Uncommitted =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(3),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Three")));
+
+        Rid rid1;
+        Rid rid2;
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager sm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
+            sm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "label",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            40,
+                                            false,
+                                            false))));
+
+            var ccm1 =
+                    new org.rafendb.concurrency.ConcurrencyControlManager(
+                            new org.rafendb.concurrency.txn.TransactionManager(),
+                            new org.rafendb.concurrency.protocol.TimestampBasedProtocol(),
+                            realFrm);
+            ccm1.initializeAfterRecovery(realFrm.getRecoveryInfo());
+
+            TxId t1 = ccm1.begin();
+            assertEquals(1L, t1.value());
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm1.requestAccess(
+                                    t1,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("items"))
+                            .status());
+            rid1 = sm.reserveRid("items", row1);
+            long lsn1 =
+                    ccm1.logChange(
+                            t1,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("items", rid1),
+                                    Optional.empty(),
+                                    Optional.of(sm.encodeRow("items", row1))));
+            sm.insert("items", rid1, row1, lsn1);
+            assertEquals(TxStatus.COMMITTED, ccm1.commit(t1).status());
+
+            TxId t2 = ccm1.begin();
+            assertEquals(2L, t2.value());
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm1.requestAccess(
+                                    t2,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("items"))
+                            .status());
+            rid2 = sm.reserveRid("items", row2);
+            long lsn2 =
+                    ccm1.logChange(
+                            t2,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("items", rid2),
+                                    Optional.empty(),
+                                    Optional.of(sm.encodeRow("items", row2))));
+            sm.insert("items", rid2, row2, lsn2);
+            assertEquals(TxStatus.COMMITTED, ccm1.commit(t2).status());
+        }
+
+        Rid rid3;
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
+            assertTrue(restartedFrm.recoverFromCrash());
+
+            var info = restartedFrm.getRecoveryInfo();
+            assertEquals(2L, info.maxTransactionId());
+            assertEquals(2L, info.maxTimestamp());
+
+            var ccm2 =
+                    new org.rafendb.concurrency.ConcurrencyControlManager(
+                            new org.rafendb.concurrency.txn.TransactionManager(),
+                            new org.rafendb.concurrency.protocol.TimestampBasedProtocol(),
+                            restartedFrm);
+            ccm2.initializeAfterRecovery(info);
+
+            TxId t3 = ccm2.begin();
+            assertEquals(3L, t3.value());
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm2.requestAccess(
+                                    t3,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("items"))
+                            .status());
+            rid3 = restartedSm.reserveRid("items", row3Uncommitted);
+            long lsn3 =
+                    ccm2.logChange(
+                            t3,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("items", rid3),
+                                    Optional.empty(),
+                                    Optional.of(restartedSm.encodeRow("items", row3Uncommitted))));
+            restartedSm.insert("items", rid3, row3Uncommitted, lsn3);
+        }
+
+        try (Logger finalLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager finalSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, finalLogger)) {
+            FRManager finalFrm = new FRManager(finalLogger, finalSm);
+            assertTrue(finalFrm.recoverFromCrash());
+            assertEquals(
+                    Optional.of(row1),
+                    finalSm.fetch("items", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+            assertEquals(
+                    Optional.of(row2),
+                    finalSm.fetch("items", rid2).map(org.rafendb.common.tuple.StoredRow::row));
+            assertTrue(finalSm.fetch("items", rid3).isEmpty());
+            assertEquals(TxStatus.ABORTED, finalFrm.getTransactionStatus(new TxId(3)));
+        }
+    }
+
+    @Test
+    void testOverflowTxIdRejected() {
+        TxId overflow = new TxId((long) Integer.MAX_VALUE + 1L);
+        assertThrows(IllegalArgumentException.class, () -> frm.beginTransaction(overflow));
+        assertThrows(IllegalArgumentException.class, () -> frm.commitTransaction(overflow));
+        assertThrows(IllegalArgumentException.class, () -> frm.rollbackTransaction(overflow));
+        assertThrows(IllegalArgumentException.class, () -> frm.getTransactionStatus(overflow));
+        assertThrows(IllegalArgumentException.class, () -> frm.recoverToTransaction(overflow));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        frm.writeLog(
+                                LogPayload.ofEvent(
+                                        overflow, org.rafendb.common.log.LogType.BEGIN)));
+    }
+
+    @Test
+    void testTransactionStatusUpdatedAfterCrashUndoAndWriteLogEvent() throws Exception {
+        assertTrue(frm.beginTransaction(10));
+        assertEquals(TxStatus.ACTIVE, frm.getTransactionStatus(10));
+
+        assertTrue(frm.recoverFromCrash());
+        assertEquals(TxStatus.ABORTED, frm.getTransactionStatus(10));
+
+        long customTs = 123456789L;
+        TxId tx11 = new TxId(11);
+        long beginLsn =
+                frm.writeLog(
+                        new LogPayload(
+                                tx11,
+                                org.rafendb.common.log.LogType.BEGIN,
+                                customTs,
+                                Optional.empty()));
+        assertEquals(TxStatus.ACTIVE, frm.getTransactionStatus(tx11));
+
+        long commitLsn =
+                frm.writeLog(
+                        new LogPayload(
+                                tx11,
+                                org.rafendb.common.log.LogType.COMMIT,
+                                customTs + 5,
+                                Optional.empty()));
+        assertTrue(commitLsn > beginLsn);
+        assertEquals(TxStatus.COMMITTED, frm.getTransactionStatus(tx11));
+
+        var tx11Logs = logger.getLogsByTransaction(11);
+        assertEquals(2, tx11Logs.size());
+        assertEquals(customTs, tx11Logs.get(0).getTimestamp());
+        assertEquals(customTs + 5, tx11Logs.get(1).getTimestamp());
+    }
+
+    @Test
+    void testConcurrentWriteLogEventReturnsUniqueExactLsns() throws Exception {
+        Path walPath = tempDir.resolve("concurrent-event.log");
+        int threads = 8;
+        int perThread = 20;
+        java.util.Set<Long> lsns = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        java.util.List<Throwable> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        try (Logger concurrentLogger = new Logger(walPath);
+                FRManager concurrentFrm = new FRManager(concurrentLogger, new TestStorage())) {
+            java.util.concurrent.CountDownLatch startGate =
+                    new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch doneGate =
+                    new java.util.concurrent.CountDownLatch(threads);
+
+            for (int t = 0; t < threads; t++) {
+                final int baseTx = (t + 1) * 1000;
+                new Thread(
+                                () -> {
+                                    try {
+                                        startGate.await();
+                                        for (int i = 0; i < perThread; i++) {
+                                            long lsn =
+                                                    concurrentFrm.writeLog(
+                                                            LogPayload.ofEvent(
+                                                                    new TxId(baseTx + i),
+                                                                    org.rafendb.common.log.LogType
+                                                                            .BEGIN));
+                                            lsns.add(lsn);
+                                        }
+                                    } catch (Throwable ex) {
+                                        errors.add(ex);
+                                    } finally {
+                                        doneGate.countDown();
+                                    }
+                                })
+                        .start();
+            }
+
+            startGate.countDown();
+            assertTrue(doneGate.await(10, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(errors.isEmpty(), () -> "Unexpected errors: " + errors);
+            assertEquals(threads * perThread, lsns.size());
+            assertEquals(threads * perThread, concurrentLogger.getLogsSorted().size());
+        }
+    }
 }
