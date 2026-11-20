@@ -40,7 +40,8 @@ public final class PitrManager {
      * boundary.
      */
     public synchronized void captureSnapshot(
-            long timestamp, Map<String, ? extends Map<Rid, String>> rows) {
+            long timestamp, Map<String, ? extends Map<Rid, String>> rows)
+            throws LoggerErrorException {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
         logger.flushAll();

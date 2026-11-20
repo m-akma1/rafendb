@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;

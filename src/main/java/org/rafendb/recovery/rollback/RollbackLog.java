@@ -84,7 +84,8 @@ public interface RollbackLog {
             long tableGeneration,
             Rid rid,
             String beforeVal,
-            String afterVal);
+            String afterVal)
+            throws LoggerErrorException;
 
     /**
      * Menyimpan permanen (flush) semua record yang sudah ditambahkan ke stable storage.

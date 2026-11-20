@@ -157,7 +157,7 @@ class LoggerTest {
         try (Logger failingFlushLogger =
                 new Logger(logPath) {
                     @Override
-                    public synchronized void flushAll() {
+                    public synchronized void flushAll() throws LoggerErrorException {
                         if (shouldFail[0]) {
                             throw new LoggerErrorException("Simulated disk sync failure");
                         }

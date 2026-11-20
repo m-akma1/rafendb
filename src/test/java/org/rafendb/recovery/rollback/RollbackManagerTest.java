@@ -558,7 +558,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void rollbackCompensatesWithFullRidAndTableGeneration() {
+    void rollbackCompensatesWithFullRidAndTableGeneration() throws Exception {
         Rid wide = new Rid(5_000_000L, 1234);
         Rid neighbour = new Rid(5_000_001L, 234); // sama dengan wide pada encoding lama
         db.put("item", neighbour, "{other}");
@@ -580,7 +580,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void recoverToTransactionKeepsRowsWithFullRid() {
+    void recoverToTransactionKeepsRowsWithFullRid() throws Exception {
         Rid wide = new Rid(5_000_000L, 1234);
         Rid neighbour = new Rid(5_000_001L, 234);
         begin(1);

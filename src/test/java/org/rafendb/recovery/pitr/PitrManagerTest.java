@@ -90,7 +90,7 @@ class PitrManagerTest {
     }
 
     @Test
-    void replayKeepsFullRidBeyondLegacyEncoding() {
+    void replayKeepsFullRidBeyondLegacyEncoding() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of()));

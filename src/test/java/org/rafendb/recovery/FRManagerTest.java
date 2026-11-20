@@ -668,7 +668,7 @@ class FRManagerTest {
     }
 
     @Test
-    void testRecoverToTransactionFacade() {
+    void testRecoverToTransactionFacade() throws Exception {
         frm.beginTransaction(1);
         frm.writeLog(1, LogType.INSERT, "users", 1, null, "V1");
         storage.data.put("users#1", "V1");
