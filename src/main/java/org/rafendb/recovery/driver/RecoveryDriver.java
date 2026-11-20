@@ -2,6 +2,7 @@ package org.rafendb.recovery.driver;
 
 import java.util.List;
 import java.util.Scanner;
+import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.engine.Version;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -22,7 +23,7 @@ public final class RecoveryDriver {
      *
      * @param args argumen baris perintah (--test, --view, --tx, --crash, --help)
      */
-    public static void main(String[] args) {
+    public static void main(String[] args) throws RecoveryInternalException {
         System.out.println(Version.banner("Failure Recovery Manager Driver"));
 
         if (args != null && args.length > 0) {
@@ -55,7 +56,7 @@ public final class RecoveryDriver {
      *
      * @param args argumen baris perintah
      */
-    private static void handleArgs(String[] args) {
+    private static void handleArgs(String[] args) throws RecoveryInternalException {
         String command = args[0].toLowerCase();
         switch (command) {
             case "--test", "-t" -> {
@@ -129,7 +130,7 @@ public final class RecoveryDriver {
     /**
      * Menjalankan antarmuka teks interaktif jika console tersedia, atau beralih ke uji otomatis.
      */
-    private static void runInteractiveOrTest() {
+    private static void runInteractiveOrTest() throws RecoveryInternalException {
         if (System.console() == null) {
             FRManagerDriver driver = new FRManagerDriver();
             driver.runAllTests();

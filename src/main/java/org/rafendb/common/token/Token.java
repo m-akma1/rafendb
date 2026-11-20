@@ -66,7 +66,8 @@ public record Token(TokenType type, String text, SourcePosition position) implem
                     "INDEX",
                     "USING",
                     "HASH",
-                    "BTREE");
+                    "BTREE",
+                    "EXPLAIN");
 
     public Token {
         Objects.requireNonNull(type, "type");

@@ -13,6 +13,7 @@ import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 
 /**
  * Creates quiescent checkpoints for the Failure Recovery Manager.
@@ -130,7 +131,10 @@ public final class CheckpointManager {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
-            } catch (StorageInternalException | IOException | RuntimeException e) {
+            } catch (StorageInternalException
+                    | LoggerErrorException
+                    | IOException
+                    | RuntimeException e) {
                 return false;
             } finally {
                 if (paused) {

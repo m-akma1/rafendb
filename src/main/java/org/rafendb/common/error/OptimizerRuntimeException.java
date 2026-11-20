@@ -1,5 +1,6 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
 import org.rafendb.common.token.Token;
 
 /**
@@ -12,7 +13,7 @@ import org.rafendb.common.token.Token;
  *   <li>{@link ValidationException} (QO-07)
  * </ul>
  */
-public abstract class OptimizerRuntimeException extends RafenDBRuntimeException {
+public abstract non-sealed class OptimizerRuntimeException extends RafenDBRuntimeException {
     private static final long serialVersionUID = 1L;
 
     private final ErrorCode code;

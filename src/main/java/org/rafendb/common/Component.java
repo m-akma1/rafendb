@@ -1,6 +1,11 @@
-package org.rafendb.common.error;
+package org.rafendb.common;
 
-/** The component that raised an error; prefixes the exception message. */
+import java.util.Locale;
+
+/**
+ * One of the RafenDB components. Used to attribute errors (it prefixes exception messages) and to
+ * choose which components a driver replaces with mocks.
+ */
 public enum Component {
     /**Query Processor */
     QP("QP", "Query Processor"),
@@ -39,5 +44,22 @@ public enum Component {
      */
     public String displayName() {
         return displayName;
+    }
+
+    /**
+     * Finds a component by its short name, ignoring case: {@code "sm"} gives {@link #SM}.
+     *
+     * @param shortName the abbreviation, such as {@code "SM"} or {@code "frm"}
+     * @return the component
+     * @throws IllegalArgumentException if no component has that short name
+     */
+    public static Component fromShortName(String shortName) {
+        String key = shortName.strip().toUpperCase(Locale.ROOT);
+        for (Component component : values()) {
+            if (component.shortName.equals(key)) {
+                return component;
+            }
+        }
+        throw new IllegalArgumentException("unknown component: " + shortName);
     }
 }
