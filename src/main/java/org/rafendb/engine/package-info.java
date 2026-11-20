@@ -1,6 +1,8 @@
 /**
- * Composition root: configuration, construction, wiring, startup order. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Composition root for runtime configuration, construction, wiring, startup order. Also holds what
+ * every launcher shares: {@link org.rafendb.engine.Flags} for command-line flags and {@link
+ * org.rafendb.engine.Version} for banners.
  *
- * <p>Owner: Supergroup.
+ * <p>Owner: QP1.
  */
 package org.rafendb.engine;
