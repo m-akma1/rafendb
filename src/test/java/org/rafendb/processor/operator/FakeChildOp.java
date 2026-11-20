@@ -4,7 +4,7 @@ import java.util.List;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
 
-/** Operator palsu buat test: ngeluarin baris dari list, nyatet panggilan close/schema. */
+/** Operator palsu buat test: ngeluarin baris dari list, nyatet panggilan close/schema/next. */
 public final class FakeChildOp implements Operator {
     private final List<ColumnSchema> schema;
     private final List<ResultRow> rows;
@@ -13,6 +13,7 @@ public final class FakeChildOp implements Operator {
     private boolean failNextOpen;
     private int closeCount;
     private int schemaCount;
+    private int nextCount;
 
     /** Bikin operator palsu dengan schema dan baris yang tetap. */
     public FakeChildOp(List<ColumnSchema> schema, List<ResultRow> rows) {
@@ -44,6 +45,7 @@ public final class FakeChildOp implements Operator {
 
     @Override
     public ResultRow next() {
+        nextCount++;
         if (!open) {
             throw new IllegalStateException("FakeChildOp is not open");
         }
@@ -69,5 +71,10 @@ public final class FakeChildOp implements Operator {
     /** Berapa kali schema() dipanggil. */
     public int getSchemaCount() {
         return schemaCount;
+    }
+
+    /** Berapa kali next() dipanggil. */
+    public int getNextCount() {
+        return nextCount;
     }
 }
