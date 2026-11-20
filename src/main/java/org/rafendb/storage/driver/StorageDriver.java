@@ -1,170 +1,179 @@
 package org.rafendb.storage.driver;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.Component;
+import org.rafendb.common.error.RecoveryInternalException;
+import org.rafendb.common.error.StorageInternalException;
+import org.rafendb.common.log.LogPayload;
+import org.rafendb.common.log.LogType;
 import org.rafendb.common.schema.Column;
-import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.ResourceId;
+import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+import org.rafendb.driver.Driver;
+import org.rafendb.driver.DriverException;
 import org.rafendb.engine.Engine;
 
 /**
- * Standalone driver for the Storage Manager. Reads commands from the keyboard or from a scenario
- * file, keeps going after an error, and reports how many checks passed. Writes use a local
- * counter as the LSN because no recovery manager is attached.
+ * Standalone storage driver using the shared command runner. Data and WAL live in data/ by
+ * default. Each write command is one transaction; startup recovers before accepting commands.
  */
-public final class StorageDriver {
-    private final StorageManager storage;
-    private final PrintStream out;
-    private long nextLsn = 1;
+public final class StorageDriver extends Driver {
+    private final Map<String, Command> actions = new HashMap<>();
+    private Engine.DriverStorage resources;
+    private StorageManager storage;
+    private RecoveryManager recovery;
+    private long lastTransactionId;
+    private TxId transaction;
+    private boolean rollbackFailed;
     private Rid lastRid;
-    private int passed;
-    private int failed;
 
-    /** Creates a driver that talks to the given Storage Manager and prints to the given stream. */
-    public StorageDriver(StorageManager storage, PrintStream out) {
-        this.storage = storage;
-        this.out = out;
+    /** Creates a driver; resources are opened by the shared runner during setup. */
+    public StorageDriver() {
+        super(Component.SM);
     }
 
-    /**
-     * Entry point. Options: --dir path (default: a new temporary folder), --frames n (default 64),
-     * --run file (default: interactive).
-     */
-    public static void main(String[] args) throws Exception {
-        Path dir = null;
-        int frames = 64;
-        Path script = null;
-        for (int i = 0; i < args.length; i++) {
-            switch (args[i]) {
-                case "--dir" -> dir = Path.of(args[++i]);
-                case "--frames" -> frames = Integer.parseInt(args[++i]);
-                case "--run" -> script = Path.of(args[++i]);
-                default -> throw new IllegalArgumentException("unknown option: " + args[i]);
+    /** Entry point; flags use --name=value, as in the shared driver kit. */
+    public static void main(String[] args) {
+        new StorageDriver().launch(args);
+    }
+
+    @Override
+    protected void setup() throws Exception {
+        if (mocked(Component.FRM)) {
+            throw new DriverException("the persistent storage driver requires a real FRM");
+        }
+        Path directory = Path.of(option("dir", "data")).toAbsolutePath().normalize();
+        int frames = Integer.parseInt(option("frames", "64"));
+        if (frames <= 0) throw new DriverException("--frames must be positive");
+        resources = Engine.storageDriver(directory, frames);
+        storage = resources.storage();
+        recovery = resources.recovery();
+        lastTransactionId = resources.maxTransactionId();
+        lastRid = null;
+        rollbackFailed = false;
+        actions.clear();
+        out().println("Database directory: " + directory);
+        command("tables", (args, rest) -> out().println(storage.listTables()));
+        command("schema TABLE", (args, rest) -> schema(args.get(0)));
+        command(
+                "indexes TABLE",
+                (args, rest) -> storage.listIndexes(args.get(0)).forEach(out()::println));
+        command(
+                "scan TABLE [limit]",
+                (args, rest) ->
+                        scan(
+                                args.get(0),
+                                args.size() > 1
+                                        ? Integer.parseInt(args.get(1))
+                                        : Integer.MAX_VALUE));
+        command(
+                "fetch TABLE RID",
+                (args, rest) ->
+                        out().println(
+                                        storage.fetch(args.get(0), rid(args.get(1)))
+                                                .map(this::format)
+                                                .orElse("absent")));
+        command(
+                "insert TABLE v1 v2 ...",
+                (args, rest) -> {
+                    lastRid = write(() -> insert(args.get(0), args.subList(1, args.size())));
+                    out().println("inserted at " + lastRid.block() + ":" + lastRid.slot());
+                });
+        command(
+                "delete TABLE RID",
+                (args, rest) -> out().println(write(() -> delete(args.get(0), rid(args.get(1))))));
+        command(
+                "clear TABLE",
+                (args, rest) -> {
+                    String table = args.get(0);
+                    out().println(
+                                    write(
+                                            () ->
+                                                    storage.clearTable(
+                                                            table, row -> logDelete(table, row))));
+                });
+        command("stats TABLE", (args, rest) -> out().println(storage.getStats(args.get(0))));
+        command(
+                "drop TABLE",
+                (args, rest) -> {
+                    if (rollbackFailed)
+                        throw new StorageInternalException("restart after failed rollback");
+                    storage.dropTable(args.get(0), false);
+                });
+        command(
+                "sample",
+                (args, rest) ->
+                        write(
+                                () -> {
+                                    storage.loadSampleDatabase(
+                                            change -> log(LogType.INSERT, change));
+                                    return null;
+                                }));
+        command("flush", (args, rest) -> storage.flush());
+        command(
+                "lookup INDEX TYPE VALUE",
+                (args, rest) ->
+                        out().println(
+                                        storage.lookupIndex(
+                                                args.get(0), value(args.get(1), args.get(2)))));
+        command("assert count|fetch|lookup|fail ...", this::check);
+    }
+
+    /** Retains actions locally for assert-fail; the shared Driver owns normal dispatch. */
+    private void command(String usage, Command action) {
+        String name = usage.split("\\s+", 2)[0];
+        actions.put(name, action);
+        super.command(name, usage, "", action);
+    }
+
+    @Override
+    protected void help() {
+        super.help();
+        out().println(
+                        "  --dir=PATH     database directory (default data/ in the working directory)");
+        out().println("  --frames=N     buffer frames (default 64)");
+        out().println("RID: block:slot or $last; values: NULL or quoted text with spaces.");
+        out().println("assert count T N | assert fetch T RID present|absent");
+        out().println("assert lookup INDEX TYPE VALUE N | assert fail COMMAND...");
+    }
+
+    @Override
+    protected void close() throws Exception {
+        if (resources != null) {
+            try {
+                resources.close();
+            } finally {
+                resources = null;
             }
         }
-        if (dir == null) {
-            dir = Files.createTempDirectory("rafendb-storage");
-        } else {
-            Files.createDirectories(dir);
-        }
-        StorageManager storage = Engine.storage(dir, frames, lsn -> {});
-        StorageDriver driver = new StorageDriver(storage, System.out);
-        try {
-            if (script != null) {
-                driver.runScenario(script);
-            } else {
-                driver.run();
-            }
-        } finally {
-            storage.close();
-        }
-        if (driver.failed > 0) {
-            System.exit(1);
-        }
     }
 
-    /** Reads commands from standard input until "quit" or end of input. */
-    public void run() throws IOException {
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-        out.println("StorageDriver ready. Type help, or quit to leave.");
-        while (true) {
-            out.print("sm> ");
-            out.flush();
-            String line = in.readLine();
-            if (line == null || line.strip().equals("quit")) {
-                return;
-            }
-            execute(line);
-        }
-    }
-
-    /** Runs one command; an error is printed and counted, and the driver keeps going. */
-    public void execute(String command) {
-        try {
-            dispatch(tokenize(command));
-        } catch (Exception e) {
-            failed++;
-            out.println("ERROR: " + e);
-        }
-    }
-
-    /** Runs every non-empty, non-comment line of a file as a command and prints a summary. */
-    public void runScenario(Path file) throws IOException {
-        for (String line : Files.readAllLines(file)) {
-            String text = line.strip();
-            if (text.isEmpty() || text.startsWith("#")) {
-                continue;
-            }
-            out.println("> " + text);
-            execute(text);
-        }
-        out.println("RESULT: " + passed + " passed, " + failed + " failed");
-    }
-
-    /** Executes one tokenized command. */
-    private void dispatch(List<String> t) throws Exception {
-        if (t.isEmpty()) {
-            return;
-        }
-        switch (t.get(0).toLowerCase()) {
-            case "help" -> help();
-            case "tables" -> out.println(storage.listTables());
-            case "schema" -> schema(t.get(1));
-            case "indexes" -> storage.listIndexes(t.get(1)).forEach(out::println);
-            case "scan" ->
-                    scan(t.get(1), t.size() > 2 ? Integer.parseInt(t.get(2)) : Integer.MAX_VALUE);
-            case "fetch" -> fetch(t.get(1), rid(t.get(2)));
-            case "insert" -> insert(t.get(1), t.subList(2, t.size()));
-            case "delete" -> out.println(storage.delete(t.get(1), rid(t.get(2)), nextLsn++));
-            case "clear" -> out.println(storage.clearTable(t.get(1), row -> nextLsn++));
-            case "stats" -> out.println(storage.getStats(t.get(1)));
-            case "drop" -> storage.dropTable(t.get(1), false);
-            case "sample" -> storage.loadSampleDatabase();
-            case "flush" -> storage.flush();
-            case "lookup" -> out.println(storage.lookupIndex(t.get(1), value(t.get(2), t.get(3))));
-            case "assert" -> check(t.subList(1, t.size()));
-            default -> throw new IllegalArgumentException("unknown command: " + t.get(0));
-        }
-    }
-
-    /** Prints the command list. */
-    private void help() {
-        out.println("tables | schema T | indexes T | scan T [limit] | fetch T RID | stats T");
-        out.println("insert T v1 v2 ... (NULL for null, quotes for text with spaces)");
-        out.println("delete T RID | clear T | drop T | sample | flush");
-        out.println("lookup INDEX int|float|char|varchar VALUE");
-        out.println("RID is block:slot, or $last for the RID of the latest insert");
-        out.println("assert count T N | assert fetch T RID present|absent");
-        out.println("assert lookup INDEX TYPE VALUE N | assert fail COMMAND...");
-    }
-
-    /** Prints the columns of a table. */
     private void schema(String table) {
-        TableSchema schema = storage.getSchema(table);
-        for (Column c : schema.columns()) {
-            out.println(
-                    c.name()
-                            + " "
-                            + c.type()
-                            + "("
-                            + c.length()
-                            + ")"
-                            + (c.nullable() ? " nullable" : "")
-                            + (c.primaryKey() ? " pk" : ""));
+        for (Column c : storage.getSchema(table).columns()) {
+            out().printf(
+                            "%s %s(%d)%s%s%n",
+                            c.name(),
+                            c.type(),
+                            c.length(),
+                            c.nullable() ? " nullable" : "",
+                            c.primaryKey() ? " pk" : "");
         }
     }
 
@@ -174,87 +183,126 @@ public final class StorageDriver {
         try (RecordCursor rows = storage.scan(table)) {
             StoredRow row;
             while (shown < limit && (row = rows.next()) != null) {
-                out.println(format(row));
+                out().println(format(row));
                 shown++;
             }
         }
-        out.println(shown + " row(s)");
+        out().println(shown + " row(s)");
     }
 
-    /** Prints one record or "absent". */
-    private void fetch(String table, Rid rid) throws Exception {
-        Optional<StoredRow> row = storage.fetch(table, rid);
-        out.println(row.isPresent() ? format(row.get()) : "absent");
-    }
-
-    /** Reserves a RID, then inserts the row with a fresh LSN. */
-    private void insert(String table, List<String> tokens) throws Exception {
-        TableSchema schema = storage.getSchema(table);
-        List<Column> columns = schema.columns();
+    /** Reserves a RID, logs the image, then inserts; a failed reservation is cancelled. */
+    private Rid insert(String table, List<String> tokens) throws Exception {
+        List<Column> columns = storage.getSchema(table).columns();
         if (tokens.size() != columns.size()) {
             throw new IllegalArgumentException(
                     "expected " + columns.size() + " values, got " + tokens.size());
         }
         List<Value> values = new ArrayList<>();
         for (int i = 0; i < columns.size(); i++) {
-            values.add(parse(columns.get(i), tokens.get(i)));
+            values.add(value(columns.get(i).type(), tokens.get(i)));
         }
         Row row = new Row(values);
         Rid rid = storage.reserveRid(table, row);
         try {
-            storage.insert(table, rid, row, nextLsn++);
+            long lsn =
+                    log(
+                            LogType.INSERT,
+                            new ChangeRecord(
+                                    ResourceId.ofRow(table, rid),
+                                    Optional.empty(),
+                                    Optional.of(storage.encodeRow(table, row))));
+            storage.insert(table, rid, row, lsn);
         } catch (Exception e) {
-            storage.cancelReservation(table, rid);
+            try {
+                storage.cancelReservation(table, rid);
+            } catch (Exception cleanup) {
+                e.addSuppressed(cleanup);
+            }
             throw e;
         }
-        lastRid = rid;
-        out.println("inserted at " + rid.block() + ":" + rid.slot());
+        return rid;
     }
 
-    /** Evaluates an assert command and records pass or fail. */
-    private void check(List<String> t) throws Exception {
+    /** Logs the before-image before deleting an existing row. */
+    private boolean delete(String table, Rid rid) throws Exception {
+        Optional<StoredRow> row = storage.fetch(table, rid);
+        return row.isPresent() && storage.delete(table, rid, logDelete(table, row.get()));
+    }
+
+    private long logDelete(String table, StoredRow row) {
+        return log(
+                LogType.DELETE,
+                new ChangeRecord(
+                        ResourceId.ofRow(table, row.rid()),
+                        Optional.of(storage.encodeRow(table, row.row())),
+                        Optional.empty()));
+    }
+
+    private long log(LogType type, ChangeRecord change) {
+        try {
+            return recovery.writeLog(LogPayload.ofChange(transaction, type, change));
+        } catch (RecoveryInternalException e) {
+            throw new IllegalStateException("cannot write storage driver's WAL", e);
+        }
+    }
+
+    /** Each write is committed independently; a failed rollback blocks subsequent mutations. */
+    private <T> T write(Callable<T> action) throws Exception {
+        if (rollbackFailed) throw new StorageInternalException("restart after failed rollback");
+        if (lastTransactionId >= Integer.MAX_VALUE) {
+            throw new StorageInternalException("transaction identifiers are exhausted");
+        }
+        transaction = new TxId(++lastTransactionId);
+        if (!recovery.beginTransaction(transaction)) {
+            throw new StorageInternalException("cannot begin storage driver transaction");
+        }
+        try {
+            T result = action.call();
+            if (!recovery.commitTransaction(transaction)) {
+                throw new StorageInternalException("cannot commit storage driver transaction");
+            }
+            return result;
+        } catch (Exception failure) {
+            if (!recovery.rollbackTransaction(transaction)) {
+                rollbackFailed = true;
+                failure.addSuppressed(
+                        new StorageInternalException("rollback failed; restart the driver"));
+            }
+            throw failure;
+        } finally {
+            transaction = null;
+        }
+    }
+
+    /** Nested checks reuse the parsed arguments and original quoted text from the shared runner. */
+    private void check(List<String> t, String rest) throws Exception {
         switch (t.get(0)) {
             case "count" ->
-                    verify(count(t.get(1)) == Long.parseLong(t.get(2)), "count " + t.get(1));
+                    check(
+                            "count " + t.get(1),
+                            Long.parseLong(t.get(2)),
+                            storage.getStats(t.get(1)).recordCount());
             case "fetch" -> {
                 boolean present = storage.fetch(t.get(1), rid(t.get(2))).isPresent();
-                verify(present == t.get(3).equals("present"), "fetch " + t.get(2));
+                check("fetch " + t.get(2), t.get(3).equals("present"), present);
             }
             case "lookup" -> {
                 int size = storage.lookupIndex(t.get(1), value(t.get(2), t.get(3))).size();
-                verify(size == Integer.parseInt(t.get(4)), "lookup " + t.get(1));
+                check("lookup " + t.get(1), Integer.parseInt(t.get(4)), size);
             }
             case "fail" -> {
+                if (t.size() < 2) throw new DriverException("usage: assert fail COMMAND...");
                 try {
-                    dispatch(t.subList(1, t.size()));
-                    verify(false, "expected failure: " + String.join(" ", t.subList(1, t.size())));
+                    Command action = actions.get(t.get(1).toLowerCase(Locale.ROOT));
+                    if (action == null) throw new DriverException("unknown command: " + t.get(1));
+                    String[] parts = rest.split("\\s+", 3);
+                    action.execute(t.subList(2, t.size()), parts.length == 3 ? parts[2] : "");
+                    check("expected failure: " + String.join(" ", t.subList(1, t.size())), false);
                 } catch (Exception e) {
-                    verify(true, "failed as expected: " + e.getClass().getSimpleName());
+                    check("failed as expected: " + e.getClass().getSimpleName(), true);
                 }
             }
             default -> throw new IllegalArgumentException("unknown assert: " + t.get(0));
-        }
-    }
-
-    /** Counts the live rows of a table. */
-    private long count(String table) throws Exception {
-        long n = 0;
-        try (RecordCursor rows = storage.scan(table)) {
-            while (rows.next() != null) {
-                n++;
-            }
-        }
-        return n;
-    }
-
-    /** Records one check result. */
-    private void verify(boolean ok, String what) {
-        if (ok) {
-            passed++;
-            out.println("PASS " + what);
-        } else {
-            failed++;
-            out.println("FAIL " + what);
         }
     }
 
@@ -277,53 +325,23 @@ public final class StorageDriver {
         return new Rid(Long.parseLong(parts[0]), Integer.parseInt(parts[1]));
     }
 
-    /** Reads a value of a named type, used by index lookups. */
     private Value value(String type, String text) {
-        return switch (type.toLowerCase()) {
-            case "int" -> Value.ofInt(Integer.parseInt(text));
-            case "float" -> Value.ofFloat(Float.parseFloat(text));
-            case "char" -> Value.ofText(DataType.CHAR, text);
-            case "varchar" -> Value.ofText(DataType.VARCHAR, text);
-            default -> throw new IllegalArgumentException("unknown type: " + type);
-        };
+        return value(
+                type.equalsIgnoreCase("int")
+                        ? DataType.INTEGER
+                        : DataType.valueOf(type.toUpperCase(Locale.ROOT)),
+                text);
     }
 
-    /** Reads a value for a column, or NULL. */
-    private Value parse(Column column, String text) {
+    /** One value parser for schema-driven INSERTs and explicitly typed index lookups. */
+    private Value value(DataType type, String text) {
         if (text.equals("NULL")) {
-            return Value.nullOf(column.type());
+            return Value.nullOf(type);
         }
-        return switch (column.type()) {
+        return switch (type) {
             case INTEGER -> Value.ofInt(Integer.parseInt(text));
             case FLOAT -> Value.ofFloat(Float.parseFloat(text));
-            case CHAR, VARCHAR -> Value.ofText(column.type(), text);
+            case CHAR, VARCHAR -> Value.ofText(type, text);
         };
-    }
-
-    /** Splits a line on spaces; double quotes keep spaces inside one token. */
-    private static List<String> tokenize(String line) {
-        List<String> tokens = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean quoted = false;
-        boolean has = false;
-        for (char ch : line.toCharArray()) {
-            if (ch == '"') {
-                quoted = !quoted;
-                has = true;
-            } else if (Character.isWhitespace(ch) && !quoted) {
-                if (has) {
-                    tokens.add(current.toString());
-                    current.setLength(0);
-                    has = false;
-                }
-            } else {
-                current.append(ch);
-                has = true;
-            }
-        }
-        if (has) {
-            tokens.add(current.toString());
-        }
-        return tokens;
     }
 }
