@@ -12,6 +12,22 @@ import org.rafendb.common.query.QueryResult;
 public interface Session extends AutoCloseable {
 
     /**
+     * Transaction state of a session, reported after each statement (QP-01, QP-02). The server
+     * sends it to the client, which shows it in the prompt.
+     */
+    enum TxState {
+        /** No transaction is open; each statement runs as its own transaction (auto-commit). */
+        IDLE,
+        /** An explicit transaction opened by BEGIN is running. */
+        ACTIVE,
+        /**
+         * The explicit transaction failed or was aborted by the system; the session waits for the
+         * client to end it with ABORT or COMMIT.
+         */
+        FAILED
+    }
+
+    /**
      * Runs one SQL statement. A trailing {@code ;} is optional. Outside BEGIN ... COMMIT the
      * statement runs as its own transaction (QP-12).
      *
@@ -24,6 +40,15 @@ public interface Session extends AutoCloseable {
      * @throws NullPointerException if {@code sql} is null
      */
     QueryResult execute(String sql);
+
+    /**
+     * Returns the session's transaction state after the last statement. May be called by another
+     * thread than the one running {@link #execute}, for example while the server shuts down.
+     * Still answers after {@link #close()}, then {@link TxState#IDLE}.
+     *
+     * @return the state, never {@code null}
+     */
+    TxState transactionState();
 
     /**
      * Closes the session and aborts its open transaction, if any, without disturbing other

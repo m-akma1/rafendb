@@ -48,4 +48,5 @@ fi
 
 # Run from the repo root so relative paths (data/, test-scenarios/...) mean the same thing for everyone.
 cd "$ROOT"
-exec java -cp "$JAR" "$main" "$@"
+# target/lib holds the runtime libraries (JLine). Native access lets JLine's FFM terminal run quietly.
+exec java --enable-native-access=ALL-UNNAMED -cp "$JAR:$ROOT/target/lib/*" "$main" "$@"

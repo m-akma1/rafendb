@@ -10,7 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.log.LogPayload;
@@ -44,7 +44,7 @@ public class FRManager implements RecoveryManager {
     private final RollbackManager rollbackManager;
     private final CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
-    private final StorageManager storageManager;
+    private final StorageRecovery storageManager;
     private final boolean encodeBinaryImages;
     private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
 
@@ -87,7 +87,7 @@ public class FRManager implements RecoveryManager {
     private FRManager(
             Logger logger,
             UndoStorage storage,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             boolean encodeBinaryImages) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
@@ -99,26 +99,26 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Konstruktor praktis yang menghubungkan langsung dengan kontrak resmi {@link StorageManager}.
+     * Konstruktor praktis yang menghubungkan langsung dengan kontrak resmi {@link StorageRecovery}.
      *
      * @param logger logger WAL, tidak boleh null
-     * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
+     * @param storageManager implementasi StorageRecovery untuk recovery apply, tidak boleh null
      */
-    public FRManager(Logger logger, StorageManager storageManager) {
+    public FRManager(Logger logger, StorageRecovery storageManager) {
         this(logger, storageAdapter(storageManager), storageManager, true);
     }
 
     /**
-     * Konstruktor terintegrasi penuh dengan {@link StorageManager} dan {@link ConcurrencyControl}
+     * Konstruktor terintegrasi penuh dengan {@link StorageRecovery} dan {@link ConcurrencyControl}
      * sehingga checkpoint quiescent dapat menunggu transaksi aktif dan mem-flush storage.
      *
      * @param logger logger WAL, tidak boleh null
-     * @param storageManager implementasi StorageManager untuk recovery apply &amp; flush, tidak boleh
+     * @param storageManager implementasi StorageRecovery untuk recovery apply &amp; flush, tidak boleh
      *     null
      * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
      */
     public FRManager(
-            Logger logger, StorageManager storageManager, ConcurrencyControl concurrencyControl) {
+            Logger logger, StorageRecovery storageManager, ConcurrencyControl concurrencyControl) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storageManager, "storageManager must not be null");
         Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
@@ -140,7 +140,7 @@ public class FRManager implements RecoveryManager {
         return encoded != 0L ? encoded : 1L;
     }
 
-    private static long resolveTableGeneration(StorageManager storageManager, String tableName) {
+    private static long resolveTableGeneration(StorageRecovery storageManager, String tableName) {
         if (storageManager == null
                 || tableName == null
                 || !storageManager.listTables().contains(tableName)) {
@@ -155,24 +155,24 @@ public class FRManager implements RecoveryManager {
 
     /**
      * Membuat adapter {@link UndoStorage} yang men-decode image biner memakai {@link
-     * StorageManager#decodeRow(String, byte[])} lalu meneruskan ke {@link
-     * StorageManager#applyRecovery(String, Rid, Optional, long)}.
+     * StorageRecovery#decodeRow(String, byte[])} lalu meneruskan ke {@link
+     * StorageRecovery#applyRecovery(String, Rid, Optional, long)}.
      *
-     * @param storageManager implementasi StorageManager, tidak boleh null
+     * @param storageManager implementasi StorageRecovery, tidak boleh null
      * @return adapter UndoStorage yang siap dipakai oleh RollbackManager dan CrashRecoveryEngine
      */
-    public static UndoStorage storageAdapter(StorageManager storageManager) {
+    public static UndoStorage storageAdapter(StorageRecovery storageManager) {
         return new StorageManagerUndoAdapter(storageManager);
     }
 
     /**
      * Adapter eksplisit yang menghubungkan antarmuka {@link UndoStorage} milik FRM ke
-     * implementasi resmi {@link StorageManager}.
+     * implementasi resmi {@link StorageRecovery}.
      */
     public static final class StorageManagerUndoAdapter implements UndoStorage {
-        private final StorageManager storageManager;
+        private final StorageRecovery storageManager;
 
-        public StorageManagerUndoAdapter(StorageManager storageManager) {
+        public StorageManagerUndoAdapter(StorageRecovery storageManager) {
             this.storageManager =
                     Objects.requireNonNull(storageManager, "storageManager must not be null");
         }
@@ -211,7 +211,7 @@ public class FRManager implements RecoveryManager {
             }
         }
 
-        public StorageManager getStorageManager() {
+        public StorageRecovery getStorageManager() {
             return storageManager;
         }
     }
