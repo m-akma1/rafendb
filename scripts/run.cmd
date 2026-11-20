@@ -32,7 +32,8 @@ if not exist "%JAR%" (
   exit /b 1
 )
 cd /d "%ROOT%"
-java -cp "%JAR%" %MAIN% %1 %2 %3 %4 %5 %6 %7 %8 %9
+rem target\lib holds the runtime libraries (JLine). Native access lets JLine's FFM terminal run quietly.
+java --enable-native-access=ALL-UNNAMED -cp "%JAR%;%ROOT%\target\lib\*" %MAIN% %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :reset
