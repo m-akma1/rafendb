@@ -43,7 +43,7 @@ public class FRManager implements RecoveryManager {
 
     private final Logger logger;
     private final RollbackManager rollbackManager;
-    private volatile CheckpointManager checkpointManager;
+    private final CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
     private final StorageManager storageManager;
     private final boolean encodeBinaryImages;
@@ -93,42 +93,30 @@ public class FRManager implements RecoveryManager {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
         this.rollbackManager = new RollbackManager(logger, storage);
-        this.checkpointManager = new CheckpointManager(logger);
+        this.checkpointManager =
+                storageManager != null
+                        ? new CheckpointManager(logger, storageManager)
+                        : new CheckpointManager(logger);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
         this.storageManager = storageManager;
         this.encodeBinaryImages = encodeBinaryImages;
     }
 
     /**
-     * Konstruktor praktis yang menghubungkan langsung dengan kontrak resmi {@link StorageManager}.
-     *
-     * @param logger logger WAL, tidak boleh null
-     * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
-     */
-    public FRManager(Logger logger, StorageManager storageManager) {
-        this(logger, storageAdapter(storageManager), storageManager, true);
-    }
-
-    /**
-     * Konstruktor terintegrasi penuh dengan {@link StorageManager} dan {@link ConcurrencyControl}
-     * sehingga checkpoint quiescent dapat menunggu transaksi aktif dan mem-flush storage.
+     * Konstruktor yang menghubungkan langsung dengan kontrak resmi {@link StorageManager} untuk
+     * recovery apply dan flush checkpoint. Untuk quiescent checkpoint, teruskan {@link
+     * ConcurrencyControl} ke {@link #createCheckpoint(ConcurrencyControl)}.
      *
      * @param logger logger WAL, tidak boleh null
      * @param storageManager implementasi StorageManager untuk recovery apply &amp; flush, tidak boleh
      *     null
-     * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
      */
-    public FRManager(
-            Logger logger, StorageManager storageManager, ConcurrencyControl concurrencyControl) {
-        this.logger = Objects.requireNonNull(logger, "logger must not be null");
-        Objects.requireNonNull(storageManager, "storageManager must not be null");
-        Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
-        UndoStorage adapter = storageAdapter(storageManager);
-        this.rollbackManager = new RollbackManager(logger, adapter);
-        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
-        this.crashRecoveryManager = new CrashRecoveryEngine(logger, adapter);
-        this.storageManager = storageManager;
-        this.encodeBinaryImages = true;
+    public FRManager(Logger logger, StorageManager storageManager) {
+        this(
+                logger,
+                storageAdapter(storageManager),
+                Objects.requireNonNull(storageManager, "storageManager must not be null"),
+                true);
     }
 
     private static final String BASE64_IMAGE_PREFIX = "B64:";
@@ -395,13 +383,25 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Memulai proses pembuatan checkpoint sistem.
+     * Memulai proses pembuatan checkpoint sistem tanpa koordinasi admission CCM.
      *
      * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
      */
+    @Override
     public boolean createCheckpoint() {
+        return createCheckpoint(null);
+    }
+
+    /**
+     * Memulai proses pembuatan quiescent checkpoint dengan menyalurkan {@link ConcurrencyControl}
+     * untuk menahan transaksi baru dan menunggu transaksi aktif selesai.
+     *
+     * @param concurrencyControl pengelola concurrency opsional untuk quiescent checkpoint
+     * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
+     */
+    public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
         try {
-            return checkpointManager.createCheckpoint();
+            return checkpointManager.createCheckpoint(concurrencyControl);
         } catch (Exception e) {
             return false;
         }
@@ -501,24 +501,6 @@ public class FRManager implements RecoveryManager {
     /** @return instance CrashRecoveryEngine yang digunakan */
     public CrashRecoveryEngine getCrashRecoveryManager() {
         return crashRecoveryManager;
-    }
-
-    /**
-     * Menghubungkan {@link ConcurrencyControl} setelah fase inisialisasi startup (breaking circular
-     * dependency saat perakitan Engine) agar quiescent checkpoint dapat menahan transaksi baru dan
-     * mem-flush {@link StorageManager}.
-     *
-     * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
-     * @throws IllegalStateException jika FRManager dibuat tanpa {@link StorageManager}
-     */
-    public synchronized void attachConcurrencyControl(ConcurrencyControl concurrencyControl) {
-        Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
-        if (this.storageManager == null) {
-            throw new IllegalStateException(
-                    "FRManager must be constructed with a StorageManager before attaching"
-                            + " ConcurrencyControl");
-        }
-        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
     }
 
     /**

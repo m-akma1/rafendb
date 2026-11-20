@@ -5,12 +5,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyControl;
+import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.Component;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.schema.Column;
@@ -21,10 +23,16 @@ import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
+import org.rafendb.common.txn.TxStatus;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+import org.rafendb.concurrency.ConcurrencyControlManager;
+import org.rafendb.concurrency.protocol.TimestampBasedProtocol;
+import org.rafendb.concurrency.txn.TransactionManager;
+import org.rafendb.driver.Driver;
+import org.rafendb.driver.DriverException;
 import org.rafendb.engine.Engine;
-import org.rafendb.engine.Version;
+import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
@@ -38,13 +46,26 @@ import org.rafendb.recovery.rollback.UndoStorage;
 /**
  * Unified driver for the Failure Recovery Manager (FRM) component.
  *
- * <p>Menyediakan antarmuka Command Line Interface (CLI) interaktif, eksekusi berbasis argumen
- * (inspeksi WAL log viewer FR-03, simulasi crash recovery FR-07, simulasi crash proses anak),
- * serta rangkaian automated integration test suite (FR-08 & FR-09) menggunakan mock storage maupun
- * {@link StorageManager} asli.
+ * <p>Extends {@link Driver} ({@link Component#FRM}) untuk menyediakan antarmuka CLI interaktif dan
+ * eksekusi skenario ({@code --mock}, {@code --run}, {@code --help}, {@code --version}, serta
+ * {@code --dir}, {@code --wal}, {@code --frames}), sekaligus mempertahankan suite pengujian
+ * terintegrasi ({@link #runAllTests()}) dan simulasi crash proses anak ({@code
+ * --simulate-crash-child}).
  */
-public class RecoveryDriver {
+public final class RecoveryDriver extends Driver {
 
+    private record RowEntry(Rid rid, Row row) {}
+
+    // State sesi Driver (dikelola oleh setup() dan close())
+    private Path sessionDir;
+    private Path sessionWalFile;
+    private int bufferFrames = 8;
+    private StorageManager sessionRealStorage;
+    private final MockStorage sessionMockStorage = new MockStorage();
+    private FRManager sessionFrm;
+    private ConcurrencyControl sessionCcm;
+
+    // State terisolasi untuk rangkaian uji mandiri (runAllTests() & method test*())
     private FRManager frm;
     private Path tempLogDir;
     private Path currentLogFile;
@@ -83,12 +104,715 @@ public class RecoveryDriver {
         }
     }
 
+    /** Creates the Failure Recovery Manager driver. */
     public RecoveryDriver() {
-        initNewEnvironment();
+        super(Component.FRM);
+    }
+
+    /**
+     * Entry point utama untuk Failure Recovery Manager Driver.
+     *
+     * @param args argumen baris perintah
+     * @throws Exception jika simulasi crash proses anak gagal
+     */
+    public static void main(String[] args) throws Exception {
+        if (args != null && args.length == 3 && "--simulate-crash-child".equals(args[0])) {
+            runCrashChildSimulation(Path.of(args[1]), Path.of(args[2]));
+            return;
+        }
+        new RecoveryDriver().launch(args);
+    }
+
+    @Override
+    protected void help() {
+        super.help();
+        out().println("FRM options:");
+        out().println("  --dir=<path>     data & WAL directory (default: temporary directory)");
+        out().println("  --wal=<path>     WAL file path (default: <dir>/wal.log)");
+        out().println("  --frames=<n>     buffer frames for real StorageManager (default: 8)");
+    }
+
+    @Override
+    protected void setup() throws Exception {
+        String dirOpt = option("dir");
+        if (dirOpt != null) {
+            sessionDir = Path.of(dirOpt);
+            Files.createDirectories(sessionDir);
+        } else {
+            sessionDir = Files.createTempDirectory("rafendb-frm-driver-");
+        }
+
+        String walOpt = option("wal");
+        if (walOpt != null) {
+            sessionWalFile = Path.of(walOpt);
+            Path parent = sessionWalFile.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+        } else {
+            sessionWalFile = sessionDir.resolve("wal.log");
+        }
+
+        String framesOpt = option("frames", "8");
+        try {
+            bufferFrames = Integer.parseInt(framesOpt);
+        } catch (NumberFormatException e) {
+            throw new DriverException("--frames must be a positive integer: " + framesOpt);
+        }
+        if (bufferFrames <= 0) {
+            throw new DriverException("--frames must be a positive integer: " + framesOpt);
+        }
+
+        sessionMockStorage.clear();
+        openSession();
+        registerCommands();
+    }
+
+    @Override
+    protected void close() throws Exception {
+        Exception firstError = null;
+        if (sessionRealStorage != null) {
+            try {
+                sessionRealStorage.close();
+            } catch (Exception e) {
+                firstError = e;
+            } finally {
+                sessionRealStorage = null;
+            }
+        }
+        if (sessionFrm != null) {
+            try {
+                sessionFrm.close();
+            } catch (Exception e) {
+                if (firstError == null) {
+                    firstError = e;
+                }
+            } finally {
+                sessionFrm = null;
+            }
+        }
+        if (frm != null) {
+            try {
+                frm.close();
+            } catch (Exception e) {
+                if (firstError == null) {
+                    firstError = e;
+                }
+            } finally {
+                frm = null;
+            }
+        }
+        if (firstError != null) {
+            throw firstError;
+        }
+    }
+
+    private void openSession() throws Exception {
+        Logger logger = new Logger(sessionWalFile);
+        if (mocked(Component.SM)) {
+            sessionRealStorage = null;
+            sessionFrm = new FRManager(logger, sessionMockStorage);
+        } else {
+            Path dataDir = sessionDir.resolve("data");
+            Files.createDirectories(dataDir);
+            sessionRealStorage = Engine.storage(dataDir, bufferFrames, logger);
+            sessionFrm = new FRManager(logger, sessionRealStorage);
+        }
+
+        sessionCcm = createSessionCcm();
+    }
+
+    private ConcurrencyControl createSessionCcm() {
+        if (mocked(Component.CCM)) {
+            return new MockConcurrencyControl();
+        }
+        ConcurrencyControlManager ccm =
+                new ConcurrencyControlManager(
+                        new TransactionManager(), new TimestampBasedProtocol(), sessionFrm);
+        ccm.initializeAfterRecovery(sessionFrm.getRecoveryInfo());
+        return ccm;
+    }
+
+    private void closeSessionForCrash() throws Exception {
+        if (sessionRealStorage != null) {
+            try {
+                sessionRealStorage.close();
+            } finally {
+                sessionRealStorage = null;
+            }
+        }
+        if (sessionFrm != null) {
+            try {
+                sessionFrm.close();
+            } finally {
+                sessionFrm = null;
+            }
+        }
+    }
+
+    private void registerCommands() {
+        command(
+                "test",
+                "test [name]",
+                "run FRM integration tests (all, undo, redo, recovery, interleaved, pitr,"
+                        + " real-storage, checkpoint)",
+                (args, rest) -> runTestCommand(args));
+        command(
+                "begin",
+                "begin <txId>",
+                "start a transaction (BEGIN)",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: begin <txId>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    if (!sessionFrm.beginTransaction(txId)) {
+                        throw new DriverException("begin failed for T" + txId);
+                    }
+                    out().println("T" + txId + " BEGIN");
+                });
+        command(
+                "insert",
+                "insert <txId> <table> <id> <value>",
+                "log INSERT and write to storage",
+                (args, rest) -> {
+                    if (args.size() != 4) {
+                        throw new DriverException("usage: insert <txId> <table> <id> <value>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    String table = args.get(1);
+                    int id = parseInt(args.get(2), "id");
+                    String value = args.get(3);
+                    long lsn = performInsert(txId, table, id, value);
+                    out().println(
+                                    "INSERT LSN="
+                                            + lsn
+                                            + " ("
+                                            + table
+                                            + "#"
+                                            + id
+                                            + "="
+                                            + value
+                                            + ")");
+                });
+        command(
+                "update",
+                "update <txId> <table> <id> <value>",
+                "log UPDATE and write to storage",
+                (args, rest) -> {
+                    if (args.size() != 4) {
+                        throw new DriverException("usage: update <txId> <table> <id> <value>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    String table = args.get(1);
+                    int id = parseInt(args.get(2), "id");
+                    String value = args.get(3);
+                    long lsn = performUpdate(txId, table, id, value, false);
+                    out().println(
+                                    "UPDATE LSN="
+                                            + lsn
+                                            + " ("
+                                            + table
+                                            + "#"
+                                            + id
+                                            + "="
+                                            + value
+                                            + ")");
+                });
+        command(
+                "update-wal",
+                "update-wal <txId> <table> <id> <value>",
+                "log UPDATE to WAL only (for REDO simulation)",
+                (args, rest) -> {
+                    if (args.size() != 4) {
+                        throw new DriverException("usage: update-wal <txId> <table> <id> <value>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    String table = args.get(1);
+                    int id = parseInt(args.get(2), "id");
+                    String value = args.get(3);
+                    long lsn = performUpdate(txId, table, id, value, true);
+                    out().println(
+                                    "UPDATE(WAL-ONLY) LSN="
+                                            + lsn
+                                            + " ("
+                                            + table
+                                            + "#"
+                                            + id
+                                            + "="
+                                            + value
+                                            + ")");
+                });
+        command(
+                "delete",
+                "delete <txId> <table> <id>",
+                "log DELETE and remove from storage",
+                (args, rest) -> {
+                    if (args.size() != 3) {
+                        throw new DriverException("usage: delete <txId> <table> <id>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    String table = args.get(1);
+                    int id = parseInt(args.get(2), "id");
+                    long lsn = performDelete(txId, table, id);
+                    out().println("DELETE LSN=" + lsn + " (" + table + "#" + id + ")");
+                });
+        command(
+                "commit",
+                "commit <txId>",
+                "commit a transaction (COMMIT + WAL flush)",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: commit <txId>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    if (!sessionFrm.commitTransaction(txId)) {
+                        throw new DriverException("commit failed for T" + txId);
+                    }
+                    out().println("T" + txId + " COMMIT");
+                });
+        command(
+                "rollback",
+                "rollback <txId>",
+                "rollback a transaction (UNDO + CLR + ABORT)",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: rollback <txId>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    if (!sessionFrm.rollbackTransaction(txId)) {
+                        throw new DriverException("rollback failed for T" + txId);
+                    }
+                    out().println("T" + txId + " ROLLBACK");
+                });
+        command(
+                "checkpoint",
+                "checkpoint",
+                "create a quiescent checkpoint using CCM",
+                (args, rest) -> {
+                    if (!args.isEmpty()) {
+                        throw new DriverException("usage: checkpoint");
+                    }
+                    if (!sessionFrm.createCheckpoint(sessionCcm)) {
+                        throw new DriverException("checkpoint failed");
+                    }
+                    out().println("CHECKPOINT COMPLETE");
+                });
+        command(
+                "crash",
+                "crash",
+                "simulate crash and restart from WAL and storage",
+                (args, rest) -> {
+                    if (!args.isEmpty()) {
+                        throw new DriverException("usage: crash");
+                    }
+                    closeSessionForCrash();
+                    openSession();
+                    out().println("CRASH SIMULATED & RESTARTED");
+                });
+        command(
+                "recover",
+                "recover",
+                "run ARIES crash recovery and sync CCM",
+                (args, rest) -> {
+                    if (!args.isEmpty()) {
+                        throw new DriverException("usage: recover");
+                    }
+                    if (!sessionFrm.recoverFromCrash()) {
+                        throw new DriverException("recoverFromCrash failed");
+                    }
+                    sessionCcm = createSessionCcm();
+                    out().println("CRASH RECOVERY COMPLETE");
+                });
+        command(
+                "redo",
+                "redo",
+                "run redo phase",
+                (args, rest) -> {
+                    if (!args.isEmpty()) {
+                        throw new DriverException("usage: redo");
+                    }
+                    if (!sessionFrm.redo()) {
+                        throw new DriverException("redo failed");
+                    }
+                    out().println("REDO COMPLETE");
+                });
+        command(
+                "undo",
+                "undo",
+                "run undo phase",
+                (args, rest) -> {
+                    if (!args.isEmpty()) {
+                        throw new DriverException("usage: undo");
+                    }
+                    if (!sessionFrm.undo()) {
+                        throw new DriverException("undo failed");
+                    }
+                    out().println("UNDO COMPLETE");
+                });
+        command(
+                "pitr-ts",
+                "pitr-ts <epochMs>",
+                "recover to point-in-time timestamp",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: pitr-ts <epochMs>");
+                    }
+                    long targetTs = parseLong(args.get(0), "epochMs");
+                    if (!sessionFrm.recoverToPointInTime(targetTs)) {
+                        throw new DriverException("recoverToPointInTime failed for " + targetTs);
+                    }
+                    out().println("PITR COMPLETE ts=" + targetTs);
+                });
+        command(
+                "pitr-tx",
+                "pitr-tx <txId>",
+                "recover to state right after committed transaction",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: pitr-tx <txId>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    if (!sessionFrm.recoverToTransaction(txId)) {
+                        throw new DriverException("recoverToTransaction failed for T" + txId);
+                    }
+                    out().println("PITR COMPLETE tx=" + txId);
+                });
+        command(
+                "status",
+                "status <txId>",
+                "show transaction status from WAL",
+                (args, rest) -> {
+                    if (args.size() != 1) {
+                        throw new DriverException("usage: status <txId>");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    out().println("T" + txId + ": " + sessionFrm.getTransactionStatus(txId));
+                });
+        command(
+                "get",
+                "get <table> <id>",
+                "read current value of a record",
+                (args, rest) -> {
+                    if (args.size() != 2) {
+                        throw new DriverException("usage: get <table> <id>");
+                    }
+                    String table = args.get(0);
+                    int id = parseInt(args.get(1), "id");
+                    out().println(table + "#" + id + " = " + readValue(table, id));
+                });
+        command(
+                "logs",
+                "logs [walFile]",
+                "inspect WAL records in LSN order",
+                (args, rest) -> {
+                    if (args.size() > 1) {
+                        throw new DriverException("usage: logs [walFile]");
+                    }
+                    String walFile = args.isEmpty() ? null : args.get(0);
+                    printLogs(walFile, null);
+                });
+        command(
+                "tx",
+                "tx <txId> [walFile]",
+                "filter WAL records by transaction ID",
+                (args, rest) -> {
+                    if (args.isEmpty() || args.size() > 2) {
+                        throw new DriverException("usage: tx <txId> [walFile]");
+                    }
+                    int txId = parseInt(args.get(0), "txId");
+                    String walFile = args.size() == 2 ? args.get(1) : null;
+                    printLogs(walFile, txId);
+                });
+        command(
+                "assert",
+                "assert val <table> <id> <expected|null> | assert status <txId> <status|null> |"
+                        + " assert logs <minCount>",
+                "verify expected state and record PASS/FAIL",
+                (args, rest) -> runAssert(args));
+    }
+
+    private void runTestCommand(List<String> args) throws RecoveryInternalException {
+        if (args.size() > 1) {
+            throw new DriverException(
+                    "usage: test"
+                            + " [all|undo|redo|recovery|interleaved|pitr|real-storage|checkpoint]");
+        }
+        String target = args.isEmpty() ? "all" : args.get(0).toLowerCase(Locale.ROOT);
+        switch (target) {
+            case "all" -> check("frm integration test suite", runAllTests());
+            case "undo" -> check("test undo", testUndo());
+            case "redo" -> check("test redo", testRedo());
+            case "recovery" -> check("test recovery", testRecovery());
+            case "interleaved" -> check("test interleaved", testInterleavedTransactionsRecovery());
+            case "pitr" -> check("test pitr", testPointInTime());
+            case "real-storage" ->
+                    check("test real-storage", testRealStorageMultiTransactionCrashRecovery());
+            case "checkpoint" ->
+                    check("test checkpoint", testRealStorageWithoutAndWithCheckpoint());
+            default ->
+                    throw new DriverException(
+                            "unknown test '"
+                                    + target
+                                    + "'; use all, undo, redo, recovery, interleaved, pitr,"
+                                    + " real-storage, or checkpoint");
+        }
+    }
+
+    private void runAssert(List<String> args) {
+        if (args.isEmpty()) {
+            throw new DriverException(
+                    "usage: assert val <table> <id> <expected|null> | assert status <txId>"
+                            + " <status|null> | assert logs <minCount>");
+        }
+        String kind = args.get(0).toLowerCase(Locale.ROOT);
+        switch (kind) {
+            case "val" -> {
+                if (args.size() != 4) {
+                    throw new DriverException("usage: assert val <table> <id> <expected|null>");
+                }
+                String table = args.get(1);
+                int id = parseInt(args.get(2), "id");
+                String expected = parseNullable(args.get(3));
+                String actual = readValue(table, id);
+                check("val " + table + "#" + id, expected, actual);
+            }
+            case "status" -> {
+                if (args.size() != 3) {
+                    throw new DriverException("usage: assert status <txId> <status|null>");
+                }
+                int txId = parseInt(args.get(1), "txId");
+                String expectedRaw = parseNullable(args.get(2));
+                String expected = expectedRaw == null ? null : expectedRaw.toUpperCase(Locale.ROOT);
+                TxStatus st = sessionFrm.getTransactionStatus(txId);
+                String actual = st == null ? null : st.name();
+                check("status T" + txId, expected, actual);
+            }
+            case "logs" -> {
+                if (args.size() != 2) {
+                    throw new DriverException("usage: assert logs <minCount>");
+                }
+                int minCount = parseInt(args.get(1), "minCount");
+                int actual = sessionFrm.getLogger().getLogsSorted().size();
+                check("logs >= " + minCount, actual >= minCount);
+            }
+            default -> throw new DriverException("unknown assert target: " + kind);
+        }
+    }
+
+    private long performInsert(int txId, String table, int id, String value) throws Exception {
+        if (sessionRealStorage == null) {
+            String before = sessionMockStorage.get(table, id);
+            if (before != null) {
+                throw new DriverException("record already exists: " + table + "#" + id);
+            }
+            long lsn = sessionFrm.writeLog(txId, LogType.INSERT, table, id, null, value);
+            sessionMockStorage.put(table, id, value);
+            return lsn;
+        }
+        ensureTableExists(table);
+        if (findRealRow(table, id).isPresent()) {
+            throw new DriverException("record already exists: " + table + "#" + id);
+        }
+        Row newRow = buildRow(id, value);
+        Rid rid = sessionRealStorage.reserveRid(table, newRow);
+        byte[] afterBytes = sessionRealStorage.encodeRow(table, newRow);
+        long lsn =
+                sessionFrm.writeLog(
+                        new LogPayload(
+                                new TxId(txId),
+                                org.rafendb.common.log.LogType.INSERT,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow(table, rid),
+                                                Optional.empty(),
+                                                Optional.of(afterBytes)))));
+        try {
+            sessionRealStorage.insert(table, rid, newRow, lsn);
+        } catch (Exception e) {
+            sessionRealStorage.cancelReservation(table, rid);
+            throw e;
+        }
+        return lsn;
+    }
+
+    private long performUpdate(int txId, String table, int id, String value, boolean walOnly)
+            throws Exception {
+        if (sessionRealStorage == null) {
+            String before = sessionMockStorage.get(table, id);
+            if (before == null) {
+                throw new DriverException("record not found: " + table + "#" + id);
+            }
+            long lsn = sessionFrm.writeLog(txId, LogType.UPDATE, table, id, before, value);
+            if (!walOnly) {
+                sessionMockStorage.put(table, id, value);
+            }
+            return lsn;
+        }
+        RowEntry existing =
+                findRealRow(table, id)
+                        .orElseThrow(
+                                () -> new DriverException("record not found: " + table + "#" + id));
+        Row newRow = buildRow(id, value);
+        byte[] beforeBytes = sessionRealStorage.encodeRow(table, existing.row());
+        byte[] afterBytes = sessionRealStorage.encodeRow(table, newRow);
+        long lsn =
+                sessionFrm.writeLog(
+                        new LogPayload(
+                                new TxId(txId),
+                                org.rafendb.common.log.LogType.UPDATE,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow(table, existing.rid()),
+                                                Optional.of(beforeBytes),
+                                                Optional.of(afterBytes)))));
+        if (!walOnly) {
+            sessionRealStorage.update(table, existing.rid(), newRow, lsn);
+        }
+        return lsn;
+    }
+
+    private long performDelete(int txId, String table, int id) throws Exception {
+        if (sessionRealStorage == null) {
+            String before = sessionMockStorage.get(table, id);
+            if (before == null) {
+                throw new DriverException("record not found: " + table + "#" + id);
+            }
+            long lsn = sessionFrm.writeLog(txId, LogType.DELETE, table, id, before, null);
+            sessionMockStorage.applyUndo(table, id, null, lsn);
+            return lsn;
+        }
+        RowEntry existing =
+                findRealRow(table, id)
+                        .orElseThrow(
+                                () -> new DriverException("record not found: " + table + "#" + id));
+        byte[] beforeBytes = sessionRealStorage.encodeRow(table, existing.row());
+        long lsn =
+                sessionFrm.writeLog(
+                        new LogPayload(
+                                new TxId(txId),
+                                org.rafendb.common.log.LogType.DELETE,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow(table, existing.rid()),
+                                                Optional.of(beforeBytes),
+                                                Optional.empty()))));
+        sessionRealStorage.delete(table, existing.rid(), lsn);
+        return lsn;
+    }
+
+    private String readValue(String table, int id) {
+        if (sessionRealStorage == null) {
+            return sessionMockStorage.get(table, id);
+        }
+        try {
+            return findRealRow(table, id).map(e -> extractValue(e.row())).orElse(null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read record " + table + "#" + id, e);
+        }
+    }
+
+    private void ensureTableExists(String table) throws Exception {
+        if (!sessionRealStorage.listTables().contains(table)) {
+            sessionRealStorage.createTable(
+                    new TableSchema(
+                            table,
+                            List.of(
+                                    new Column("id", DataType.INTEGER, 0, false, true),
+                                    new Column("val", DataType.VARCHAR, 255, true, false))));
+        }
+    }
+
+    private Optional<RowEntry> findRealRow(String table, int id) throws Exception {
+        if (!sessionRealStorage.listTables().contains(table)) {
+            return Optional.empty();
+        }
+        try (RecordCursor cursor = sessionRealStorage.scan(table)) {
+            StoredRow sr;
+            while ((sr = cursor.next()) != null) {
+                Value keyVal = sr.row().values().getFirst();
+                if (!keyVal.isNull() && keyVal.asInt() == id) {
+                    return Optional.of(new RowEntry(sr.rid(), sr.row()));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Row buildRow(int id, String value) {
+        return new Row(
+                List.of(
+                        Value.ofInt(id),
+                        value == null
+                                ? Value.nullOf(DataType.VARCHAR)
+                                : Value.ofText(DataType.VARCHAR, value)));
+    }
+
+    private static String extractValue(Row row) {
+        Value val = row.values().get(1);
+        return val.isNull() ? null : String.valueOf(val.value());
+    }
+
+    private void printLogs(String walFile, Integer txFilter) throws Exception {
+        if (walFile == null || walFile.isEmpty()) {
+            printLoggerRecords(
+                    sessionFrm.getLogger(),
+                    sessionWalFile != null ? sessionWalFile.toString() : "[session]",
+                    txFilter);
+            return;
+        }
+        try (Logger fileLogger = new Logger(walFile)) {
+            printLoggerRecords(fileLogger, walFile, txFilter);
+        }
+    }
+
+    private void printLoggerRecords(Logger targetLogger, String sourceLabel, Integer txFilter) {
+        List<WALRecord> logs =
+                txFilter == null
+                        ? targetLogger.getLogsSorted()
+                        : targetLogger.getLogsByTransaction(txFilter);
+        out().println("=== WAL RECORD VIEWER ===");
+        out().println("Log Source: " + sourceLabel);
+        if (txFilter != null) {
+            out().println("Filtered for Transaction: " + txFilter);
+        }
+        out().println("Total Records: " + logs.size());
+        out().println("----------------------------------------------");
+        for (WALRecord record : logs) {
+            out().println(record);
+        }
+        out().println("==============================================");
+    }
+
+    private static int parseInt(String raw, String field) {
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new DriverException("invalid integer for " + field + ": " + raw);
+        }
+    }
+
+    private static long parseLong(String raw, String field) {
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            throw new DriverException("invalid long for " + field + ": " + raw);
+        }
+    }
+
+    private static String parseNullable(String raw) {
+        return "null".equalsIgnoreCase(raw) ? null : raw;
     }
 
     private void initNewEnvironment() {
         try {
+            if (frm != null) {
+                frm.close();
+                frm = null;
+            }
             if (tempLogDir == null) {
                 tempLogDir = Files.createTempDirectory("rafendb-frm-test-");
             }
@@ -142,8 +866,7 @@ public class RecoveryDriver {
         // Rollback Tx1
         boolean rollbackSuccess = frm.rollbackTransaction(tx1);
         String restoredVal = storage.get("account", 101);
-        System.out.println(
-                "  [DETAIL] Expected: restored=Alice:100 | Actual: restored=" + restoredVal);
+        out().println("  [DETAIL] Expected: restored=Alice:100 | Actual: restored=" + restoredVal);
 
         return rollbackSuccess && "Alice:100".equals(restoredVal);
     }
@@ -154,7 +877,7 @@ public class RecoveryDriver {
     public boolean testRedo() {
         initNewEnvironment();
         boolean ok = frm.redo();
-        System.out.println("  [DETAIL] Expected: redo=true | Actual: redo=" + ok);
+        out().println("  [DETAIL] Expected: redo=true | Actual: redo=" + ok);
         return ok;
     }
 
@@ -186,7 +909,7 @@ public class RecoveryDriver {
         // 4. Jalankan prosedur crash recovery
         boolean recoveryOk = frm.recoverFromCrash();
         String valAfterRecovery = storage.get("accounts", 101);
-        System.out.println("  [DETAIL] Expected: User1-Committed | Actual: " + valAfterRecovery);
+        out().println("  [DETAIL] Expected: User1-Committed | Actual: " + valAfterRecovery);
 
         return recoveryOk && "User1-Committed".equals(valAfterRecovery);
     }
@@ -232,14 +955,14 @@ public class RecoveryDriver {
         String v30 = storage.get("ledger", 30);
         boolean t1Ok = "Val-T1".equals(v10);
         boolean t3Ok = "Val-T3".equals(v30);
-        System.out.println(
-                "  [DETAIL] Expected: ledger#10=Val-T1, ledger#20=null, ledger#30=Val-T3"
-                        + " | Actual: ledger#10="
-                        + v10
-                        + ", ledger#20="
-                        + v20
-                        + ", ledger#30="
-                        + v30);
+        out().println(
+                        "  [DETAIL] Expected: ledger#10=Val-T1, ledger#20=null, ledger#30=Val-T3"
+                                + " | Actual: ledger#10="
+                                + v10
+                                + ", ledger#20="
+                                + v20
+                                + ", ledger#30="
+                                + v30);
 
         return t1Commit && t3Commit && t2Rollback && t1Ok && t3Ok;
     }
@@ -270,7 +993,7 @@ public class RecoveryDriver {
         // Pulihkan ke titik waktu sebelum T2
         boolean pitrOk = frm.recoverToPointInTime(timestampCutoff);
         String valAfterPitr = storage.get("docs", 1);
-        System.out.println("  [DETAIL] Expected: Version1 | Actual: " + valAfterPitr);
+        out().println("  [DETAIL] Expected: Version1 | Actual: " + valAfterPitr);
 
         return pitrOk && "Version1".equals(valAfterPitr);
     }
@@ -285,7 +1008,7 @@ public class RecoveryDriver {
             Path dir = Files.createTempDirectory("frm-real-driver-");
             Path dataDir = dir.resolve("data");
             Path walPath = dir.resolve("wal.log");
-            ConcurrencyControl mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+            ConcurrencyControl mockCc = new MockConcurrencyControl();
 
             TableSchema schema =
                     new TableSchema(
@@ -305,7 +1028,7 @@ public class RecoveryDriver {
 
             try (Logger logger = new Logger(walPath);
                     StorageManager sm = Engine.storage(dataDir, 8, logger);
-                    FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                    FRManager realFrm = new FRManager(logger, sm)) {
                 sm.createTable(schema);
 
                 // Tx1: INSERT r1 -> COMMIT, lalu buat checkpoint selesai
@@ -326,7 +1049,7 @@ public class RecoveryDriver {
                                                         Optional.of(r1Bytes)))));
                 sm.insert("accounts", rid1, r1, lsn1);
                 realFrm.commitTransaction(tx1);
-                realFrm.createCheckpoint();
+                realFrm.createCheckpoint(mockCc);
 
                 // Tx2: INSERT r2 lalu ABORT (rollback)
                 TxId tx2 = new TxId(102);
@@ -384,7 +1107,7 @@ public class RecoveryDriver {
 
             try (Logger restartedLogger = new Logger(walPath);
                     StorageManager restartedSm = Engine.storage(dataDir, 8, restartedLogger);
-                    FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                    FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
                 boolean recovered = restartedFrm.recoverFromCrash();
                 Optional<Row> actualR1 = restartedSm.fetch("accounts", rid1).map(StoredRow::row);
                 Optional<Row> actualR2 = restartedSm.fetch("accounts", rid2).map(StoredRow::row);
@@ -395,19 +1118,19 @@ public class RecoveryDriver {
                                 && Optional.of(r1Updated).equals(actualR1)
                                 && actualR2.isEmpty()
                                 && actualR3.isEmpty();
-                System.out.println(
-                        "  [DETAIL] Expected: r1="
-                                + r1Updated
-                                + ", r2=empty, r3=empty | Actual: r1="
-                                + actualR1.orElse(null)
-                                + ", r2="
-                                + actualR2.orElse(null)
-                                + ", r3="
-                                + actualR3.orElse(null));
+                out().println(
+                                "  [DETAIL] Expected: r1="
+                                        + r1Updated
+                                        + ", r2=empty, r3=empty | Actual: r1="
+                                        + actualR1.orElse(null)
+                                        + ", r2="
+                                        + actualR2.orElse(null)
+                                        + ", r3="
+                                        + actualR3.orElse(null));
                 return ok;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace(out());
             return false;
         }
     }
@@ -418,10 +1141,9 @@ public class RecoveryDriver {
      * shutdown.
      */
     public static void runCrashChildSimulation(Path dataDir, Path walPath) throws Exception {
-        ConcurrencyControl mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Logger logger = new Logger(walPath);
         StorageManager sm = Engine.storage(dataDir, 8, logger);
-        FRManager realFrm = new FRManager(logger, sm, mockCc);
+        FRManager realFrm = new FRManager(logger, sm);
 
         sm.createTable(
                 new TableSchema(
@@ -492,7 +1214,7 @@ public class RecoveryDriver {
      */
     public boolean testRealStorageWithoutAndWithCheckpoint() {
         try {
-            ConcurrencyControl mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+            ConcurrencyControl mockCc = new MockConcurrencyControl();
             TableSchema schema =
                     new TableSchema(
                             "notes",
@@ -533,7 +1255,7 @@ public class RecoveryDriver {
             Rid ridA2;
             try (Logger loggerA = new Logger(walPathA);
                     StorageManager smA = Engine.storage(dataDirA, 8, loggerA);
-                    FRManager frmA = new FRManager(loggerA, smA, mockCc)) {
+                    FRManager frmA = new FRManager(loggerA, smA)) {
                 smA.createTable(schema);
                 TxId tx1 = new TxId(1);
                 frmA.beginTransaction(tx1);
@@ -577,7 +1299,7 @@ public class RecoveryDriver {
             boolean recAOk;
             try (Logger restartedA = new Logger(walPathA);
                     StorageManager smA2 = Engine.storage(dataDirA, 8, restartedA);
-                    FRManager frmA2 = new FRManager(restartedA, smA2, mockCc)) {
+                    FRManager frmA2 = new FRManager(restartedA, smA2)) {
                 recAOk = frmA2.recoverFromCrash();
                 actualA1 = smA2.fetch("notes", ridA1).map(StoredRow::row);
                 actualA2 = smA2.fetch("notes", ridA2).map(StoredRow::row);
@@ -592,7 +1314,7 @@ public class RecoveryDriver {
             boolean ckptOk;
             try (Logger loggerB = new Logger(walPathB);
                     StorageManager smB = Engine.storage(dataDirB, 8, loggerB);
-                    FRManager frmB = new FRManager(loggerB, smB, mockCc)) {
+                    FRManager frmB = new FRManager(loggerB, smB)) {
                 smB.createTable(schema);
                 TxId tx1 = new TxId(1);
                 frmB.beginTransaction(tx1);
@@ -611,7 +1333,7 @@ public class RecoveryDriver {
                                                         Optional.of(preBytes)))));
                 smB.insert("notes", ridB1, preCkpt, lsn1);
                 frmB.commitTransaction(tx1);
-                ckptOk = frmB.createCheckpoint();
+                ckptOk = frmB.createCheckpoint(mockCc);
 
                 // Post-checkpoint committed update (belum masuk ke SM -> redo)
                 TxId tx2 = new TxId(2);
@@ -656,7 +1378,7 @@ public class RecoveryDriver {
             boolean recBOk;
             try (Logger restartedB = new Logger(walPathB);
                     StorageManager smB2 = Engine.storage(dataDirB, 8, restartedB);
-                    FRManager frmB2 = new FRManager(restartedB, smB2, mockCc)) {
+                    FRManager frmB2 = new FRManager(restartedB, smB2)) {
                 recBOk = frmB2.recoverFromCrash();
                 actualB1 = smB2.fetch("notes", ridB1).map(StoredRow::row);
                 actualB2 = smB2.fetch("notes", ridB2).map(StoredRow::row);
@@ -670,23 +1392,23 @@ public class RecoveryDriver {
                             && recBOk
                             && Optional.of(postCkptCommitted).equals(actualB1)
                             && actualB2.isEmpty();
-            System.out.println(
-                    "  [DETAIL] Expected: noCkpt(r1="
-                            + noCkptCommitted
-                            + ", r2=empty) & withCkpt(r1="
-                            + postCkptCommitted
-                            + ", r2=empty) | Actual: noCkpt(r1="
-                            + actualA1.orElse(null)
-                            + ", r2="
-                            + actualA2.orElse(null)
-                            + ") & withCkpt(r1="
-                            + actualB1.orElse(null)
-                            + ", r2="
-                            + actualB2.orElse(null)
-                            + ")");
+            out().println(
+                            "  [DETAIL] Expected: noCkpt(r1="
+                                    + noCkptCommitted
+                                    + ", r2=empty) & withCkpt(r1="
+                                    + postCkptCommitted
+                                    + ", r2=empty) | Actual: noCkpt(r1="
+                                    + actualA1.orElse(null)
+                                    + ", r2="
+                                    + actualA2.orElse(null)
+                                    + ") & withCkpt(r1="
+                                    + actualB1.orElse(null)
+                                    + ", r2="
+                                    + actualB2.orElse(null)
+                                    + ")");
             return ok;
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace(out());
             return false;
         }
     }
@@ -697,37 +1419,38 @@ public class RecoveryDriver {
      * @return true jika seluruh pengujian berhasil
      */
     public boolean runAllTests() throws RecoveryInternalException {
-        System.out.println("==================================================");
-        System.out.println("       RUNNING FRM INTEGRATION TEST SUITE         ");
-        System.out.println("==================================================");
+        out().println("==================================================");
+        out().println("       RUNNING FRM INTEGRATION TEST SUITE         ");
+        out().println("==================================================");
 
         boolean undoPassed = testUndo();
-        System.out.println("[TEST] Undo Mechanism: " + (undoPassed ? "PASSED" : "FAILED"));
+        out().println("[TEST] Undo Mechanism: " + (undoPassed ? "PASSED" : "FAILED"));
 
         boolean redoPassed = testRedo();
-        System.out.println("[TEST] Redo Mechanism: " + (redoPassed ? "PASSED" : "FAILED"));
+        out().println("[TEST] Redo Mechanism: " + (redoPassed ? "PASSED" : "FAILED"));
 
         boolean recoveryPassed = testRecovery();
-        System.out.println("[TEST] Crash Recovery: " + (recoveryPassed ? "PASSED" : "FAILED"));
+        out().println("[TEST] Crash Recovery: " + (recoveryPassed ? "PASSED" : "FAILED"));
 
         boolean interleavedPassed = testInterleavedTransactionsRecovery();
-        System.out.println(
-                "[TEST] Interleaved Transactions: " + (interleavedPassed ? "PASSED" : "FAILED"));
+        out().println(
+                        "[TEST] Interleaved Transactions: "
+                                + (interleavedPassed ? "PASSED" : "FAILED"));
 
         boolean pitrPassed = testPointInTime();
-        System.out.println("[TEST] Point-In-Time Recovery: " + (pitrPassed ? "PASSED" : "FAILED"));
+        out().println("[TEST] Point-In-Time Recovery: " + (pitrPassed ? "PASSED" : "FAILED"));
 
         boolean realStoragePassed = testRealStorageMultiTransactionCrashRecovery();
-        System.out.println(
-                "[TEST] Real Storage Multi-Tx Recovery: "
-                        + (realStoragePassed ? "PASSED" : "FAILED"));
+        out().println(
+                        "[TEST] Real Storage Multi-Tx Recovery: "
+                                + (realStoragePassed ? "PASSED" : "FAILED"));
 
         boolean ckptComparePassed = testRealStorageWithoutAndWithCheckpoint();
-        System.out.println(
-                "[TEST] Recovery Without vs With Checkpoint: "
-                        + (ckptComparePassed ? "PASSED" : "FAILED"));
+        out().println(
+                        "[TEST] Recovery Without vs With Checkpoint: "
+                                + (ckptComparePassed ? "PASSED" : "FAILED"));
 
-        System.out.println("==================================================");
+        out().println("==================================================");
         boolean allPassed =
                 undoPassed
                         && redoPassed
@@ -736,203 +1459,20 @@ public class RecoveryDriver {
                         && pitrPassed
                         && realStoragePassed
                         && ckptComparePassed;
-        System.out.println(
-                "TOTAL RESULT: " + (allPassed ? "ALL TESTS PASSED!" : "SOME TESTS FAILED"));
-        System.out.println("==================================================");
+        out().println("TOTAL RESULT: " + (allPassed ? "ALL TESTS PASSED!" : "SOME TESTS FAILED"));
+        out().println("==================================================");
         return allPassed;
     }
 
     public FRManager getFRManager() {
-        return frm;
+        return sessionFrm != null ? sessionFrm : frm;
     }
 
     public Path getCurrentLogFile() {
-        return currentLogFile;
+        return sessionWalFile != null ? sessionWalFile : currentLogFile;
     }
 
     public MockStorage getStorage() {
-        return storage;
-    }
-
-    /**
-     * Entry point utama untuk Failure Recovery Manager Driver.
-     *
-     * @param args argumen baris perintah (--test, --view, --tx, --crash, --help,
-     *     --simulate-crash-child)
-     */
-    public static void main(String[] args) throws Exception {
-        if (args != null && args.length == 3 && "--simulate-crash-child".equals(args[0])) {
-            runCrashChildSimulation(Path.of(args[1]), Path.of(args[2]));
-            return;
-        }
-
-        System.out.println(Version.banner("Failure Recovery Manager Driver"));
-
-        if (args != null && args.length > 0) {
-            handleArgs(args);
-            return;
-        }
-
-        // Mode interaktif jika input tersedia, atau jalankan test suite otomatis jika
-        // non-interaktif
-        runInteractiveOrTest();
-    }
-
-    /**
-     * Menampilkan informasi bantuan penggunaan argumen CLI driver.
-     */
-    private static void printHelp() {
-        System.out.println("Usage:");
-        System.out.println("  RecoveryDriver --test              Run all integration tests");
-        System.out.println(
-                "  RecoveryDriver --view [logFile]    Inspect WAL log records in LSN order");
-        System.out.println(
-                "  RecoveryDriver --tx <txId> [file]  Filter WAL log records by transaction ID");
-        System.out.println(
-                "  RecoveryDriver --crash             Simulate crash and restart recovery demo");
-        System.out.println("  RecoveryDriver --help              Show this help message");
-    }
-
-    /**
-     * Menangani argumen baris perintah yang diberikan pengguna.
-     *
-     * @param args argumen baris perintah
-     */
-    private static void handleArgs(String[] args) throws RecoveryInternalException {
-        String command = args[0].toLowerCase();
-        switch (command) {
-            case "--test", "-t" -> {
-                RecoveryDriver driver = new RecoveryDriver();
-                driver.runAllTests();
-            }
-            case "--view", "-v" -> {
-                String logFile = args.length > 1 ? args[1] : "";
-                viewLogs(logFile, null);
-            }
-            case "--tx" -> {
-                if (args.length < 2) {
-                    System.err.println(
-                            "Error: Missing transaction ID. Usage: --tx <txId> [logFile]");
-                    return;
-                }
-                try {
-                    int txId = Integer.parseInt(args[1]);
-                    String logFile = args.length > 2 ? args[2] : "";
-                    viewLogs(logFile, txId);
-                } catch (NumberFormatException e) {
-                    System.err.println("Error: Invalid transaction ID: " + args[1]);
-                }
-            }
-            case "--crash", "-c" -> {
-                System.out.println("Simulating system crash and startup recovery...");
-                RecoveryDriver driver = new RecoveryDriver();
-                boolean passed = driver.testRecovery();
-                System.out.println("Crash Recovery Simulation: " + (passed ? "PASSED" : "FAILED"));
-            }
-            case "--help", "-h", "help" -> printHelp();
-            default -> {
-                System.out.println("Unknown option: " + command);
-                printHelp();
-            }
-        }
-    }
-
-    /**
-     * Menampilkan record WAL dari file atau memori dengan opsi filter transaksi.
-     *
-     * @param logFile path file log WAL, atau kosong untuk memori
-     * @param txFilter ID transaksi untuk filtering, atau null untuk seluruh log
-     */
-    private static void viewLogs(String logFile, Integer txFilter) {
-        try (Logger logger =
-                (logFile == null || logFile.isEmpty()) ? new Logger() : new Logger(logFile)) {
-            List<WALRecord> logs =
-                    txFilter == null
-                            ? logger.getLogsSorted()
-                            : logger.getLogsByTransaction(txFilter);
-
-            System.out.println("=== WAL RECORD VIEWER ===");
-            System.out.println(
-                    "Log Source: "
-                            + (logFile == null || logFile.isEmpty() ? "[in-memory]" : logFile));
-            if (txFilter != null) {
-                System.out.println("Filtered for Transaction: " + txFilter);
-            }
-            System.out.println("Total Records: " + logs.size());
-            System.out.println("----------------------------------------------");
-            for (WALRecord record : logs) {
-                record.printWALRecord();
-            }
-            System.out.println("==============================================");
-        } catch (Exception e) {
-            System.err.println("Failed to read log records: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Menjalankan antarmuka teks interaktif jika console tersedia, atau beralih ke uji otomatis.
-     */
-    private static void runInteractiveOrTest() throws RecoveryInternalException {
-        if (System.console() == null) {
-            RecoveryDriver driver = new RecoveryDriver();
-            driver.runAllTests();
-            return;
-        }
-
-        try (Scanner scanner = new Scanner(System.in)) {
-            RecoveryDriver driver = new RecoveryDriver();
-            boolean running = true;
-            while (running) {
-                System.out.println();
-                System.out.println("===== FAILURE RECOVERY MANAGER CLI =====");
-                System.out.println("1. Run Automated Test Suite (FR-08 & FR-09)");
-                System.out.println("2. View Current WAL Logs (LSN Order)");
-                System.out.println("3. Filter WAL Logs by Transaction ID");
-                System.out.println("4. Run Crash Recovery Simulation Demo (FR-07)");
-                System.out.println("5. Exit");
-                System.out.print("Select an option (1-5): ");
-
-                if (!scanner.hasNextLine()) {
-                    break;
-                }
-                String line = scanner.nextLine().trim();
-                switch (line) {
-                    case "1" -> driver.runAllTests();
-                    case "2" -> {
-                        if (driver.getFRManager() != null) {
-                            driver.getFRManager().getLogger().displayLogs();
-                        } else {
-                            System.out.println("No active logger available.");
-                        }
-                    }
-                    case "3" -> {
-                        System.out.print("Enter transaction ID: ");
-                        if (scanner.hasNextLine()) {
-                            String txInput = scanner.nextLine().trim();
-                            try {
-                                int txId = Integer.parseInt(txInput);
-                                if (driver.getFRManager() != null) {
-                                    driver.getFRManager()
-                                            .getLogger()
-                                            .displayLogsByTransaction(txId);
-                                }
-                            } catch (NumberFormatException e) {
-                                System.out.println("Invalid transaction ID format.");
-                            }
-                        }
-                    }
-                    case "4" -> {
-                        boolean ok = driver.testRecovery();
-                        System.out.println(
-                                "Crash Recovery Demo Result: " + (ok ? "PASSED" : "FAILED"));
-                    }
-                    case "5", "exit", "quit" -> {
-                        System.out.println("Exiting Recovery Driver. Goodbye!");
-                        running = false;
-                    }
-                    default -> System.out.println("Invalid selection. Please choose 1-5.");
-                }
-            }
-        }
+        return sessionFrm != null && mocked(Component.SM) ? sessionMockStorage : storage;
     }
 }

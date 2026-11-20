@@ -49,9 +49,9 @@ class CheckpointManagerTest {
 
         try (Logger logger = new Logger(tempDir.resolve("checkpoint.log"))) {
             CheckpointManager manager =
-                    new CheckpointManager(logger, ccm, storage, Duration.ofSeconds(1));
+                    new CheckpointManager(logger, storage, Duration.ofSeconds(1));
 
-            assertTrue(manager.createCheckpoint());
+            assertTrue(manager.createCheckpoint(ccm));
             assertEquals(List.of("pause", "await", "flush", "resume"), calls);
             assertEquals(
                     List.of(LogType.CHECKPOINT_BEGIN, LogType.CHECKPOINT_END),
@@ -88,12 +88,38 @@ class CheckpointManagerTest {
                         });
 
         try (Logger logger = new Logger(tempDir.resolve("timeout.log"))) {
-            CheckpointManager manager = new CheckpointManager(logger, ccm, storage, Duration.ZERO);
+            CheckpointManager manager = new CheckpointManager(logger, storage, Duration.ZERO);
 
-            assertFalse(manager.createCheckpoint());
+            assertFalse(manager.createCheckpoint(ccm));
             assertEquals(List.of("pause", "await", "resume"), calls);
             assertTrue(logger.getLogsSorted().isEmpty());
             assertEquals(0, manager.getLastCheckpointLsn());
+        }
+    }
+
+    @Test
+    void createCheckpointWithoutConcurrencyControlStillFlushesStorage() throws Exception {
+        List<String> calls = new ArrayList<>();
+        StorageManager storage =
+                proxy(
+                        StorageManager.class,
+                        (method, args) -> {
+                            if (method.getName().equals("flush")) {
+                                calls.add("flush");
+                            }
+                            return null;
+                        });
+
+        try (Logger logger = new Logger(tempDir.resolve("no-ccm.log"))) {
+            CheckpointManager manager =
+                    new CheckpointManager(logger, storage, Duration.ofSeconds(1));
+
+            assertTrue(manager.createCheckpoint());
+            assertEquals(List.of("flush"), calls);
+            assertEquals(
+                    List.of(LogType.CHECKPOINT_BEGIN, LogType.CHECKPOINT_END),
+                    logger.getLogsSorted().stream().map(record -> record.getLogType()).toList());
+            assertTrue(manager.getLastCheckpointLsn() > 0);
         }
     }
 

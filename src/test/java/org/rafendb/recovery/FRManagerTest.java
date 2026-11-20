@@ -204,7 +204,7 @@ class FRManagerTest {
                                         return method.invoke(realSm, args);
                                     });
 
-            try (FRManager connectedFrm = new FRManager(connectedLogger, countingSm, mockCc)) {
+            try (FRManager connectedFrm = new FRManager(connectedLogger, countingSm)) {
                 Rid largeSlotRid = new Rid(3L, 1500);
                 ChangeRecord change =
                         new ChangeRecord(
@@ -224,7 +224,7 @@ class FRManagerTest {
                 assertEquals(1L, lsn);
                 assertEquals(largeSlotRid, connectedLogger.getLogsSorted().getFirst().getRid());
 
-                assertTrue(connectedFrm.createCheckpoint());
+                assertTrue(connectedFrm.createCheckpoint(mockCc));
                 assertEquals(1, flushCount[0]);
             }
         }
@@ -232,7 +232,6 @@ class FRManagerTest {
 
     @Test
     void testRealStorageRollbackAndCrashRecoveryDecodeRow() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("real-wal.log");
         Path dataDir = tempDir.resolve("real-data");
 
@@ -259,7 +258,7 @@ class FRManagerTest {
         try (Logger realLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager realSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, realLogger);
-                FRManager realFrm = new FRManager(realLogger, realSm, mockCc)) {
+                FRManager realFrm = new FRManager(realLogger, realSm)) {
             realSm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "items",
@@ -342,7 +341,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(redoneRow),
@@ -352,7 +351,6 @@ class FRManagerTest {
 
     @Test
     void testNullAttributeDistinctFromMissingRecord() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("null-attr-wal.log");
         Path dataDir = tempDir.resolve("null-attr-data");
 
@@ -373,7 +371,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                FRManager realFrm = new FRManager(logger, sm)) {
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "items",
@@ -482,11 +480,10 @@ class FRManagerTest {
         Rid committedRid = new Rid(Long.parseLong(r1Parts[0]), Integer.parseInt(r1Parts[1]));
         Rid uncommittedRid = new Rid(Long.parseLong(r2Parts[0]), Integer.parseInt(r2Parts[1]));
 
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             assertTrue(restartedSm.fetch("items", committedRid).isPresent());
             assertTrue(restartedSm.fetch("items", uncommittedRid).isEmpty());
@@ -495,7 +492,6 @@ class FRManagerTest {
 
     @Test
     void testDropAndRecreateTableSkipsOldGenerationOnRecovery() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("gen-wal.log");
         Path dataDir = tempDir.resolve("gen-data");
 
@@ -515,7 +511,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                FRManager realFrm = new FRManager(logger, sm)) {
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "events",
@@ -591,7 +587,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(newRow),
@@ -610,7 +606,6 @@ class FRManagerTest {
 
     @Test
     void testLoadSampleDatabaseWithFrmLoggingCallbackAndRecovery() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("sample-wal.log");
         Path dataDir = tempDir.resolve("sample-data");
 
@@ -618,7 +613,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 16, logger);
-                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                FRManager realFrm = new FRManager(logger, sm)) {
             TxId tx1 = new TxId(1);
             assertTrue(realFrm.beginTransaction(tx1));
             sm.loadSampleDatabase(
@@ -655,7 +650,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 16, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             long customerCountAfter = 0;
             try (var cursor = restartedSm.scan("customers")) {
@@ -686,7 +681,6 @@ class FRManagerTest {
 
     @Test
     void testIndexConsistencyAfterCrashRecoveryWithRealStorage() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("idx-wal.log");
         Path dataDir = tempDir.resolve("idx-data");
 
@@ -716,7 +710,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                FRManager realFrm = new FRManager(logger, sm)) {
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "products",
@@ -810,7 +804,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     java.util.List.of(rid1),
@@ -856,7 +850,6 @@ class FRManagerTest {
 
     @Test
     void testPitrWithRealStorageSurvivesRestart() throws Exception {
-        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
         Path walPath = tempDir.resolve("pitr-real-wal.log");
         Path dataDir = tempDir.resolve("pitr-real-data");
 
@@ -884,7 +877,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+                FRManager realFrm = new FRManager(logger, sm)) {
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "docs",
@@ -975,7 +968,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(v1Row),
@@ -1014,7 +1007,6 @@ class FRManagerTest {
                             new org.rafendb.concurrency.protocol.TimestampBasedProtocol(),
                             realFrm);
             ccm.initializeAfterRecovery(realFrm.getRecoveryInfo());
-            realFrm.attachConcurrencyControl(ccm);
 
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -1094,8 +1086,8 @@ class FRManagerTest {
                                     ResourceId.ofTable("accounts"))
                             .status());
 
-            // 3. Quiescent checkpoint via attachConcurrencyControl + SM.flush()
-            assertTrue(realFrm.createCheckpoint());
+            // 3. Quiescent checkpoint dengan meneruskan CCM ke createCheckpoint + SM.flush()
+            assertTrue(realFrm.createCheckpoint(ccm));
             assertTrue(
                     logger.getLogsSorted().stream()
                             .anyMatch(r -> r.getLogType() == LogType.CHECKPOINT_BEGIN));
