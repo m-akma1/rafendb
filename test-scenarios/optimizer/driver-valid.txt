@@ -1,0 +1,67 @@
+# ==========================================
+# BASIC SELECT & PROJECTION
+# ==========================================
+
+VALID | SELECT * FROM mahasiswa
+VALID | SELECT nim, nama FROM mahasiswa
+VALID | SELECT nama, ipk FROM mahasiswa WHERE ipk > 3.5
+VALID | SELECT * FROM prodi WHERE kode = 'IF'
+VALID | SELECT nama FROM mahasiswa ORDER BY nama
+VALID | SELECT nim, nama FROM mahasiswa ORDER BY nim DESC
+
+# ==========================================
+# SELECTION & EXPRESSIONS
+# ==========================================
+
+VALID | SELECT * FROM mahasiswa WHERE nim = 13524275
+VALID | SELECT * FROM mahasiswa WHERE ipk >= 3.5
+VALID | SELECT * FROM mahasiswa WHERE ipk < 3.5
+VALID | SELECT * FROM mahasiswa WHERE ipk <> 3.5
+VALID | SELECT * FROM mahasiswa WHERE nim > 13524275 AND ipk < 4.0
+VALID | SELECT * FROM mahasiswa WHERE ipk * 2 > 7.0
+VALID | SELECT * FROM mahasiswa WHERE (ipk + 0.5) > 4.0
+
+# ==========================================
+# JOIN & CARTESIAN PRODUCT
+# ==========================================
+
+VALID | SELECT * FROM mahasiswa, prodi
+VALID | SELECT * FROM mahasiswa JOIN prodi ON mahasiswa.kode_prodi = prodi.kode
+VALID | SELECT mahasiswa.nama, prodi.nama FROM mahasiswa JOIN prodi ON mahasiswa.kode_prodi = prodi.kode
+VALID | SELECT * FROM mahasiswa NATURAL JOIN prodi
+
+# ==========================================
+# INDEX-RELATED QUERIES
+# ==========================================
+
+VALID | SELECT * FROM mahasiswa WHERE nim = 13524275
+VALID | SELECT * FROM mahasiswa WHERE nim > 13524275
+VALID | SELECT * FROM mahasiswa WHERE nim >= 13524275
+VALID | SELECT * FROM mahasiswa WHERE kode_prodi = 'IF'
+VALID | SELECT * FROM prodi WHERE kode = 'IF'
+
+# ==========================================
+# CASE INSENSITIVE & FORMATTING
+# ==========================================
+
+VALID | select * from mahasiswa
+VALID | SELECT * FROM mahasiswa WHERE nim >= 100
+
+# ==========================================
+# UPDATE / INSERT / DELETE
+# ==========================================
+
+VALID | UPDATE mahasiswa SET ipk = 3.8 WHERE nim = 13524275
+VALID | INSERT INTO prodi VALUES ('DS', 'Data Science')
+VALID | DELETE FROM mahasiswa WHERE nim = 13524275
+VALID | DELETE FROM mahasiswa
+
+# ==========================================
+# TRANSACTION & INDEX COMMANDS
+# ==========================================
+
+VALID | BEGIN
+VALID | BEGIN TRANSACTION
+VALID | COMMIT
+VALID | ABORT
+VALID | CREATE INDEX idx_mahasiswa_nama ON mahasiswa(nama)

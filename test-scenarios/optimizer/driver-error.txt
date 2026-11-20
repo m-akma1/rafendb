@@ -1,0 +1,39 @@
+# ==========================================
+# SYNTAX ERRORS
+# ==========================================
+
+SYNTAX_ERROR | SELEC * FROM mahasiswa
+SYNTAX_ERROR | SELECT FROM mahasiswa
+SYNTAX_ERROR | SELECT * mahasiswa
+SYNTAX_ERROR | SELECT * FROM
+SYNTAX_ERROR | SELECT * FROM mahasiswa WHERE
+SYNTAX_ERROR | SELECT * FROM mahasiswa WHERE nim >
+SYNTAX_ERROR | SELECT * FROM mahasiswa WHERE (nim > 100
+SYNTAX_ERROR | SELECT * FROM mahasiswa ORDER BY
+SYNTAX_ERROR | SELECT * FROM mahasiswa JOIN prodi
+SYNTAX_ERROR | SELECT * FROM mahasiswa WHERE nim = '13524275
+
+# ==========================================
+# SEMANTIC / VALIDATION ERRORS
+# ==========================================
+
+VALIDATION_ERROR | SELECT * FROM notable
+VALIDATION_ERROR | SELECT unknown_column FROM mahasiswa
+VALIDATION_ERROR | SELECT mahasiswa.unknown_column FROM mahasiswa
+VALIDATION_ERROR | SELECT * FROM mahasiswa WHERE unknown_column > 10
+VALIDATION_ERROR | SELECT * FROM mahasiswa WHERE ipk > 'high'
+VALIDATION_ERROR | SELECT * FROM mahasiswa WHERE nim > '13524275'
+VALIDATION_ERROR | SELECT * FROM mahasiswa JOIN prodi ON mahasiswa.nim = prodi.kode
+VALIDATION_ERROR | SELECT nama FROM mahasiswa, prodi
+
+# ==========================================
+# ADDITIONAL INVALID QUERIES
+# ==========================================
+
+SYNTAX_ERROR | UPDATE mahasiswa WHERE nim = 1
+SYNTAX_ERROR | INSERT INTO mahasiswa
+SYNTAX_ERROR | DELETE mahasiswa WHERE nim = 1
+SYNTAX_ERROR | BEGIN TRANSACTION COMMIT
+VALIDATION_ERROR | INSERT INTO mahasiswa VALUES (1, 'John')
+VALIDATION_ERROR | UPDATE mahasiswa SET ipk = 'high' WHERE nim = 1
+VALIDATION_ERROR | CREATE INDEX idx_unknown ON mahasiswa(unknown_column)

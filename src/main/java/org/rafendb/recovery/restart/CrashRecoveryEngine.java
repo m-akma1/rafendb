@@ -11,6 +11,7 @@ import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
 import org.rafendb.recovery.rollback.UndoStorage;
 
@@ -225,13 +226,13 @@ public class CrashRecoveryEngine {
             }
             logger.flushAll();
             return true;
-        } catch (RuntimeException e) {
+        } catch (LoggerErrorException | RuntimeException e) {
             return false;
         }
     }
 
     /** Menulis record kompensasi untuk {@code rec}, lalu menerapkan before-image-nya. */
-    private void undoOne(WALRecord rec) {
+    private void undoOne(WALRecord rec) throws LoggerErrorException {
         long compensationLsn =
                 logger.logDataChange(
                         rec.getIdTransaction(),

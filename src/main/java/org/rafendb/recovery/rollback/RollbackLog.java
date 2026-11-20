@@ -35,7 +35,7 @@ public interface RollbackLog {
      * @param logType BEGIN, COMMIT, atau ABORT; tidak boleh null
      * @throws LoggerErrorException jika record gagal ditambahkan
      */
-    void logTransactionEvent(int idTransaction, LogType logType);
+    void logTransactionEvent(int idTransaction, LogType logType) throws LoggerErrorException;
 
     /**
      * Menambahkan record INSERT, UPDATE, atau DELETE. Belum di-flush ke disk.
@@ -57,7 +57,8 @@ public interface RollbackLog {
             String tableName,
             int idRecord,
             String beforeVal,
-            String afterVal);
+            String afterVal)
+            throws LoggerErrorException;
 
     /**
      * Sama seperti {@link #logDataChange(int, LogType, long, String, int, String, String)}, tetapi
@@ -83,14 +84,15 @@ public interface RollbackLog {
             long tableGeneration,
             Rid rid,
             String beforeVal,
-            String afterVal);
+            String afterVal)
+            throws LoggerErrorException;
 
     /**
      * Menyimpan permanen (flush) semua record yang sudah ditambahkan ke stable storage.
      *
      * @throws LoggerErrorException jika log gagal di-flush
      */
-    void flushAll();
+    void flushAll() throws LoggerErrorException;
 
     /**
      * Mengembalikan id transaksi tertinggi di log.

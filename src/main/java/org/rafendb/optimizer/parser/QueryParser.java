@@ -2,7 +2,9 @@ package org.rafendb.optimizer.parser;
 
 import java.util.List;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
+import org.rafendb.common.query.ExplainQuery;
 import org.rafendb.common.query.ParsedQuery;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.token.Token;
 import org.rafendb.optimizer.lexer.Tokenizer;
 import org.rafendb.optimizer.lexer.TokenizerImpl;
@@ -45,6 +47,19 @@ public final class QueryParser {
                 || first.isKeyword("CREATE")
                 || first.isKeyword("ABORT")) {
             return CommandParser.parse(sql, tokens);
+        }
+        if (first.isKeyword("EXPLAIN")) {
+            Token second = tokens.get(1);
+            if (!second.isKeyword("SELECT")) {
+                throw TokenCursor.syntaxError(
+                        "Expected SELECT after EXPLAIN but found '"
+                                + second.text()
+                                + "', current EXPLAIN implementation only supports SELECT",
+                        second);
+            }
+            SelectQuery select =
+                    (SelectQuery) SelectParser.parse(sql, tokens.subList(2, tokens.size()));
+            return new ExplainQuery(sql, select);
         }
         throw TokenCursor.syntaxError(
                 "Expected SELECT, UPDATE, INSERT, DELETE, BEGIN, COMMIT, ABORT or CREATE but found '"

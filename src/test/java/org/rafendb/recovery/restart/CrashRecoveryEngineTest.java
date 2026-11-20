@@ -64,14 +64,14 @@ class CrashRecoveryEngineTest {
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         logger = new Logger();
         storage = new TestStorage();
         engine = new CrashRecoveryEngine(logger, storage, () -> NOW);
     }
 
     @Test
-    void testDefaultConstructor() {
+    void testDefaultConstructor() throws Exception {
         CrashRecoveryEngine defaultEngine = new CrashRecoveryEngine();
         assertFalse(defaultEngine.isCrashRecovered());
         assertFalse(defaultEngine.isRedoExecuted());
@@ -87,7 +87,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testMockRedoAndUndoOperations() {
+    void testMockRedoAndUndoOperations() throws Exception {
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
         logger.logTransactionEvent(1, LogType.COMMIT);
@@ -107,7 +107,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testStandaloneRedoAndUndo() {
+    void testStandaloneRedoAndUndo() throws Exception {
         logger.logTransactionEvent(10, LogType.BEGIN);
         logger.logDataChange(10, LogType.INSERT, 1000L, "orders", 100, null, "Order-10");
         logger.logTransactionEvent(10, LogType.COMMIT);
@@ -124,7 +124,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void testRecoveryHandlesAbortedAndLoserTransactions() {
+    void testRecoveryHandlesAbortedAndLoserTransactions() throws Exception {
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
         logger.logTransactionEvent(1, LogType.COMMIT);
@@ -148,7 +148,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void fullRidAndGenerationArePreservedThroughRedoAndUndo() {
+    void fullRidAndGenerationArePreservedThroughRedoAndUndo() throws Exception {
         // Slot >= 1000 dan block besar tidak muat di encoding lama block * 1000 + slot.
         Rid wide = new Rid(5_000_000L, 1234);
         Rid other = new Rid(7L, 1000);
@@ -168,7 +168,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void undoWritesCompensationBeforeApplyingAndThenAbort() {
+    void undoWritesCompensationBeforeApplyingAndThenAbort() throws Exception {
         Rid rid = new Rid(1L, 2);
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "t", 1L, rid, null, "v1");
@@ -205,7 +205,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void redoRepeatsAbortedTransactionAndItsCompensation() {
+    void redoRepeatsAbortedTransactionAndItsCompensation() throws Exception {
         Rid rid = new Rid(0L, 9);
         logger.logTransactionEvent(1, LogType.BEGIN);
         logger.logDataChange(1, LogType.INSERT, 1000L, "t", 0L, rid, null, "keep");
@@ -225,7 +225,7 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
-    void crashDuringUndoCanBeRecoveredAgain() {
+    void crashDuringUndoCanBeRecoveredAgain() throws Exception {
         Rid a = new Rid(0L, 1);
         Rid b = new Rid(0L, 2);
         logger.logTransactionEvent(1, LogType.BEGIN);

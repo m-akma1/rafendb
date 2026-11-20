@@ -13,7 +13,7 @@ import org.rafendb.recovery.log.WALRecord;
 
 class PitrManagerTest {
     @Test
-    void timestampTargetUsesCommitTimeAndExcludesLateCommit() throws InterruptedException {
+    void timestampTargetUsesCommitTimeAndExcludesLateCommit() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of(rid(10), "opening")));
@@ -40,7 +40,7 @@ class PitrManagerTest {
     }
 
     @Test
-    void transactionTargetUsesCommitLsnNotTransactionIdOrder() {
+    void transactionTargetUsesCommitLsnNotTransactionIdOrder() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of()));
@@ -59,7 +59,7 @@ class PitrManagerTest {
     }
 
     @Test
-    void ignoresAbortedAndIncompleteTransactionsAndRejectsInvalidTargets() {
+    void ignoresAbortedAndIncompleteTransactionsAndRejectsInvalidTargets() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of()));
@@ -77,7 +77,7 @@ class PitrManagerTest {
     }
 
     @Test
-    void deleteAfterImageRemovesTheSameRecordIdentity() {
+    void deleteAfterImageRemovesTheSameRecordIdentity() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of(rid(3), "exists")));
@@ -90,7 +90,7 @@ class PitrManagerTest {
     }
 
     @Test
-    void replayKeepsFullRidBeyondLegacyEncoding() {
+    void replayKeepsFullRidBeyondLegacyEncoding() throws Exception {
         Logger logger = new Logger();
         PitrManager pitr = new PitrManager(logger);
         pitr.captureSnapshot(1, Map.of("accounts", Map.of()));
@@ -119,7 +119,7 @@ class PitrManagerTest {
     }
 
     private static void writeChange(
-            Logger logger, int tx, LogType type, String before, String after) {
+            Logger logger, int tx, LogType type, String before, String after) throws Exception {
         logger.logDataChange(tx, type, System.currentTimeMillis(), "accounts", tx, before, after);
     }
 

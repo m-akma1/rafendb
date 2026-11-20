@@ -1,11 +1,13 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Storage Manager's {@link RafenDBInternalException}: a storage failure (disk I/O, corrupt data, or
  * a log that cannot be forced) or a call that breaks the {@link
  * org.rafendb.api.storage.StorageManager} contract.
  */
-public class StorageInternalException extends RafenDBInternalException {
+public non-sealed class StorageInternalException extends RafenDBInternalException {
     private static final long serialVersionUID = 1L;
 
     /**

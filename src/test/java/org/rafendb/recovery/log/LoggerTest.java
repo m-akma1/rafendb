@@ -157,7 +157,7 @@ class LoggerTest {
         try (Logger failingFlushLogger =
                 new Logger(logPath) {
                     @Override
-                    public synchronized void flushAll() {
+                    public synchronized void flushAll() throws LoggerErrorException {
                         if (shouldFail[0]) {
                             throw new LoggerErrorException("Simulated disk sync failure");
                         }
@@ -173,5 +173,25 @@ class LoggerTest {
             assertEquals(1L, failingFlushLogger.getCurrentLSN());
             shouldFail[0] = false;
         }
+    }
+
+    @Test
+    void testMiddleLogCorruptionThrowsClearErrorWithoutTruncating() throws Exception {
+        try (Logger logger = new Logger(logPath)) {
+            logger.logTransactionEvent(1, LogType.BEGIN);
+            logger.logDataChange(1, LogType.INSERT, 1000L, "tbl", 3L, new Rid(0L, 1), null, "v1");
+            logger.logTransactionEvent(1, LogType.COMMIT);
+            logger.flushAll();
+        }
+
+        byte[] bytes = Files.readAllBytes(logPath);
+        int firstLen = java.nio.ByteBuffer.wrap(bytes, 0, 4).getInt();
+        bytes[4 + firstLen + 4 + 8] ^= 0x55;
+        Files.write(logPath, bytes);
+
+        LoggerErrorException ex =
+                assertThrows(LoggerErrorException.class, () -> new Logger(logPath));
+        assertTrue(ex.getMessage().toLowerCase().contains("middle of log"));
+        assertEquals(bytes.length, Files.size(logPath));
     }
 }

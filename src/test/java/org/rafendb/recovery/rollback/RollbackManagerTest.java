@@ -142,7 +142,7 @@ class RollbackManagerTest {
     RollbackManager frm;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         log = new FakeLog();
         db = new FakeStorage();
         frm = new RollbackManager(log, db, () -> now);
@@ -182,7 +182,7 @@ class RollbackManagerTest {
     // --------------------------------------------------------------------------------------
 
     @Test
-    void rollbackUndoesInsertUpdateDeleteLatestFirstIncludingRepeatedRecord() {
+    void rollbackUndoesInsertUpdateDeleteLatestFirstIncludingRepeatedRecord() throws Exception {
         db.put("account", 1, "{bal:10}");
         db.put("account", 2, "{bal:20}");
         begin(1);
@@ -201,7 +201,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void eachUndoIsLoggedAsInverseChangeBeforeStorageIsTouched() {
+    void eachUndoIsLoggedAsInverseChangeBeforeStorageIsTouched() throws Exception {
         db.put("item", 1, "{a}");
         begin(1);
         write(1, LogType.UPDATE, "item", 1, "{b}");
@@ -224,7 +224,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void rollbackLeavesOtherTransactionsAlone() {
+    void rollbackLeavesOtherTransactionsAlone() throws Exception {
         begin(1);
         begin(2);
         write(1, LogType.INSERT, "item", 1, "{a}");
@@ -238,7 +238,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void committedAndUnknownTransactionsGetClearStatusAndNothingChanges() {
+    void committedAndUnknownTransactionsGetClearStatusAndNothingChanges() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
         commit(1);
@@ -252,7 +252,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void transactionWithOnlyBeginCanBeRolledBack() {
+    void transactionWithOnlyBeginCanBeRolledBack() throws Exception {
         begin(1);
 
         assertEquals(RollbackStatus.ROLLED_BACK, frm.rollback(1));
@@ -260,7 +260,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void secondRollbackChangesNothing() {
+    void secondRollbackChangesNothing() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
         frm.rollback(1);
@@ -273,7 +273,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void failedRollbackWritesNoAbortAndRetryResumesWithoutDuplicateCompensation() {
+    void failedRollbackWritesNoAbortAndRetryResumesWithoutDuplicateCompensation() throws Exception {
         db.put("item", 1, "{a}");
         begin(1);
         write(1, LogType.UPDATE, "item", 1, "{b}");
@@ -298,7 +298,8 @@ class RollbackManagerTest {
     }
 
     @Test
-    void interruptedRollbackIsCorrectlyUndoneByReplayingWholeTransactionBackwards() {
+    void interruptedRollbackIsCorrectlyUndoneByReplayingWholeTransactionBackwards()
+            throws Exception {
         // Simulasi crash di tengah rollback: crash recovery membatalkan semua record T1, termasuk
         // record kompensasi, dari yang terbaru.
         db.put("item", 1, "{a}");
@@ -357,12 +358,12 @@ class RollbackManagerTest {
     // --------------------------------------------------------------------------------------
 
     @Test
-    void emptyLogRecoveryIsANoOp() {
+    void emptyLogRecoveryIsANoOp() throws Exception {
         assertEquals(0, frm.recoverToPointInTime(now));
     }
 
     @Test
-    void recoverToPointInTimeKeepsOnlyTransactionsCommittedByThen() {
+    void recoverToPointInTimeKeepsOnlyTransactionsCommittedByThen() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
         commit(1);
@@ -379,7 +380,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void transactionStartedBeforeTargetButCommittedAfterIsExcluded() {
+    void transactionStartedBeforeTargetButCommittedAfterIsExcluded() throws Exception {
         begin(1);
         begin(2);
         write(2, LogType.INSERT, "item", 2, "{b}");
@@ -397,7 +398,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void commitsWithTheSameTimestampAsTargetAreIncluded() {
+    void commitsWithTheSameTimestampAsTargetAreIncluded() throws Exception {
         begin(1);
         begin(2);
         write(1, LogType.INSERT, "item", 1, "{a}");
@@ -417,7 +418,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void abortedTransactionsAreNotUndoneAgain() {
+    void abortedTransactionsAreNotUndoneAgain() throws Exception {
         db.put("item", 1, "{a}");
         begin(1);
         write(1, LogType.UPDATE, "item", 1, "{b}");
@@ -437,7 +438,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void recoverToTransactionUsesCommitOrderNotIdOrder() {
+    void recoverToTransactionUsesCommitOrderNotIdOrder() throws Exception {
         begin(5);
         begin(2);
         write(5, LogType.INSERT, "item", 1, "{a}");
@@ -456,7 +457,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void invalidTargetsAreRejectedBeforeAnythingChanges() {
+    void invalidTargetsAreRejectedBeforeAnythingChanges() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
         commit(1);
@@ -478,7 +479,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void recoveryIsLoggedAsCommittedSystemTransactionSoItSurvivesRestart() {
+    void recoveryIsLoggedAsCommittedSystemTransactionSoItSurvivesRestart() throws Exception {
         Map<String, String> initial = db.snapshot();
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
@@ -515,7 +516,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void successiveRecoveriesStayCorrect() {
+    void successiveRecoveriesStayCorrect() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{v1}");
         commit(1);
@@ -535,7 +536,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void storageFailureDuringRecoveryRestoresPreviousState() {
+    void storageFailureDuringRecoveryRestoresPreviousState() throws Exception {
         begin(1);
         write(1, LogType.INSERT, "item", 1, "{a}");
         commit(1);
@@ -557,7 +558,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void rollbackCompensatesWithFullRidAndTableGeneration() {
+    void rollbackCompensatesWithFullRidAndTableGeneration() throws Exception {
         Rid wide = new Rid(5_000_000L, 1234);
         Rid neighbour = new Rid(5_000_001L, 234); // sama dengan wide pada encoding lama
         db.put("item", neighbour, "{other}");
@@ -579,7 +580,7 @@ class RollbackManagerTest {
     }
 
     @Test
-    void recoverToTransactionKeepsRowsWithFullRid() {
+    void recoverToTransactionKeepsRowsWithFullRid() throws Exception {
         Rid wide = new Rid(5_000_000L, 1234);
         Rid neighbour = new Rid(5_000_001L, 234);
         begin(1);
