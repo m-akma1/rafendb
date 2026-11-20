@@ -1,6 +1,7 @@
 package org.rafendb.client;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.PrintStream;
 import java.net.ProtocolException;
 import java.nio.file.Files;
@@ -39,6 +40,7 @@ final class Repl {
     private final boolean color;
     private final PrintStream out;
     private final PrintStream err;
+    private final Path home;
     private String host;
     private int port;
     private volatile ServerLink link;
@@ -65,6 +67,8 @@ final class Repl {
      * @param port the server port
      * @param interactive whether a person types at a terminal
      * @param echo whether to print each statement before running it
+     * @param timing whether {@code \timing} starts on
+     * @param home the client's user directory, shown by {@code \info}
      * @param out where results and notices go
      * @param err where errors go
      */
@@ -73,15 +77,56 @@ final class Repl {
             int port,
             boolean interactive,
             boolean echo,
+            boolean timing,
+            Path home,
             PrintStream out,
             PrintStream err) {
         this.host = host;
         this.port = port;
         this.interactive = interactive;
         this.echo = echo;
+        this.timing = timing;
+        this.home = home;
         this.color = interactive;
         this.out = out;
         this.err = err;
+    }
+
+    /**
+     * For the line editor: whether Enter sends what was typed. A meta-command on the last line
+     * goes at once; SQL waits for its {@code ;}.
+     *
+     * @param text everything typed so far, possibly several lines
+     * @return {@code null} if it can be sent, or the prompt for the next line
+     */
+    static String continuation(String text) {
+        String lastLine = text.substring(text.lastIndexOf('\n') + 1).strip();
+        String all = text.strip();
+        if (lastLine.startsWith("\\") || QUIT.contains(all) || HELP.contains(all)) {
+            return null;
+        }
+        return continuationPrompt(StatementSplitter.split(text).pending());
+    }
+
+    /** Returns the prompt for an unfinished statement, or {@code null} if nothing is pending. */
+    private static String continuationPrompt(StatementSplitter.Pending pending) {
+        return switch (pending) {
+            case LITERAL -> "rafendb'> ";
+            case COMMENT -> "rafendb/*> ";
+            case STATEMENT -> "rafendb-> ";
+            case NONE -> null;
+        };
+    }
+
+    /**
+     * Ctrl+C while a statement runs: asks the server to cancel it. Runs on a signal thread; does
+     * nothing when no statement is waiting for its reply.
+     */
+    void interrupt() {
+        ServerLink current = link;
+        if (current != null && current.cancel()) {
+            out.println("Cancel requested.");
+        }
     }
 
     /**
@@ -134,6 +179,9 @@ final class Repl {
             String line;
             try {
                 line = input.readLine(prompt(buffer));
+            } catch (InterruptedIOException e) {
+                buffer.setLength(0); // Ctrl+C drops what was typed, as in psql
+                continue;
             } catch (IOException e) {
                 error("Cannot read input: " + e.getMessage());
                 return;
@@ -150,22 +198,33 @@ final class Repl {
                 }
                 return;
             }
-            String trimmed = line.strip();
-            if (trimmed.startsWith("\\")
-                    || (buffer.isEmpty() && (QUIT.contains(trimmed) || HELP.contains(trimmed)))) {
-                meta(trimmed, buffer);
-                continue;
-            }
-            buffer.append(line).append('\n');
-            StatementSplitter.Split split = StatementSplitter.split(buffer.toString());
-            buffer.setLength(0);
-            buffer.append(split.rest());
-            for (String sql : split.statements()) {
+            // A terminal returns a multi-line block at once; handle it line by line.
+            for (String part : line.split("\n", -1)) {
                 if (quit) {
                     return;
                 }
-                execute(sql);
+                handle(part, buffer);
             }
+        }
+    }
+
+    /** Handles one line: a meta-command, or SQL added to the buffer and run once complete. */
+    private void handle(String line, StringBuilder buffer) {
+        String trimmed = line.strip();
+        if (trimmed.startsWith("\\")
+                || (buffer.isEmpty() && (QUIT.contains(trimmed) || HELP.contains(trimmed)))) {
+            meta(trimmed, buffer);
+            return;
+        }
+        buffer.append(line).append('\n');
+        StatementSplitter.Split split = StatementSplitter.split(buffer.toString());
+        buffer.setLength(0);
+        buffer.append(split.rest());
+        for (String sql : split.statements()) {
+            if (quit) {
+                return;
+            }
+            execute(sql);
         }
     }
 
@@ -189,24 +248,19 @@ final class Repl {
     }
 
     private String prompt(StringBuilder buffer) {
-        StatementSplitter.Pending pending =
-                buffer.isEmpty()
-                        ? StatementSplitter.Pending.NONE
-                        : StatementSplitter.split(buffer.toString()).pending();
-        return switch (pending) {
-            case LITERAL -> "rafendb'> ";
-            case COMMENT -> "rafendb/*> ";
-            case STATEMENT -> "rafendb-> ";
-            case NONE -> {
-                if (!connected()) {
-                    yield "?> ";
-                }
-                yield switch (state) {
-                    case IDLE -> "rafendb=> ";
-                    case ACTIVE -> "rafendb*> ";
-                    case FAILED -> "rafendb!> ";
-                };
+        if (!buffer.isEmpty()) {
+            String next = continuationPrompt(StatementSplitter.split(buffer.toString()).pending());
+            if (next != null) {
+                return next;
             }
+        }
+        if (!connected()) {
+            return "?> ";
+        }
+        return switch (state) {
+            case IDLE -> "rafendb=> ";
+            case ACTIVE -> "rafendb*> ";
+            case FAILED -> "rafendb!> ";
         };
     }
 
@@ -264,7 +318,7 @@ final class Repl {
     private void ended(Message end, boolean expected) {
         out.println(end == ServerLink.LOST ? "Connection to server lost." : end.payload());
         if (state != TxState.IDLE) {
-            out.println("Your open transaction was rolled back.");
+            out.println("Your open transaction was aborted.");
         }
         link.close();
         link = null;
@@ -278,19 +332,17 @@ final class Repl {
 
     /** The connection ended while no request was waiting; runs on the reader thread. */
     private void endedWhileIdle(Message end) {
-        synchronized (out) {
-            if (interactive) {
-                out.println(); // leave the prompt line the user sits at
-            }
-            out.println(end == ServerLink.LOST ? "Connection to server lost." : end.payload());
-            if (state != TxState.IDLE) {
-                out.println("Your open transaction was rolled back.");
-            }
-            if (interactive) {
-                out.println("Not connected to server.");
-                out.print("?> ");
-                out.flush();
-            }
+        StringBuilder text = new StringBuilder();
+        text.append(end == ServerLink.LOST ? "Connection to server lost." : end.payload());
+        if (state != TxState.IDLE) {
+            text.append("\nYour open transaction was aborted.");
+        }
+        LineEditor editor = terminal;
+        if (interactive && editor != null) {
+            text.append("\nNot connected to server.");
+            editor.printAbove(text.toString(), "?> ");
+        } else {
+            out.println(text);
         }
     }
 
@@ -337,6 +389,7 @@ final class Repl {
                     out.print("\u001B[H\u001B[2J");
                     out.flush();
                 }
+                case "\\history" -> history();
                 case "\\shutdown" -> shutdown();
                 case "\\connect", "\\c" -> connect(argument);
                 default -> error("Unknown command: " + command + ". Type \\? for help.");
@@ -352,7 +405,8 @@ final class Repl {
         out.println("  \\f <file>            run the statements in a file");
         out.println("  \\timing [on|off]     show how long each statement takes");
         out.println("  \\info                show the connection");
-        out.println("  \\clear               clear the screen");
+        out.println("  \\clear               clear the screen (also Ctrl+L)");
+        out.println("  \\history             show the statements typed before");
         out.println("  \\connect [--host=<host>] [--port=<n>]");
         out.println("                       connect again, alias \\c");
         out.println("  \\shutdown            shut the server down for everyone");
@@ -368,7 +422,7 @@ final class Repl {
             return;
         }
         Path file = Path.of(argument);
-        try (ScriptInput input = new ScriptInput(Files.newBufferedReader(file), null)) {
+        try (ScriptInput input = new ScriptInput(Files.newBufferedReader(file))) {
             depth++;
             runInput(input, false);
         } catch (IOException e) {
@@ -396,6 +450,14 @@ final class Repl {
             printConnected(link);
         } else {
             out.println("Not connected to server. Last server was " + host + ":" + port + ".");
+        }
+        out.println("Client home: " + home + ".");
+    }
+
+    private void history() {
+        List<String> entries = terminal.history();
+        for (int i = 0; i < entries.size(); i++) {
+            out.printf(Locale.ROOT, "%5d  %s%n", i + 1, entries.get(i));
         }
     }
 

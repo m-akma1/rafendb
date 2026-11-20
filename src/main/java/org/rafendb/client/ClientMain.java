@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.rafendb.client.terminal.JLineEditor;
 import org.rafendb.client.terminal.LineEditor;
 import org.rafendb.client.terminal.ScriptInput;
 import org.rafendb.engine.Flags;
@@ -22,6 +23,7 @@ import org.rafendb.engine.Version;
  */
 public final class ClientMain {
     private static final int DEFAULT_PORT = 3140;
+    private static final int DEFAULT_HISTORY_SIZE = 500;
 
     private ClientMain() {}
 
@@ -36,6 +38,9 @@ public final class ClientMain {
         String file;
         String command;
         boolean echo;
+        ClientHome home;
+        boolean timing;
+        int historySize;
         try {
             Flags flags = Flags.parse(args);
             if (flags.has("version")) {
@@ -46,8 +51,11 @@ public final class ClientMain {
                 help();
                 return;
             }
-            host = flags.value("host", "127.0.0.1");
-            port = flags.intValue("port", DEFAULT_PORT);
+            home = ClientHome.resolve(flags.value("home", null));
+            host = flags.value("host", home.value("host", "127.0.0.1"));
+            port = flags.intValue("port", home.intValue("port", DEFAULT_PORT));
+            timing = home.onOff("timing", false);
+            historySize = home.intValue("history.size", DEFAULT_HISTORY_SIZE);
             file = flags.value("file", null);
             command = flags.value("command", null);
             echo = flags.has("echo");
@@ -65,11 +73,15 @@ public final class ClientMain {
         Console console = System.console();
         boolean interactive =
                 file == null && command == null && console != null && console.isTerminal();
+        Repl repl =
+                new Repl(host, port, interactive, echo, timing, home.dir(), System.out, System.err);
         LineEditor input;
         try {
-            input = input(file, command, interactive);
+            input = interactive ? terminal(home, historySize, repl) : script(file, command);
         } catch (IOException e) {
-            System.err.println("Cannot read " + file + ": " + e.getMessage());
+            System.err.println(
+                    (interactive ? "Cannot open the terminal: " : "Cannot read " + file + ": ")
+                            + e.getMessage());
             System.exit(1);
             return;
         }
@@ -77,7 +89,6 @@ public final class ClientMain {
         if (interactive) {
             System.out.println(Version.banner("Client"));
         }
-        Repl repl = new Repl(host, port, interactive, echo, System.out, System.err);
         if (!repl.open()) {
             System.exit(2);
             return;
@@ -88,17 +99,29 @@ public final class ClientMain {
         System.exit(repl.run(input));
     }
 
-    private static LineEditor input(String file, String command, boolean interactive)
+    /** The line editor of an interactive client, with history kept in the client home. */
+    private static LineEditor terminal(ClientHome home, int historySize, Repl repl)
             throws IOException {
+        Path historyFile = null;
+        if (historySize > 0) {
+            historyFile = home.historyFile();
+            if (historyFile == null) {
+                System.err.println(
+                        "Cannot create " + home.dir() + "; history is kept for this session only.");
+            }
+        }
+        return new JLineEditor(Repl::continuation, historyFile, historySize, repl::interrupt);
+    }
+
+    /** The input of a non-interactive run: a file, a command, or piped stdin. */
+    private static LineEditor script(String file, String command) throws IOException {
         if (file != null) {
-            return new ScriptInput(Files.newBufferedReader(Path.of(file)), null);
+            return new ScriptInput(Files.newBufferedReader(Path.of(file)));
         }
         if (command != null) {
-            return new ScriptInput(new BufferedReader(new StringReader(command)), null);
+            return new ScriptInput(new BufferedReader(new StringReader(command)));
         }
-        return new ScriptInput(
-                new BufferedReader(new InputStreamReader(System.in)),
-                interactive ? System.out : null);
+        return new ScriptInput(new BufferedReader(new InputStreamReader(System.in)));
     }
 
     private static void help() {
@@ -108,6 +131,7 @@ public final class ClientMain {
         System.out.println("  --file=<file>    run the statements in a file, then exit");
         System.out.println("  --command=<sql>  run the given statements, then exit");
         System.out.println("  --echo           print each statement before its result");
+        System.out.println("  --home=<dir>     client directory for history and client.properties");
         System.out.println("  --help           show this help");
         System.out.println("  --version        show the version");
     }

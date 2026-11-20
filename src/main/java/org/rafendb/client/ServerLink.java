@@ -129,6 +129,26 @@ final class ServerLink implements AutoCloseable {
     }
 
     /**
+     * Asks the server to cancel the statement that is waiting for its reply. Safe to call from
+     * another thread.
+     *
+     * @return whether a cancel was sent; false when no statement is waiting
+     */
+    boolean cancel() {
+        synchronized (lock) {
+            if (!awaiting || ended) {
+                return false;
+            }
+        }
+        try {
+            writer.write(Message.of(MessageType.CANCEL));
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
      * Returns whether the connection has ended.
      *
      * @return true after {@code CLOSING} or a lost connection
@@ -150,11 +170,13 @@ final class ServerLink implements AutoCloseable {
         if (polite) {
             try {
                 writer.write(Message.of(MessageType.BYE));
-            } catch (IOException _) {}
+            } catch (IOException _) {
+            }
         }
         try {
             socket.close();
-        } catch (IOException _) {}
+        } catch (IOException _) {
+        }
     }
 
     static boolean isEnd(Message message) {
