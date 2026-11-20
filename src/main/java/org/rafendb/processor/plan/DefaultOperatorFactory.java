@@ -213,7 +213,8 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             Objects.requireNonNull(child, "child");
             return Objects.requireNonNull(
                     constructor.create(
-                            node.table(), node.column(), node.value(), child, evaluator, context), "UPDATE operator");
+                            node.table(), node.column(), node.value(), child, evaluator, context),
+                    "UPDATE operator");
         };
     }
 
