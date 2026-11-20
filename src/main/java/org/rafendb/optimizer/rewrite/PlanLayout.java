@@ -18,7 +18,7 @@ import org.rafendb.optimizer.catalog.Catalog;
 
 final class PlanLayout {
 
-    record Col(String qualifier, String table, String name) {}
+    record Col(String qualifier, String name) {}
 
     static final int NOT_FOUND = -1;
 
@@ -76,7 +76,7 @@ final class PlanLayout {
         String qualifier = alias != null ? alias : table;
         List<Col> out = new ArrayList<>();
         for (Column column : catalog.getSchema(table).columns()) {
-            out.add(new Col(qualifier, table, column.name()));
+            out.add(new Col(qualifier, column.name()));
         }
         return out;
     }
@@ -86,9 +86,7 @@ final class PlanLayout {
         for (int i = 0; i < layout.size(); i++) {
             Col col = layout.get(i);
             if (!eq(col.name(), ref.column())) continue;
-            if (ref.table() != null
-                    && !eq(col.qualifier(), ref.table())
-                    && !eq(col.table(), ref.table())) {
+            if (ref.table() != null && !eq(col.qualifier(), ref.table())) {
                 continue;
             }
             if (found != NOT_FOUND) return AMBIGUOUS;

@@ -161,7 +161,9 @@ public final class StatsCostModel implements CostModel {
                 for (Expr expr : projection.columns())
                     sum +=
                             expr instanceof Expr.ColumnRef ref
-                                    ? columnSize(ref.table(), ref.column())
+                                    ? columnSize(
+                                            relation(projection.child(), ref.table()).table(),
+                                            ref.column())
                                     : 4;
                 s = Math.min(size(projection.child()), sum);
             } else if (node instanceof JoinPlanNode join)
@@ -268,8 +270,7 @@ public final class StatsCostModel implements CostModel {
         }
 
         boolean refersTo(IndexScanNode scan, String name) {
-            return scan.table().equalsIgnoreCase(name)
-                    || scan.alias() != null && scan.alias().equalsIgnoreCase(name);
+            return matchesQualifier(scan.table(), scan.alias(), name);
         }
 
         boolean mentionsColumn(Expr expr) {
@@ -420,8 +421,8 @@ public final class StatsCostModel implements CostModel {
 
         long distinct(Expr.ColumnRef column, PlanNode node)
                 throws OptimizerInternalException.CostEstimationException {
-            String table = findTable(node, column.table());
-            TableStats t = stats(table);
+            Relation relation = relation(node, column.table());
+            TableStats t = stats(relation.table());
             Long exact = t.distinctValues().get(column.column());
             long v =
                     exact == null
@@ -431,67 +432,40 @@ public final class StatsCostModel implements CostModel {
                                     .findFirst()
                                     .orElse(1L)
                             : exact;
-            PlanNode relation = relationNode(node, table);
-            long available = computing.contains(relation) ? t.recordCount() : rows(relation);
+            long available =
+                    computing.contains(relation.input()) ? t.recordCount() : rows(relation.input());
             return Math.max(1, Math.min(v, Math.max(1, available)));
         }
 
-        boolean hasTable(PlanNode node, String name) {
-            if (node instanceof TableScanNode s)
-                return s.table().equalsIgnoreCase(name)
-                        || s.alias() != null && s.alias().equalsIgnoreCase(name);
-            if (node instanceof IndexScanNode s)
-                return s.table().equalsIgnoreCase(name)
-                        || s.alias() != null && s.alias().equalsIgnoreCase(name);
-            for (PlanNode child : node.children()) if (hasTable(child, name)) return true;
-            return false;
-        }
+        /** Catalog statistics belong to the physical table, filtered row counts to its occurrence. */
+        record Relation(String table, PlanNode input) {}
 
-        String findTable(PlanNode node, String name)
+        Relation relation(PlanNode node, String qualifier)
                 throws OptimizerInternalException.CostEstimationException {
-            if (node instanceof TableScanNode s
-                    && (name == null
-                            || s.table().equalsIgnoreCase(name)
-                            || s.alias() != null && s.alias().equalsIgnoreCase(name)))
-                return s.table();
-            if (node instanceof IndexScanNode s
-                    && (name == null
-                            || s.table().equalsIgnoreCase(name)
-                            || s.alias() != null && s.alias().equalsIgnoreCase(name)))
-                return s.table();
-            for (PlanNode child : node.children()) {
-                try {
-                    return findTable(child, name);
-                } catch (OptimizerInternalException.CostEstimationException ignored) {
-                }
-            }
-            throw fail("Cannot resolve table " + name + " in " + node.getClass().getName());
+            Relation found = findRelation(node, qualifier);
+            if (found == null)
+                throw fail("Cannot resolve table " + qualifier + " in " + node.describe());
+            return found;
         }
 
-        PlanNode relationNode(PlanNode node, String table)
-                throws OptimizerInternalException.CostEstimationException {
-            if (node instanceof TableScanNode scan && scan.table().equalsIgnoreCase(table))
-                return node;
-            if (node instanceof IndexScanNode scan && scan.table().equalsIgnoreCase(table))
-                return node;
-            if (node instanceof SelectionPlanNode selection && hasTable(selection.child(), table))
-                return node;
+        Relation findRelation(PlanNode node, String qualifier) {
+            if (node instanceof TableScanNode scan
+                    && matchesQualifier(scan.table(), scan.alias(), qualifier))
+                return new Relation(scan.table(), node);
+            if (node instanceof IndexScanNode scan
+                    && matchesQualifier(scan.table(), scan.alias(), qualifier))
+                return new Relation(scan.table(), node);
             for (PlanNode child : node.children()) {
-                if (hasTable(child, table)) return relationNode(child, table);
+                Relation found = findRelation(child, qualifier);
+                if (found == null) continue;
+                if (node instanceof SelectionPlanNode) return new Relation(found.table(), node);
+                return found;
             }
-            throw fail("Cannot find relation for table " + table);
+            return null;
         }
 
-        String firstTable(PlanNode node) throws OptimizerInternalException.CostEstimationException {
-            if (node instanceof TableScanNode s) return s.table();
-            if (node instanceof IndexScanNode s) return s.table();
-            for (PlanNode child : node.children()) {
-                try {
-                    return firstTable(child);
-                } catch (OptimizerInternalException.CostEstimationException ignored) {
-                }
-            }
-            throw fail("Cannot resolve column table for " + node.getClass().getName());
+        boolean matchesQualifier(String table, String alias, String qualifier) {
+            return qualifier == null || (alias == null ? table : alias).equalsIgnoreCase(qualifier);
         }
 
         long joined(long l, long r, Expr condition, PlanNode scope)

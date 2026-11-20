@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.error.StorageRuntimeException;
+import org.rafendb.common.query.FromItem.TableRef;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.optimizer.catalog.Catalog;
@@ -19,26 +20,33 @@ import org.rafendb.optimizer.catalog.Catalog;
  * exactly this scope.
  */
 final class Scope {
-    record Table(String name, TableSchema schema, int offset) {}
+    record Table(String qualifier, TableSchema schema, int offset) {}
 
     record Resolved(Table table, Column column, int offset) {}
 
     private final List<Table> tables;
     private final Set<String> hidden;
 
-    Scope(Catalog catalog, List<String> names) {
+    Scope(TableSchema schema) {
+        this(List.of(new Table(schema.table(), schema, 0)), Set.of());
+    }
+
+    Scope(Catalog catalog, List<TableRef> refs) {
         List<Table> resolved = new ArrayList<>();
         int offset = 0;
-        for (String name : names) {
+        for (TableRef ref : refs) {
+            String name = ref.name();
             try {
                 String canonical = canonicalName(catalog.listTables(), name);
                 if (canonical == null)
                     throw new ValidationException("Table does not exist: " + name);
                 TableSchema schema = catalog.getSchema(canonical);
-                if (resolved.stream().anyMatch(t -> eq(t.name(), schema.table()))) {
-                    throw new ValidationException("Table appears more than once in FROM: " + name);
+                String qualifier = ref.alias() == null ? schema.table() : ref.alias();
+                if (resolved.stream().anyMatch(t -> eq(t.qualifier(), qualifier))) {
+                    throw new ValidationException(
+                            "Duplicate table qualifier in FROM: " + qualifier);
                 }
-                resolved.add(new Table(schema.table(), schema, offset));
+                resolved.add(new Table(qualifier, schema, offset));
                 offset += schema.columns().size();
             } catch (StorageRuntimeException e) {
                 throw new ValidationException("Table does not exist: " + name, e);
@@ -59,7 +67,7 @@ final class Scope {
 
     /** Returns the table written as {@code name} (case-insensitive), or {@code null}. */
     Table table(String name) {
-        for (Table t : tables) if (eq(t.name(), name)) return t;
+        for (Table t : tables) if (eq(t.qualifier(), name)) return t;
         return null;
     }
 
@@ -67,16 +75,17 @@ final class Scope {
      * Returns a scope over only the given tables, in the given order, with offsets recomputed from
      * zero. Used for a join node, whose condition is evaluated on that node's own input row.
      *
-     * @param names table names as written; all must be in this scope
+     * @param refs table occurrences in the subtree
      */
-    Scope restrictTo(List<String> names) {
+    Scope restrictTo(List<TableRef> refs) {
         List<Table> subset = new ArrayList<>();
         int offset = 0;
-        for (String name : names) {
+        for (TableRef ref : refs) {
+            String name = ref.qualifier();
             Table t = table(name);
             if (t == null)
                 throw new ValidationException("Table '" + name + "' is not in FROM clause");
-            subset.add(new Table(t.name(), t.schema(), offset));
+            subset.add(new Table(t.qualifier(), t.schema(), offset));
             offset += t.schema().columns().size();
         }
         return new Scope(subset, hidden);
@@ -92,7 +101,7 @@ final class Scope {
     }
 
     boolean isHidden(Table table, Column column) {
-        return hidden.contains(key(table.name(), column.name()));
+        return hidden.contains(key(table.qualifier(), column.name()));
     }
 
     static String key(String table, String column) {
@@ -103,7 +112,7 @@ final class Scope {
         List<Table> candidates =
                 tableName == null
                         ? tables
-                        : tables.stream().filter(t -> eq(t.name(), tableName)).toList();
+                        : tables.stream().filter(t -> eq(t.qualifier(), tableName)).toList();
         if (tableName != null && candidates.isEmpty())
             throw new ValidationException("Table '" + tableName + "' is not in FROM clause");
         List<Resolved> matches = new ArrayList<>();

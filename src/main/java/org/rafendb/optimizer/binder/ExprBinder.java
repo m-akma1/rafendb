@@ -36,10 +36,10 @@ final class ExprBinder {
                             ? (c.type() == DataType.INTEGER ? Kind.INTEGER : Kind.FLOAT)
                             : Kind.TEXT;
             return new Typed(
-                    new ColumnRef(r.table().name(), c.name(), r.offset()),
+                    new ColumnRef(r.table().qualifier(), c.name(), r.offset()),
                     kind,
                     c.type(),
-                    "column '" + r.table().name() + "." + c.name() + "'");
+                    "column '" + r.table().qualifier() + "." + c.name() + "'");
         }
         if (expr instanceof Expr.Null) return new Typed(expr, Kind.NULL, null, "NULL literal");
         if (expr instanceof Literal literal) {
