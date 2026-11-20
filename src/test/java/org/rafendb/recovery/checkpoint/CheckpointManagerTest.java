@@ -12,7 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 
@@ -37,9 +37,9 @@ class CheckpointManagerTest {
                             }
                             return null;
                         });
-        StorageManager storage =
+        StorageRecovery storage =
                 proxy(
-                        StorageManager.class,
+                        StorageRecovery.class,
                         (method, args) -> {
                             if (method.getName().equals("flush")) {
                                 calls.add("flush");
@@ -77,9 +77,9 @@ class CheckpointManagerTest {
                             }
                             return null;
                         });
-        StorageManager storage =
+        StorageRecovery storage =
                 proxy(
-                        StorageManager.class,
+                        StorageRecovery.class,
                         (method, args) -> {
                             if (method.getName().equals("flush")) {
                                 calls.add("flush");

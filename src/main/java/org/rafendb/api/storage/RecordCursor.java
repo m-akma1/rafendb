@@ -5,7 +5,7 @@ import org.rafendb.common.tuple.StoredRow;
 
 /**
  * Forward-only lazy scan over the live records of a table, page by page. Cannot be rewound; call
- * {@link StorageManager#scan} again. Reserved and deleted slots are skipped. Concurrent changes do
+ * {@link StorageQuery#scan} again. Reserved and deleted slots are skipped. Concurrent changes do
  * not make it fail, but whether it sees them is unspecified (isolation is CCM's job). Must be
  * closed. Not thread-safe: owned by one thread.
  */

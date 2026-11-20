@@ -3,7 +3,7 @@ package org.rafendb.optimizer.join;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.schema.IndexInfo;
@@ -11,9 +11,9 @@ import org.rafendb.common.schema.TableSchema;
 
 /** Finds eligible index scans for a query plan. */
 public final class AccessPathOptimizer {
-    private final StorageManager storage;
+    private final StorageMetadata storage;
 
-    public AccessPathOptimizer(StorageManager storage) {
+    public AccessPathOptimizer(StorageMetadata storage) {
         this.storage = Objects.requireNonNull(storage, "storage");
     }
 
