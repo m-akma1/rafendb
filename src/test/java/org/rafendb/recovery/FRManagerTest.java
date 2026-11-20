@@ -451,7 +451,7 @@ class FRManagerTest {
                         javaBin,
                         "-cp",
                         classpath,
-                        org.rafendb.recovery.driver.FRManagerDriver.class.getName(),
+                        org.rafendb.recovery.driver.RecoveryDriver.class.getName(),
                         "--simulate-crash-child",
                         dataDir.toString(),
                         walPath.toString());

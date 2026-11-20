@@ -11,4 +11,4 @@
 #   - Target di luar rentang riwayat ditolak sebelum mengubah basis data aktif.
 #
 # Cara Verifikasi Otomatis:
-#   Jalankan FRManagerDriver#testPointInTime dan PitrManagerTest
+#   Jalankan RecoveryDriver#testPointInTime dan PitrManagerTest
