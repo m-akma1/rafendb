@@ -107,7 +107,7 @@ interface org.rafendb.api.storage.WalSync {
 }
 
 
-enum org.rafendb.common.error.Component {
+enum org.rafendb.common.Component {
 	{field} +CCM
 	{field} +FRM
 	{field} +GENERAL
@@ -126,6 +126,10 @@ enum org.rafendb.common.error.ErrorCode {
 	{field} +INTERNAL_ERROR
 	{field} +SYNTAX_ERROR
 	{field} +VALIDATION_ERROR
+}
+
+
+class org.rafendb.common.error.GeneralRuntimeException {
 }
 
 
@@ -149,12 +153,16 @@ class org.rafendb.common.error.OptimizerRuntimeException$ValidationException {
 }
 
 
-class org.rafendb.common.error.RafenDBInternalException {
+class org.rafendb.common.error.ProcessorRuntimeException {
+}
+
+
+abstract class org.rafendb.common.error.RafenDBInternalException {
 	{method} +getMessage () : String
 }
 
 
-class org.rafendb.common.error.RafenDBRuntimeException {
+abstract class org.rafendb.common.error.RafenDBRuntimeException {
 	{method} +getMessage () : String
 }
 
@@ -347,6 +355,39 @@ class org.rafendb.common.query.DeleteQuery {
 }
 
 
+interface org.rafendb.common.query.FromItem {
+	{method}  {abstract} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$CartesianProduct {
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$Join {
+	{method} +condition () : Expr
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$NaturalJoin {
+	{method} +left () : FromItem
+	{method} +right () : FromItem
+	{method} +tables () : List
+}
+
+
+class org.rafendb.common.query.FromItem$TableRef {
+	{method} +name () : String
+	{method} +tables () : List
+}
+
+
 class org.rafendb.common.query.InsertQuery {
 	{method} +originalSql () : String
 	{method} +table () : String
@@ -386,7 +427,7 @@ class org.rafendb.common.query.QueryResult$Status {
 
 
 class org.rafendb.common.query.SelectQuery {
-	{method} +joinCondition () : Expr
+	{method} +from () : FromItem
 	{method} +orderBy () : List
 	{method} +originalSql () : String
 	{method} +projection () : List
@@ -626,6 +667,7 @@ class org.rafendb.common.type.Value {
 
 org.rafendb.api.recovery.RecoveryManager ..|>  org.rafendb.api.storage.WalSync
 org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
+org.rafendb.common.error.GeneralRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.error.OptimizerInternalException *--  org.rafendb.common.error.ErrorCode : code
 org.rafendb.common.error.OptimizerInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.OptimizerInternalException$CostEstimationException --|>  org.rafendb.common.error.OptimizerInternalException
@@ -634,8 +676,9 @@ org.rafendb.common.error.OptimizerRuntimeException --|>  org.rafendb.common.erro
 org.rafendb.common.error.OptimizerRuntimeException$SyntaxException *--  org.rafendb.common.token.Token : offendingToken
 org.rafendb.common.error.OptimizerRuntimeException$SyntaxException --|>  org.rafendb.common.error.OptimizerRuntimeException
 org.rafendb.common.error.OptimizerRuntimeException$ValidationException --|>  org.rafendb.common.error.OptimizerRuntimeException
-org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.error.Component : component
-org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.error.Component : component
+org.rafendb.common.error.ProcessorRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
+org.rafendb.common.error.RafenDBInternalException *--  org.rafendb.common.Component : component
+org.rafendb.common.error.RafenDBRuntimeException *--  org.rafendb.common.Component : component
 org.rafendb.common.error.RecoveryInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.StorageRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
@@ -677,6 +720,17 @@ org.rafendb.common.query.CreateIndexQuery *--  org.rafendb.common.schema.IndexTy
 org.rafendb.common.query.CreateIndexQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.DeleteQuery *--  org.rafendb.common.expr.Expr : where
 org.rafendb.common.query.DeleteQuery ..|>  org.rafendb.common.query.ParsedQuery
+org.rafendb.common.query.FromItem$CartesianProduct *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$CartesianProduct *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$CartesianProduct ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$Join *--  org.rafendb.common.expr.Expr : condition
+org.rafendb.common.query.FromItem$Join *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$Join *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$Join ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$NaturalJoin *--  org.rafendb.common.query.FromItem : left
+org.rafendb.common.query.FromItem$NaturalJoin *--  org.rafendb.common.query.FromItem : right
+org.rafendb.common.query.FromItem$NaturalJoin ..|>  org.rafendb.common.query.FromItem
+org.rafendb.common.query.FromItem$TableRef ..|>  org.rafendb.common.query.FromItem
 org.rafendb.common.query.InsertQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : values
 org.rafendb.common.query.InsertQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.OrderByItem *--  org.rafendb.common.expr.Expr : expression
@@ -686,8 +740,8 @@ org.rafendb.common.query.QueryResult$Rows ..|>  org.rafendb.common.query.QueryRe
 org.rafendb.common.query.QueryResult$Status ..|>  org.rafendb.common.query.QueryResult
 org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.expr.Expr : projection
 org.rafendb.common.query.SelectQuery "1" o-- "0..*"  org.rafendb.common.query.OrderByItem : orderBy
-org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : joinCondition
 org.rafendb.common.query.SelectQuery *--  org.rafendb.common.expr.Expr : whereCondition
+org.rafendb.common.query.SelectQuery *--  org.rafendb.common.query.FromItem : from
 org.rafendb.common.query.SelectQuery ..|>  org.rafendb.common.query.ParsedQuery
 org.rafendb.common.query.TransactionQuery *--  org.rafendb.common.query.TransactionQuery$Kind : kind
 org.rafendb.common.query.TransactionQuery ..|>  org.rafendb.common.query.ParsedQuery

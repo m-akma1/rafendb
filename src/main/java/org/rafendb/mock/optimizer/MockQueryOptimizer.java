@@ -47,7 +47,6 @@ public class MockQueryOptimizer implements QueryOptimizer {
         return new MockParsedQuery(sql);
     }
 
-    @Override
     public void bindAndValidate(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
         calls.add("bindAndValidate");

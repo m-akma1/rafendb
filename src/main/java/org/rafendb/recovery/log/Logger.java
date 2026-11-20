@@ -44,7 +44,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * Konstruktor default Logger (hanya in-memory tanpa path file).
      */
     public Logger() {
-        this("");
+        this.logFilePath = "";
     }
 
     /**
@@ -54,8 +54,9 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * kembali ke memori dan LSN disesuaikan ke nomor tertinggi.
      *
      * @param logFilePath path ke file log di disk
+     * @throws LoggerErrorException jika file log yang ada gagal dibaca
      */
-    public Logger(String logFilePath) {
+    public Logger(String logFilePath) throws LoggerErrorException {
         this.logFilePath = logFilePath != null ? logFilePath : "";
         if (!this.logFilePath.isEmpty()) {
             loadExistingLogsFromFile();
@@ -66,8 +67,9 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * Membuat Logger dengan objek {@link Path}.
      *
      * @param logPath path ke file log
+     * @throws LoggerErrorException jika file log yang ada gagal dibaca
      */
-    public Logger(Path logPath) {
+    public Logger(Path logPath) throws LoggerErrorException {
         this(logPath != null ? logPath.toString() : "");
     }
 
@@ -75,7 +77,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * Memuat record WAL yang telah tersimpan dari file log di disk jika ada.
      * Mampu mendeteksi dan menangani torn-tail record yang belum selesai ditulis saat crash.
      */
-    private synchronized void loadExistingLogsFromFile() {
+    private synchronized void loadExistingLogsFromFile() throws LoggerErrorException {
         File file = new File(logFilePath);
         if (!file.exists() || !file.isFile() || file.length() == 0) {
             return;
@@ -142,7 +144,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     /**
      * Menuliskan record WAL ke disk secara persisten.
      */
-    private synchronized void writeRecordToDisk(WALRecord record) {
+    private synchronized void writeRecordToDisk(WALRecord record) throws LoggerErrorException {
         if (logFilePath.isEmpty()) {
             return;
         }
@@ -194,16 +196,20 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
 
     /**
      * Mem-flush buffer log ke stable storage.
+     *
+     * @throws LoggerErrorException jika log gagal di-flush
      */
-    public void flush() {
+    public void flush() throws LoggerErrorException {
         flushAll();
     }
 
     /**
      * Menyimpan permanen seluruh record log yang berada di buffer memori ke penyimpanan fisik stabil.
+     *
+     * @throws LoggerErrorException jika log gagal di-flush
      */
     @Override
-    public synchronized void flushAll() {
+    public synchronized void flushAll() throws LoggerErrorException {
         if (dataOutputStream != null) {
             try {
                 dataOutputStream.flush();
@@ -234,9 +240,10 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * Sinkronisasi paksa record log sampai dengan LSN tertentu ke disk (implementasi {@link WalSync}).
      *
      * @param lsn batas LSN log
+     * @throws LoggerErrorException jika log gagal di-flush
      */
     @Override
-    public void forceThrough(long lsn) {
+    public void forceThrough(long lsn) throws LoggerErrorException {
         flushAll();
     }
 
@@ -286,7 +293,8 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     @Override
-    public synchronized void logTransactionEvent(int idTransaction, LogType logType) {
+    public synchronized void logTransactionEvent(int idTransaction, LogType logType)
+            throws LoggerErrorException {
         long lsn = currentLSN.incrementAndGet();
         long now = System.currentTimeMillis();
         WALRecord record = new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null);
@@ -308,6 +316,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
      * @param beforeVal nilai sebelum
      * @param afterVal nilai sesudah
      * @return nomor LSN yang dialokasikan
+     * @throws LoggerErrorException jika record gagal ditulis ke disk
      */
     public synchronized long logDataChange(
             int idTransaction,
@@ -316,7 +325,8 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             String tableName,
             Rid rid,
             String beforeVal,
-            String afterVal) {
+            String afterVal)
+            throws LoggerErrorException {
         long lsn = currentLSN.incrementAndGet();
         WALRecord record =
                 new WALRecord(
@@ -341,7 +351,8 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             String tableName,
             int idRecord,
             String beforeVal,
-            String afterVal) {
+            String afterVal)
+            throws LoggerErrorException {
         long lsn = currentLSN.incrementAndGet();
         WALRecord record =
                 new WALRecord(
@@ -408,7 +419,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     }
 
     @Override
-    public synchronized void close() throws IOException {
+    public synchronized void close() throws IOException, LoggerErrorException {
         if (dataOutputStream != null) {
             try {
                 flushAll();

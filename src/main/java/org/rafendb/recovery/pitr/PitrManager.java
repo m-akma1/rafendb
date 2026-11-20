@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
 
 /**
@@ -27,7 +28,7 @@ public final class PitrManager {
     private int recoveredHighestTransactionId;
     private long recoveredHighestTimestamp;
 
-    public PitrManager(Logger logger) {
+    public PitrManager(Logger logger) throws LoggerErrorException {
         this.logger = Objects.requireNonNull(logger, "logger");
         captureSnapshot(0, Map.of());
     }
@@ -38,7 +39,8 @@ public final class PitrManager {
      * boundary.
      */
     public synchronized void captureSnapshot(
-            long timestamp, Map<String, ? extends Map<Integer, String>> rows) {
+            long timestamp, Map<String, ? extends Map<Integer, String>> rows)
+            throws LoggerErrorException {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
         logger.flushAll();
@@ -52,7 +54,8 @@ public final class PitrManager {
     }
 
     /** Restores the state after every transaction whose COMMIT timestamp is at most the target. */
-    public synchronized boolean recoverToTimestamp(long targetTimestamp) {
+    public synchronized boolean recoverToTimestamp(long targetTimestamp)
+            throws LoggerErrorException {
         if (!snapshotAvailable || targetTimestamp < snapshotTimestamp) return false;
         List<WALRecord> wal = durableWal();
         long latestCommitTimestamp = latestCommitTimestamp(wal);
@@ -72,7 +75,8 @@ public final class PitrManager {
      * Restores through the target transaction's COMMIT LSN. Earlier LSNs define the boundary;
      * transaction ID ordering is deliberately irrelevant.
      */
-    public synchronized boolean recoverToTransaction(int transactionId) {
+    public synchronized boolean recoverToTransaction(int transactionId)
+            throws LoggerErrorException {
         if (!snapshotAvailable || transactionId <= 0) return false;
         List<WALRecord> wal = durableWal();
         WALRecord targetCommit = null;
@@ -88,7 +92,7 @@ public final class PitrManager {
     }
 
     /** Restores through the latest durable COMMIT, or to the snapshot if there are no commits. */
-    public synchronized boolean recoverToLatestCommit() {
+    public synchronized boolean recoverToLatestCommit() throws LoggerErrorException {
         if (!snapshotAvailable) return false;
         List<WALRecord> wal = durableWal();
         WALRecord latest = null;
@@ -249,7 +253,7 @@ public final class PitrManager {
         return true;
     }
 
-    private List<WALRecord> durableWal() {
+    private List<WALRecord> durableWal() throws LoggerErrorException {
         logger.flushAll();
         return logger.getLogsSorted();
     }

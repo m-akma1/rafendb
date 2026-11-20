@@ -1,10 +1,16 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Root unchecked exception: an error the client caused with its request. The
  * message is shown to the user.
  */
-public class RafenDBRuntimeException extends RuntimeException {
+public abstract sealed class RafenDBRuntimeException extends RuntimeException
+        permits StorageRuntimeException,
+                OptimizerRuntimeException,
+                ProcessorRuntimeException,
+                GeneralRuntimeException {
     private static final long serialVersionUID = 1L;
 
     /** The RafenDB component associated with this error. */

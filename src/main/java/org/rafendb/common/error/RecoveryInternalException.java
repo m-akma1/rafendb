@@ -1,10 +1,12 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Failure Recovery Manager's {@link RafenDBInternalException}: a failure while writing or forcing the
  * log, or while rolling back or recovering.
  */
-public class RecoveryInternalException extends RafenDBInternalException {
+public non-sealed class RecoveryInternalException extends RafenDBInternalException {
     private static final long serialVersionUID = 1L;
 
     /**
