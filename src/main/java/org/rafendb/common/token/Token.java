@@ -63,6 +63,8 @@ public record Token(TokenType type, String text, SourcePosition position) implem
                     "COMMIT",
                     "ABORT",
                     "CREATE",
+                    "DROP",
+                    "TABLE",
                     "INDEX",
                     "USING",
                     "HASH",
