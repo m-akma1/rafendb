@@ -23,6 +23,35 @@ import org.rafendb.storage.seed.SampleDatabaseLoader;
  * --mock} flags are added here once they exist.
  */
 public final class Engine {
+    /*
+     * TODO(QP1): real wiring, after PR #55 (FRM) and PR #54 (QO) are merged.
+     *
+     * Entry point: Engine.start(EngineConfig) and Engine.close(). EngineConfig holds dataDir,
+     * mocks (Set<Component>, from --mock), concurrency (ProtocolType), bufferFrames,
+     * seedSampleData and drainTimeout. ServerMain and the driver kit build it from their flags.
+     *
+     * start, in this order:
+     *  1. Lock dataDir/.lock with FileChannel.tryLock; refuse a second engine on the same data.
+     *  2. SM: Engine.storage(dataDir, bufferFrames, walHolder). walHolder is a late-bound
+     *     WalSync, because FRM needs SM and SM needs FRM for forceThrough.
+     *  3. FRM: new FRManager(new Logger(walPath), storage), bind walHolder, recoverFromCrash().
+     *     With #55, FRM also takes the ConcurrencyControl for quiescent checkpoints, while CCM
+     *     takes FRM: a second cycle that needs a setter or late binding from FRM or CCM.
+     *  4. CCM: new ConcurrencyControlManager(new TransactionManager(), protocol, frm), then
+     *     initializeAfterRecovery(info). FRM does not yet report RecoveryInfo (highest tx id
+     *     and timestamp in the log); without it, tx ids restart at 1 and may collide.
+     *  5. Seed: with #55, loadSampleDatabase(logInsert) runs inside a bootstrap transaction
+     *     that the engine begins, logs each INSERT through, and commits or rolls back.
+     *  6. QO: with #54, new QueryOptimizerImpl(parser, binder(catalog), joinOptimizer(storage),
+     *     planBuilder), one per session unless it is thread-safe.
+     *  7. QP: the real QueryProcessor once it exists; MockQueryProcessor until then.
+     *  8. Print one line per component: real or mock.
+     *
+     * close, in reverse: ccm.pauseNewTransactions() and awaitNoActive(drainTimeout), optional
+     * checkpoint (decision D3), storage.close(), frm.close(), release the lock.
+     *
+     */
+
     private final QueryProcessor processor;
     private final ProtocolType protocol;
 

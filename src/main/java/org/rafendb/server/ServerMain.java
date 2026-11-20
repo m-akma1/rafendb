@@ -262,14 +262,14 @@ public final class ServerMain {
         if (closeable == null) return;
         try {
             closeable.close();
-        } catch (Exception _) {}
+        } catch (Exception _) {
+        }
     }
 
     private static void help() {
         ServerConfig defaults = ServerConfig.defaults();
         System.out.println("Usage: server [options]");
-        System.out.println(
-                "  --port=<n>     port to listen on (default " + defaults.port() + ")");
+        System.out.println("  --port=<n>     port to listen on (default " + defaults.port() + ")");
         System.out.println(
                 "  --timeout=<s>  shutdown waiting timeout in seconds (default "
                         + defaults.shutdownTimeout().toSeconds()
@@ -287,8 +287,7 @@ public final class ServerMain {
         try {
             return Duration.ofSeconds(Long.parseLong(digits));
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    "--timeout must be a number of seconds: " + text);
+            throw new IllegalArgumentException("--timeout must be a number of seconds: " + text);
         }
     }
 }
