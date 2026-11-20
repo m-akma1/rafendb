@@ -410,13 +410,16 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @return builder untuk parameter indexScanBuilder pada constructor factory
      * @throws NullPointerException jika context, storage, constructor, node, atau hasil null
      */
-    public static Function<IndexScanNode, Operator> bindIndexScan(ExecutionContext context, IndexScanConstructor constructor) {
+    public static Function<IndexScanNode, Operator> bindIndexScan(
+            ExecutionContext context, IndexScanConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
         Objects.requireNonNull(context.getStorageManager(), "storage");
         return node -> {
             Objects.requireNonNull(node, "node");
-            return Objects.requireNonNull(constructor.create(context, node.table(), node.alias(), node.descriptor()), "Index Scan operator");
+            return Objects.requireNonNull(
+                    constructor.create(context, node.table(), node.alias(), node.descriptor()),
+                    "Index Scan operator");
         };
     }
 }
