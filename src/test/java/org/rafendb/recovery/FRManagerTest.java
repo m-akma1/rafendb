@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.txn.ChangeRecord;
@@ -193,11 +194,11 @@ class FRManagerTest {
                 org.rafendb.api.storage.StorageManager realSm =
                         org.rafendb.engine.Engine.storage(
                                 tempDir.resolve("data"), 4, connectedLogger)) {
-            org.rafendb.api.storage.StorageManager countingSm =
-                    (org.rafendb.api.storage.StorageManager)
+            StorageRecovery countingSm =
+                    (StorageRecovery)
                             java.lang.reflect.Proxy.newProxyInstance(
-                                    org.rafendb.api.storage.StorageManager.class.getClassLoader(),
-                                    new Class<?>[] {org.rafendb.api.storage.StorageManager.class},
+                                    StorageRecovery.class.getClassLoader(),
+                                    new Class<?>[] {StorageRecovery.class},
                                     (proxy, method, args) -> {
                                         if ("flush".equals(method.getName())) {
                                             flushCount[0]++;

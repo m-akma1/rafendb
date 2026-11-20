@@ -9,7 +9,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
@@ -29,7 +29,7 @@ public final class CheckpointManager {
 
     private final Logger logger;
     private final ConcurrencyControl concurrencyControl;
-    private final StorageManager storageManager;
+    private final StorageRecovery storageManager;
     private final Duration awaitTimeout;
     private final Path checkpointPointer;
     private final Object checkpointLock = new Object();
@@ -57,7 +57,7 @@ public final class CheckpointManager {
      * @param storageManager storage manager to flush, not null
      */
     public CheckpointManager(
-            Logger logger, ConcurrencyControl concurrencyControl, StorageManager storageManager) {
+            Logger logger, ConcurrencyControl concurrencyControl, StorageRecovery storageManager) {
         this(logger, concurrencyControl, storageManager, DEFAULT_TIMEOUT, pointerFor(logger));
     }
 
@@ -72,7 +72,7 @@ public final class CheckpointManager {
     public CheckpointManager(
             Logger logger,
             ConcurrencyControl concurrencyControl,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             Duration awaitTimeout) {
         this(logger, concurrencyControl, storageManager, awaitTimeout, pointerFor(logger));
     }
@@ -80,7 +80,7 @@ public final class CheckpointManager {
     CheckpointManager(
             Logger logger,
             ConcurrencyControl concurrencyControl,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             Duration awaitTimeout,
             Path checkpointPointer) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
