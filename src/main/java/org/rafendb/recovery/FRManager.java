@@ -17,6 +17,7 @@ import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.RecoveryInfo;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
@@ -42,7 +43,7 @@ public class FRManager implements RecoveryManager {
 
     private final Logger logger;
     private final RollbackManager rollbackManager;
-    private final CheckpointManager checkpointManager;
+    private volatile CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
     private final StorageManager storageManager;
     private final boolean encodeBinaryImages;
@@ -500,6 +501,40 @@ public class FRManager implements RecoveryManager {
     /** @return instance CrashRecoveryEngine yang digunakan */
     public CrashRecoveryEngine getCrashRecoveryManager() {
         return crashRecoveryManager;
+    }
+
+    /**
+     * Menghubungkan {@link ConcurrencyControl} setelah fase inisialisasi startup (breaking circular
+     * dependency saat perakitan Engine) agar quiescent checkpoint dapat menahan transaksi baru dan
+     * mem-flush {@link StorageManager}.
+     *
+     * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
+     * @throws IllegalStateException jika FRManager dibuat tanpa {@link StorageManager}
+     */
+    public synchronized void attachConcurrencyControl(ConcurrencyControl concurrencyControl) {
+        Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
+        if (this.storageManager == null) {
+            throw new IllegalStateException(
+                    "FRManager must be constructed with a StorageManager before attaching"
+                            + " ConcurrencyControl");
+        }
+        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
+    }
+
+    /**
+     * Mengembalikan informasi batas atas transaksi dan timestamp dari WAL saat ini untuk keperluan
+     * inisialisasi CCM pasca-recovery ({@code initializeAfterRecovery}).
+     *
+     * @return {@link RecoveryInfo} berisi {@code maxTransactionId} dan {@code maxTimestamp}
+     */
+    public RecoveryInfo getRecoveryInfo() {
+        long maxTxId = 0L;
+        long maxTimestamp = 0L;
+        for (WALRecord rec : logger.getLogsSorted()) {
+            maxTxId = Math.max(maxTxId, rec.getIdTransaction());
+            maxTimestamp = Math.max(maxTimestamp, rec.getTimestamp());
+        }
+        return new RecoveryInfo(maxTxId, maxTimestamp);
     }
 
     @Override

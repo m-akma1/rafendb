@@ -105,6 +105,7 @@ public final class CheckpointManager {
      * @return true only when the complete checkpoint and its pointer are durable
      */
     public boolean createCheckpoint() {
+        // TODO: masukkan concurrencyControl di params instead of di FRManager
         synchronized (checkpointLock) {
             boolean paused = false;
             try {

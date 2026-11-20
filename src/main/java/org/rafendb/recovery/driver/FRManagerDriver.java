@@ -138,6 +138,8 @@ public class FRManagerDriver {
         // Rollback Tx1
         boolean rollbackSuccess = frm.rollbackTransaction(tx1);
         String restoredVal = storage.get("account", 101);
+        System.out.println(
+                "  [DETAIL] Expected: restored=Alice:100 | Actual: restored=" + restoredVal);
 
         return rollbackSuccess && "Alice:100".equals(restoredVal);
     }
@@ -147,7 +149,9 @@ public class FRManagerDriver {
      */
     public boolean testRedo() {
         initNewEnvironment();
-        return frm.redo();
+        boolean ok = frm.redo();
+        System.out.println("  [DETAIL] Expected: redo=true | Actual: redo=" + ok);
+        return ok;
     }
 
     /**
@@ -178,6 +182,9 @@ public class FRManagerDriver {
         // 4. Jalankan prosedur crash recovery
         boolean recoveryOk = frm.recoverFromCrash();
         String valAfterRecovery = storage.get("accounts", 101);
+        System.out.println("  [DETAIL] Expected: User1-Committed | Actual: " + valAfterRecovery);
+        System.out.println(
+                "  [DETAIL] Expected: User1-Committed | Actual: " + valAfterRecovery);
 
         return recoveryOk && "User1-Committed".equals(valAfterRecovery);
     }
@@ -218,8 +225,19 @@ public class FRManagerDriver {
         // T2 rollback
         boolean t2Rollback = frm.rollbackTransaction(2);
 
-        boolean t1Ok = "Val-T1".equals(storage.get("ledger", 10));
-        boolean t3Ok = "Val-T3".equals(storage.get("ledger", 30));
+        String v10 = storage.get("ledger", 10);
+        String v20 = storage.get("ledger", 20);
+        String v30 = storage.get("ledger", 30);
+        boolean t1Ok = "Val-T1".equals(v10);
+        boolean t3Ok = "Val-T3".equals(v30);
+        System.out.println(
+                "  [DETAIL] Expected: ledger#10=Val-T1, ledger#20=null, ledger#30=Val-T3"
+                        + " | Actual: ledger#10="
+                        + v10
+                        + ", ledger#20="
+                        + v20
+                        + ", ledger#30="
+                        + v30);
 
         return t1Commit && t3Commit && t2Rollback && t1Ok && t3Ok;
     }
@@ -250,6 +268,7 @@ public class FRManagerDriver {
         // Pulihkan ke titik waktu sebelum T2
         boolean pitrOk = frm.recoverToPointInTime(timestampCutoff);
         String valAfterPitr = storage.get("docs", 1);
+        System.out.println("  [DETAIL] Expected: Version1 | Actual: " + valAfterPitr);
 
         return pitrOk && "Version1".equals(valAfterPitr);
     }
@@ -466,6 +485,415 @@ public class FRManagerDriver {
     }
 
     /**
+     * FR-08: Menguji crash recovery tanpa checkpoint dan dengan checkpoint yang selesai
+     * menggunakan {@link StorageManager} asli berbasis berkas.
+     */
+    public boolean testRealStorageWithoutAndWithCheckpoint() {
+        try {
+            ConcurrencyControl mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+            TableSchema schema =
+                    new TableSchema(
+                            "notes",
+                            List.of(
+                                    new Column("id", DataType.INTEGER, 0, false, true),
+                                    new Column("body", DataType.VARCHAR, 50, false, false)));
+            Row noCkptCommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "NoCkpt-Committed")));
+            Row noCkptUncommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(2),
+                                    Value.ofText(DataType.VARCHAR, "NoCkpt-Uncommitted")));
+            Row preCkpt =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "PreCkpt-Committed")));
+            Row postCkptCommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "PostCkpt-Committed")));
+            Row postCkptUncommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(2),
+                                    Value.ofText(DataType.VARCHAR, "PostCkpt-Uncommitted")));
+
+            // Skenario A: Tanpa checkpoint
+            Path dirA = Files.createTempDirectory("frm-no-ckpt-");
+            Path dataDirA = dirA.resolve("data");
+            Path walPathA = dirA.resolve("wal.log");
+            Rid ridA1;
+            Rid ridA2;
+            try (Logger loggerA = new Logger(walPathA);
+                    StorageManager smA = Engine.storage(dataDirA, 8, loggerA);
+                    FRManager frmA = new FRManager(loggerA, smA, mockCc)) {
+                smA.createTable(schema);
+                TxId tx1 = new TxId(1);
+                frmA.beginTransaction(tx1);
+                ridA1 = smA.reserveRid("notes", noCkptCommitted);
+                frmA.writeLog(
+                        new LogPayload(
+                                tx1,
+                                org.rafendb.common.log.LogType.INSERT,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow("notes", ridA1),
+                                                Optional.empty(),
+                                                Optional.of(
+                                                        smA.encodeRow(
+                                                                "notes", noCkptCommitted))))));
+                frmA.commitTransaction(tx1);
+
+                TxId tx2 = new TxId(2);
+                frmA.beginTransaction(tx2);
+                ridA2 = smA.reserveRid("notes", noCkptUncommitted);
+                long lsn2 =
+                        frmA.writeLog(
+                                new LogPayload(
+                                        tx2,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridA2),
+                                                        Optional.empty(),
+                                                        Optional.of(
+                                                                smA.encodeRow(
+                                                                        "notes",
+                                                                        noCkptUncommitted))))));
+                smA.insert("notes", ridA2, noCkptUncommitted, lsn2);
+            }
+
+            Optional<Row> actualA1;
+            Optional<Row> actualA2;
+            boolean recAOk;
+            try (Logger restartedA = new Logger(walPathA);
+                    StorageManager smA2 = Engine.storage(dataDirA, 8, restartedA);
+                    FRManager frmA2 = new FRManager(restartedA, smA2, mockCc)) {
+                recAOk = frmA2.recoverFromCrash();
+                actualA1 = smA2.fetch("notes", ridA1).map(StoredRow::row);
+                actualA2 = smA2.fetch("notes", ridA2).map(StoredRow::row);
+            }
+
+            // Skenario B: Dengan checkpoint selesai
+            Path dirB = Files.createTempDirectory("frm-with-ckpt-");
+            Path dataDirB = dirB.resolve("data");
+            Path walPathB = dirB.resolve("wal.log");
+            Rid ridB1;
+            Rid ridB2;
+            boolean ckptOk;
+            try (Logger loggerB = new Logger(walPathB);
+                    StorageManager smB = Engine.storage(dataDirB, 8, loggerB);
+                    FRManager frmB = new FRManager(loggerB, smB, mockCc)) {
+                smB.createTable(schema);
+                TxId tx1 = new TxId(1);
+                frmB.beginTransaction(tx1);
+                ridB1 = smB.reserveRid("notes", preCkpt);
+                byte[] preBytes = smB.encodeRow("notes", preCkpt);
+                long lsn1 =
+                        frmB.writeLog(
+                                new LogPayload(
+                                        tx1,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridB1),
+                                                        Optional.empty(),
+                                                        Optional.of(preBytes)))));
+                smB.insert("notes", ridB1, preCkpt, lsn1);
+                frmB.commitTransaction(tx1);
+                ckptOk = frmB.createCheckpoint();
+
+                // Post-checkpoint committed update (belum masuk ke SM -> redo)
+                TxId tx2 = new TxId(2);
+                frmB.beginTransaction(tx2);
+                frmB.writeLog(
+                        new LogPayload(
+                                tx2,
+                                org.rafendb.common.log.LogType.UPDATE,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow("notes", ridB1),
+                                                Optional.of(preBytes),
+                                                Optional.of(
+                                                        smB.encodeRow(
+                                                                "notes", postCkptCommitted))))));
+                frmB.commitTransaction(tx2);
+
+                // Post-checkpoint uncommitted insert (sudah masuk ke SM -> undo)
+                TxId tx3 = new TxId(3);
+                frmB.beginTransaction(tx3);
+                ridB2 = smB.reserveRid("notes", postCkptUncommitted);
+                long lsn3 =
+                        frmB.writeLog(
+                                new LogPayload(
+                                        tx3,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridB2),
+                                                        Optional.empty(),
+                                                        Optional.of(
+                                                                smB.encodeRow(
+                                                                        "notes",
+                                                                        postCkptUncommitted))))));
+                smB.insert("notes", ridB2, postCkptUncommitted, lsn3);
+            }
+
+            Optional<Row> actualB1;
+            Optional<Row> actualB2;
+            boolean recBOk;
+            try (Logger restartedB = new Logger(walPathB);
+                    StorageManager smB2 = Engine.storage(dataDirB, 8, restartedB);
+                    FRManager frmB2 = new FRManager(restartedB, smB2, mockCc)) {
+                recBOk = frmB2.recoverFromCrash();
+                actualB1 = smB2.fetch("notes", ridB1).map(StoredRow::row);
+                actualB2 = smB2.fetch("notes", ridB2).map(StoredRow::row);
+            }
+
+            boolean ok =
+                    recAOk
+                            && Optional.of(noCkptCommitted).equals(actualA1)
+                            && actualA2.isEmpty()
+                            && ckptOk
+                            && recBOk
+                            && Optional.of(postCkptCommitted).equals(actualB1)
+                            && actualB2.isEmpty();
+            System.out.println(
+                    "  [DETAIL] Expected: noCkpt(r1="
+                            + noCkptCommitted
+                            + ", r2=empty) & withCkpt(r1="
+                            + postCkptCommitted
+                            + ", r2=empty) | Actual: noCkpt(r1="
+                            + actualA1.orElse(null)
+                            + ", r2="
+                            + actualA2.orElse(null)
+                            + ") & withCkpt(r1="
+                            + actualB1.orElse(null)
+                            + ", r2="
+                            + actualB2.orElse(null)
+                            + ")");
+            return ok;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * FR-08: Menguji crash recovery tanpa checkpoint dan dengan checkpoint yang selesai
+     * menggunakan {@link StorageManager} asli berbasis berkas.
+     */
+    public boolean testRealStorageWithoutAndWithCheckpoint() {
+        try {
+            ConcurrencyControl mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+            TableSchema schema =
+                    new TableSchema(
+                            "notes",
+                            List.of(
+                                    new Column("id", DataType.INTEGER, 0, false, true),
+                                    new Column("body", DataType.VARCHAR, 50, false, false)));
+            Row noCkptCommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "NoCkpt-Committed")));
+            Row noCkptUncommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(2),
+                                    Value.ofText(DataType.VARCHAR, "NoCkpt-Uncommitted")));
+            Row preCkpt =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "PreCkpt-Committed")));
+            Row postCkptCommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(1),
+                                    Value.ofText(DataType.VARCHAR, "PostCkpt-Committed")));
+            Row postCkptUncommitted =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(2),
+                                    Value.ofText(DataType.VARCHAR, "PostCkpt-Uncommitted")));
+
+            // Skenario A: Tanpa checkpoint
+            Path dirA = Files.createTempDirectory("frm-no-ckpt-");
+            Path dataDirA = dirA.resolve("data");
+            Path walPathA = dirA.resolve("wal.log");
+            Rid ridA1;
+            Rid ridA2;
+            try (Logger loggerA = new Logger(walPathA);
+                    StorageManager smA = Engine.storage(dataDirA, 8, loggerA);
+                    FRManager frmA = new FRManager(loggerA, smA, mockCc)) {
+                smA.createTable(schema);
+                TxId tx1 = new TxId(1);
+                frmA.beginTransaction(tx1);
+                ridA1 = smA.reserveRid("notes", noCkptCommitted);
+                frmA.writeLog(
+                        new LogPayload(
+                                tx1,
+                                org.rafendb.common.log.LogType.INSERT,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow("notes", ridA1),
+                                                Optional.empty(),
+                                                Optional.of(
+                                                        smA.encodeRow("notes", noCkptCommitted))))));
+                frmA.commitTransaction(tx1);
+
+                TxId tx2 = new TxId(2);
+                frmA.beginTransaction(tx2);
+                ridA2 = smA.reserveRid("notes", noCkptUncommitted);
+                long lsn2 =
+                        frmA.writeLog(
+                                new LogPayload(
+                                        tx2,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridA2),
+                                                        Optional.empty(),
+                                                        Optional.of(
+                                                                smA.encodeRow(
+                                                                        "notes",
+                                                                        noCkptUncommitted))))));
+                smA.insert("notes", ridA2, noCkptUncommitted, lsn2);
+            }
+
+            Optional<Row> actualA1;
+            Optional<Row> actualA2;
+            boolean recAOk;
+            try (Logger restartedA = new Logger(walPathA);
+                    StorageManager smA2 = Engine.storage(dataDirA, 8, restartedA);
+                    FRManager frmA2 = new FRManager(restartedA, smA2, mockCc)) {
+                recAOk = frmA2.recoverFromCrash();
+                actualA1 = smA2.fetch("notes", ridA1).map(StoredRow::row);
+                actualA2 = smA2.fetch("notes", ridA2).map(StoredRow::row);
+            }
+
+            // Skenario B: Dengan checkpoint selesai
+            Path dirB = Files.createTempDirectory("frm-with-ckpt-");
+            Path dataDirB = dirB.resolve("data");
+            Path walPathB = dirB.resolve("wal.log");
+            Rid ridB1;
+            Rid ridB2;
+            boolean ckptOk;
+            try (Logger loggerB = new Logger(walPathB);
+                    StorageManager smB = Engine.storage(dataDirB, 8, loggerB);
+                    FRManager frmB = new FRManager(loggerB, smB, mockCc)) {
+                smB.createTable(schema);
+                TxId tx1 = new TxId(1);
+                frmB.beginTransaction(tx1);
+                ridB1 = smB.reserveRid("notes", preCkpt);
+                byte[] preBytes = smB.encodeRow("notes", preCkpt);
+                long lsn1 =
+                        frmB.writeLog(
+                                new LogPayload(
+                                        tx1,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridB1),
+                                                        Optional.empty(),
+                                                        Optional.of(preBytes)))));
+                smB.insert("notes", ridB1, preCkpt, lsn1);
+                frmB.commitTransaction(tx1);
+                ckptOk = frmB.createCheckpoint();
+
+                // Post-checkpoint committed update (belum masuk ke SM -> redo)
+                TxId tx2 = new TxId(2);
+                frmB.beginTransaction(tx2);
+                frmB.writeLog(
+                        new LogPayload(
+                                tx2,
+                                org.rafendb.common.log.LogType.UPDATE,
+                                System.currentTimeMillis(),
+                                Optional.of(
+                                        new ChangeRecord(
+                                                ResourceId.ofRow("notes", ridB1),
+                                                Optional.of(preBytes),
+                                                Optional.of(
+                                                        smB.encodeRow(
+                                                                "notes", postCkptCommitted))))));
+                frmB.commitTransaction(tx2);
+
+                // Post-checkpoint uncommitted insert (sudah masuk ke SM -> undo)
+                TxId tx3 = new TxId(3);
+                frmB.beginTransaction(tx3);
+                ridB2 = smB.reserveRid("notes", postCkptUncommitted);
+                long lsn3 =
+                        frmB.writeLog(
+                                new LogPayload(
+                                        tx3,
+                                        org.rafendb.common.log.LogType.INSERT,
+                                        System.currentTimeMillis(),
+                                        Optional.of(
+                                                new ChangeRecord(
+                                                        ResourceId.ofRow("notes", ridB2),
+                                                        Optional.empty(),
+                                                        Optional.of(
+                                                                smB.encodeRow(
+                                                                        "notes",
+                                                                        postCkptUncommitted))))));
+                smB.insert("notes", ridB2, postCkptUncommitted, lsn3);
+            }
+
+            Optional<Row> actualB1;
+            Optional<Row> actualB2;
+            boolean recBOk;
+            try (Logger restartedB = new Logger(walPathB);
+                    StorageManager smB2 = Engine.storage(dataDirB, 8, restartedB);
+                    FRManager frmB2 = new FRManager(restartedB, smB2, mockCc)) {
+                recBOk = frmB2.recoverFromCrash();
+                actualB1 = smB2.fetch("notes", ridB1).map(StoredRow::row);
+                actualB2 = smB2.fetch("notes", ridB2).map(StoredRow::row);
+            }
+
+            boolean ok =
+                    recAOk
+                            && Optional.of(noCkptCommitted).equals(actualA1)
+                            && actualA2.isEmpty()
+                            && ckptOk
+                            && recBOk
+                            && Optional.of(postCkptCommitted).equals(actualB1)
+                            && actualB2.isEmpty();
+            System.out.println(
+                    "  [DETAIL] Expected: noCkpt(r1="
+                            + noCkptCommitted
+                            + ", r2=empty) & withCkpt(r1="
+                            + postCkptCommitted
+                            + ", r2=empty) | Actual: noCkpt(r1="
+                            + actualA1.orElse(null)
+                            + ", r2="
+                            + actualA2.orElse(null)
+                            + ") & withCkpt(r1="
+                            + actualB1.orElse(null)
+                            + ", r2="
+                            + actualB2.orElse(null)
+                            + ")");
+            return ok;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
      * Menjalankan seluruh rangkaian tes driver dan menampilkan laporan hasil.
      *
      * @return true jika seluruh pengujian berhasil
@@ -496,6 +924,11 @@ public class FRManagerDriver {
                 "[TEST] Real Storage Multi-Tx Recovery: "
                         + (realStoragePassed ? "PASSED" : "FAILED"));
 
+        boolean ckptComparePassed = testRealStorageWithoutAndWithCheckpoint();
+        System.out.println(
+                "[TEST] Recovery Without vs With Checkpoint: "
+                        + (ckptComparePassed ? "PASSED" : "FAILED"));
+
         System.out.println("==================================================");
         boolean allPassed =
                 undoPassed
@@ -503,7 +936,8 @@ public class FRManagerDriver {
                         && recoveryPassed
                         && interleavedPassed
                         && pitrPassed
-                        && realStoragePassed;
+                        && realStoragePassed
+                        && ckptComparePassed;
         System.out.println(
                 "TOTAL RESULT: " + (allPassed ? "ALL TESTS PASSED!" : "SOME TESTS FAILED"));
         System.out.println("==================================================");

@@ -683,4 +683,428 @@ class FRManagerTest {
         assertEquals("V1", storage.data.get("users#1"));
         assertFalse(frm.recoverToTransaction(9999));
     }
+
+    @Test
+    void testIndexConsistencyAfterCrashRecoveryWithRealStorage() throws Exception {
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        Path walPath = tempDir.resolve("idx-wal.log");
+        Path dataDir = tempDir.resolve("idx-data");
+
+        org.rafendb.common.tuple.Row row1 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "SKU-A"),
+                                org.rafendb.common.type.Value.ofInt(100)));
+        org.rafendb.common.tuple.Row row1Redone =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "SKU-A"),
+                                org.rafendb.common.type.Value.ofInt(150)));
+        org.rafendb.common.tuple.Row row2Uncommitted =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(2),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "SKU-B"),
+                                org.rafendb.common.type.Value.ofInt(250)));
+
+        Rid rid1;
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager sm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
+                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+            sm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "products",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "sku",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            20,
+                                            false,
+                                            false),
+                                    new org.rafendb.common.schema.Column(
+                                            "price",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            false))));
+            sm.createIndex(
+                    new org.rafendb.common.schema.IndexInfo(
+                            "idx_sku",
+                            "products",
+                            "sku",
+                            org.rafendb.common.schema.IndexType.HASH));
+            sm.createIndex(
+                    new org.rafendb.common.schema.IndexInfo(
+                            "idx_price",
+                            "products",
+                            "price",
+                            org.rafendb.common.schema.IndexType.B_PLUS_TREE));
+
+            // Tx1: INSERT row1 -> SM + WAL & COMMIT
+            TxId tx1 = new TxId(1);
+            assertTrue(realFrm.beginTransaction(tx1));
+            rid1 = sm.reserveRid("products", row1);
+            byte[] row1Bytes = sm.encodeRow("products", row1);
+            long lsn1 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx1,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("products", rid1),
+                                                    Optional.empty(),
+                                                    Optional.of(row1Bytes)))));
+            sm.insert("products", rid1, row1, lsn1);
+            assertTrue(realFrm.commitTransaction(tx1));
+
+            // Tx2: UPDATE harga 100 -> 150 di WAL & COMMIT tanpa menulis ke SM (REDO)
+            TxId tx2 = new TxId(2);
+            assertTrue(realFrm.beginTransaction(tx2));
+            realFrm.writeLog(
+                    new LogPayload(
+                            tx2,
+                            org.rafendb.common.log.LogType.UPDATE,
+                            System.currentTimeMillis(),
+                            Optional.of(
+                                    new ChangeRecord(
+                                            new ResourceId("products", rid1),
+                                            Optional.of(row1Bytes),
+                                            Optional.of(sm.encodeRow("products", row1Redone))))));
+            assertTrue(realFrm.commitTransaction(tx2));
+
+            // Tx3: INSERT row2Uncommitted ke SM & WAL tanpa COMMIT (UNDO)
+            TxId tx3 = new TxId(3);
+            assertTrue(realFrm.beginTransaction(tx3));
+            Rid rid2 = sm.reserveRid("products", row2Uncommitted);
+            long lsn3 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx3,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("products", rid2),
+                                                    Optional.empty(),
+                                                    Optional.of(
+                                                            sm.encodeRow(
+                                                                    "products",
+                                                                    row2Uncommitted))))));
+            sm.insert("products", rid2, row2Uncommitted, lsn3);
+        }
+
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+            assertTrue(restartedFrm.recoverFromCrash());
+            assertEquals(
+                    java.util.List.of(rid1),
+                    restartedSm.lookupIndex(
+                            "idx_sku",
+                            org.rafendb.common.type.Value.ofText(
+                                    org.rafendb.common.type.DataType.VARCHAR, "SKU-A")));
+            assertTrue(
+                    restartedSm
+                            .lookupIndex(
+                                    "idx_sku",
+                                    org.rafendb.common.type.Value.ofText(
+                                            org.rafendb.common.type.DataType.VARCHAR, "SKU-B"))
+                            .isEmpty());
+            assertEquals(
+                    java.util.List.of(rid1),
+                    restartedSm.rangeIndex(
+                            "idx_price",
+                            org.rafendb.common.type.Value.ofInt(140),
+                            true,
+                            org.rafendb.common.type.Value.ofInt(160),
+                            true));
+            assertTrue(
+                    restartedSm
+                            .rangeIndex(
+                                    "idx_price",
+                                    org.rafendb.common.type.Value.ofInt(90),
+                                    true,
+                                    org.rafendb.common.type.Value.ofInt(110),
+                                    true)
+                            .isEmpty());
+            assertTrue(
+                    restartedSm
+                            .rangeIndex(
+                                    "idx_price",
+                                    org.rafendb.common.type.Value.ofInt(240),
+                                    true,
+                                    org.rafendb.common.type.Value.ofInt(260),
+                                    true)
+                            .isEmpty());
+        }
+    }
+
+    @Test
+    void testPitrWithRealStorageSurvivesRestart() throws Exception {
+        var mockCc = new org.rafendb.mock.concurrency.MockConcurrencyControl();
+        Path walPath = tempDir.resolve("pitr-real-wal.log");
+        Path dataDir = tempDir.resolve("pitr-real-data");
+
+        org.rafendb.common.tuple.Row v1Row =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "V1")));
+        org.rafendb.common.tuple.Row v2Row =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "V2")));
+        org.rafendb.common.tuple.Row v3Row =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(2),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "V3")));
+
+        Rid rid1;
+        Rid rid2;
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager sm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
+                FRManager realFrm = new FRManager(logger, sm, mockCc)) {
+            sm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "docs",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "title",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            30,
+                                            false,
+                                            false))));
+
+            TxId tx1 = new TxId(1);
+            assertTrue(realFrm.beginTransaction(tx1));
+            rid1 = sm.reserveRid("docs", v1Row);
+            byte[] v1Bytes = sm.encodeRow("docs", v1Row);
+            long lsn1 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx1,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("docs", rid1),
+                                                    Optional.empty(),
+                                                    Optional.of(v1Bytes)))));
+            sm.insert("docs", rid1, v1Row, lsn1);
+            assertTrue(realFrm.commitTransaction(tx1));
+
+            Thread.sleep(15);
+
+            TxId tx2 = new TxId(2);
+            assertTrue(realFrm.beginTransaction(tx2));
+            long lsn2 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx2,
+                                    org.rafendb.common.log.LogType.UPDATE,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("docs", rid1),
+                                                    Optional.of(v1Bytes),
+                                                    Optional.of(sm.encodeRow("docs", v2Row))))));
+            sm.update("docs", rid1, v2Row, lsn2);
+            assertTrue(realFrm.commitTransaction(tx2));
+
+            Thread.sleep(15);
+
+            TxId tx3 = new TxId(3);
+            assertTrue(realFrm.beginTransaction(tx3));
+            rid2 = sm.reserveRid("docs", v3Row);
+            long lsn3 =
+                    realFrm.writeLog(
+                            new LogPayload(
+                                    tx3,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(
+                                            new ChangeRecord(
+                                                    new ResourceId("docs", rid2),
+                                                    Optional.empty(),
+                                                    Optional.of(sm.encodeRow("docs", v3Row))))));
+            sm.insert("docs", rid2, v3Row, lsn3);
+            assertTrue(realFrm.commitTransaction(tx3));
+
+            assertFalse(realFrm.recoverToTransaction(9999));
+            assertEquals(
+                    Optional.of(v2Row),
+                    sm.fetch("docs", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+            assertEquals(
+                    Optional.of(v3Row),
+                    sm.fetch("docs", rid2).map(org.rafendb.common.tuple.StoredRow::row));
+
+            assertTrue(realFrm.recoverToTransaction(tx1));
+            assertEquals(
+                    Optional.of(v1Row),
+                    sm.fetch("docs", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+            assertTrue(sm.fetch("docs", rid2).isEmpty());
+        }
+
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
+                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm, mockCc)) {
+            assertTrue(restartedFrm.recoverFromCrash());
+            assertEquals(
+                    Optional.of(v1Row),
+                    restartedSm.fetch("docs", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+            assertTrue(restartedSm.fetch("docs", rid2).isEmpty());
+        }
+    }
+
+    @Test
+    void testRealThreeWayIntegrationWithCcmAndStorage() throws Exception {
+        Path walPath = tempDir.resolve("three-way-wal.log");
+        Path dataDir = tempDir.resolve("three-way-data");
+
+        org.rafendb.common.tuple.Row row1 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Committed")));
+        org.rafendb.common.tuple.Row row2 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(2),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Aborted")));
+
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager sm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
+                FRManager realFrm = new FRManager(logger, sm)) {
+            assertTrue(realFrm.recoverFromCrash());
+
+            var ccm =
+                    new org.rafendb.concurrency.ConcurrencyControlManager(
+                            new org.rafendb.concurrency.txn.TransactionManager(),
+                            new org.rafendb.concurrency.protocol.TimestampBasedProtocol(),
+                            realFrm);
+            ccm.initializeAfterRecovery(realFrm.getRecoveryInfo());
+            realFrm.attachConcurrencyControl(ccm);
+
+            sm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "accounts",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "owner",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            40,
+                                            false,
+                                            false))));
+
+            // 1. Alur COMMIT melalui CCM -> FrmBridge -> FRManager -> StorageManager
+            TxId t1 = ccm.begin();
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm.requestAccess(
+                                    t1,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("accounts"))
+                            .status());
+            Rid rid1 = sm.reserveRid("accounts", row1);
+            long lsn1 =
+                    ccm.logChange(
+                            t1,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("accounts", rid1),
+                                    Optional.empty(),
+                                    Optional.of(sm.encodeRow("accounts", row1))));
+            sm.insert("accounts", rid1, row1, lsn1);
+            assertEquals(TxStatus.COMMITTED, ccm.commit(t1).status());
+
+            // 2a. Explicit abort lewat CCM -> FrmBridge.abort -> FRManager.rollback ->
+            // SM.applyRecovery
+            TxId t2 = ccm.begin();
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm.requestAccess(
+                                    t2,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("accounts"))
+                            .status());
+            Rid rid2 = sm.reserveRid("accounts", row2);
+            long lsn2 =
+                    ccm.logChange(
+                            t2,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("accounts", rid2),
+                                    Optional.empty(),
+                                    Optional.of(sm.encodeRow("accounts", row2))));
+            sm.insert("accounts", rid2, row2, lsn2);
+            assertEquals(TxStatus.ABORTED, ccm.abort(t2).status());
+            assertTrue(sm.fetch("accounts", rid2).isEmpty());
+
+            // 2b. Konflik timestamp-order -> StrictTimestampProtocol menolak & membatalkan tOld
+            TxId tOld = ccm.begin();
+            TxId tNew = ccm.begin();
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ALLOWED,
+                    ccm.requestAccess(
+                                    tNew,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("accounts"))
+                            .status());
+            assertEquals(TxStatus.COMMITTED, ccm.commit(tNew).status());
+            assertEquals(
+                    org.rafendb.common.txn.AccessResult.Status.ABORTED,
+                    ccm.requestAccess(
+                                    tOld,
+                                    org.rafendb.common.txn.AccessType.WRITE,
+                                    ResourceId.ofTable("accounts"))
+                            .status());
+
+            // 3. Quiescent checkpoint via attachConcurrencyControl + SM.flush()
+            assertTrue(realFrm.createCheckpoint());
+            assertTrue(
+                    logger.getLogsSorted().stream()
+                            .anyMatch(r -> r.getLogType() == LogType.CHECKPOINT_BEGIN));
+            assertTrue(
+                    logger.getLogsSorted().stream()
+                            .anyMatch(r -> r.getLogType() == LogType.CHECKPOINT_END));
+            assertEquals(
+                    Optional.of(row1),
+                    sm.fetch("accounts", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+        }
+    }
 }
