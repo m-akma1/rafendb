@@ -94,15 +94,6 @@ public final class CheckpointManager {
     }
 
     /**
-     * Executes one checkpoint without coordinating transaction admission via CCM.
-     *
-     * @return true only when the complete checkpoint and its pointer are durable
-     */
-    public boolean createCheckpoint() {
-        return createCheckpoint(null);
-    }
-
-    /**
      * Executes one quiescent checkpoint using the supplied {@link ConcurrencyControl} to pause new
      * transactions and await active transactions when non-null.
      *

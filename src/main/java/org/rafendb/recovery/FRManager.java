@@ -103,7 +103,7 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Konstruktor yang menghubungkan langsung dengan kontrak resmi {@link StorageManager} untuk
+     * Konstruktor yang menghubungkan langsung dengan kontrak resmi {@link StorageRecovery} untuk
      * recovery apply dan flush checkpoint. Untuk quiescent checkpoint, teruskan {@link
      * ConcurrencyControl} ke {@link #createCheckpoint(ConcurrencyControl)}.
      *
@@ -383,22 +383,13 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Memulai proses pembuatan checkpoint sistem tanpa koordinasi admission CCM.
-     *
-     * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
-     */
-    @Override
-    public boolean createCheckpoint() {
-        return createCheckpoint(null);
-    }
-
-    /**
      * Memulai proses pembuatan quiescent checkpoint dengan menyalurkan {@link ConcurrencyControl}
      * untuk menahan transaksi baru dan menunggu transaksi aktif selesai.
      *
      * @param concurrencyControl pengelola concurrency opsional untuk quiescent checkpoint
      * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
      */
+    @Override
     public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
         try {
             return checkpointManager.createCheckpoint(concurrencyControl);

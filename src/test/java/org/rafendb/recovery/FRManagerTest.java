@@ -101,7 +101,7 @@ class FRManagerTest {
 
     @Test
     void testCreateCheckpoint() {
-        assertTrue(frm.createCheckpoint());
+        assertTrue(frm.createCheckpoint(new org.rafendb.mock.concurrency.MockConcurrencyControl()));
     }
 
     @Test

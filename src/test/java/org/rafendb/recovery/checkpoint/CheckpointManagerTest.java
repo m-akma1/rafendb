@@ -100,9 +100,9 @@ class CheckpointManagerTest {
     @Test
     void createCheckpointWithoutConcurrencyControlStillFlushesStorage() throws Exception {
         List<String> calls = new ArrayList<>();
-        StorageManager storage =
+        StorageRecovery storage =
                 proxy(
-                        StorageManager.class,
+                        StorageRecovery.class,
                         (method, args) -> {
                             if (method.getName().equals("flush")) {
                                 calls.add("flush");
@@ -114,7 +114,7 @@ class CheckpointManagerTest {
             CheckpointManager manager =
                     new CheckpointManager(logger, storage, Duration.ofSeconds(1));
 
-            assertTrue(manager.createCheckpoint());
+            assertTrue(manager.createCheckpoint(null));
             assertEquals(List.of("flush"), calls);
             assertEquals(
                     List.of(LogType.CHECKPOINT_BEGIN, LogType.CHECKPOINT_END),
