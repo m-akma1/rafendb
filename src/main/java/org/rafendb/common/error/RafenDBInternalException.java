@@ -40,4 +40,13 @@ public abstract sealed class RafenDBInternalException extends Exception
     public String getMessage() {
         return "Internal error at " + component.displayName() + ": " + super.getMessage();
     }
+
+    /**
+     * Returns the component this error is attributed to.
+     *
+     * @return the component, never {@code null}
+     */
+    public Component component() {
+        return component;
+    }
 }

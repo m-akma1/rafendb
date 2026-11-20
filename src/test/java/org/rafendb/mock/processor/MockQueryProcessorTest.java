@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.processor.Session;
+import org.rafendb.api.processor.Session.TxState;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.QueryResult;
 
@@ -35,6 +36,22 @@ class MockQueryProcessorTest {
         for (String sql : new String[] {"BEGIN;", "commit", "ABORT", "CREATE INDEX i ON t(a)"}) {
             assertInstanceOf(QueryResult.Status.class, session.execute(sql), sql);
         }
+    }
+
+    @Test
+    void transactionStateFollowsBeginCommitAbortAndClose() {
+        assertEquals(TxState.IDLE, session.transactionState());
+        session.execute("BEGIN");
+        session.execute("SELECT * FROM t");
+        assertEquals(TxState.ACTIVE, session.transactionState());
+        session.execute("COMMIT");
+        assertEquals(TxState.IDLE, session.transactionState());
+        session.execute("begin;");
+        session.execute("ABORT");
+        assertEquals(TxState.IDLE, session.transactionState());
+        session.execute("BEGIN");
+        session.close();
+        assertEquals(TxState.IDLE, session.transactionState());
     }
 
     @Test

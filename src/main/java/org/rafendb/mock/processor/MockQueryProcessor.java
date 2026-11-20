@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Objects;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.processor.Session;
+import org.rafendb.api.processor.Session.TxState;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.QueryResult;
 import org.rafendb.common.tuple.Row;
@@ -23,7 +24,11 @@ import org.rafendb.common.type.Value;
  *   <li>Anything else, including an empty statement: throws {@link SyntaxException}.
  * </ul>
  *
- * <p>Thread-safe; each session is stateless apart from being open or closed.
+ * <p>{@link Session#transactionState()} follows the keywords: {@code BEGIN} makes it {@code
+ * ACTIVE}, {@code COMMIT} and {@code ABORT} make it {@code IDLE}. The mock never reports {@code
+ * FAILED}, because nothing it runs can fail inside a transaction.
+ *
+ * <p>Thread-safe; a session only tracks whether it is closed and its transaction state.
  */
 public final class MockQueryProcessor implements QueryProcessor {
 
@@ -47,9 +52,10 @@ public final class MockQueryProcessor implements QueryProcessor {
         return new MockSession();
     }
 
-    /** A session that only tracks whether it is closed. */
+    /** A session that only tracks whether it is closed and whether BEGIN is open. */
     private static final class MockSession implements Session {
         private volatile boolean closed;
+        private volatile TxState state = TxState.IDLE;
 
         /** {@inheritDoc} Returns a canned result; see {@link MockQueryProcessor}. */
         @Override
@@ -62,18 +68,34 @@ public final class MockQueryProcessor implements QueryProcessor {
             return switch (keyword) {
                 case "SELECT" -> SAMPLE_ROWS;
                 case "INSERT", "UPDATE", "DELETE" -> new QueryResult.Affected(1);
-                case "BEGIN" -> new QueryResult.Status("Transaction started");
-                case "COMMIT" -> new QueryResult.Status("Transaction committed");
-                case "ABORT" -> new QueryResult.Status("Transaction aborted");
+                case "BEGIN" -> {
+                    state = TxState.ACTIVE;
+                    yield new QueryResult.Status("Transaction started");
+                }
+                case "COMMIT" -> {
+                    state = TxState.IDLE;
+                    yield new QueryResult.Status("Transaction committed");
+                }
+                case "ABORT" -> {
+                    state = TxState.IDLE;
+                    yield new QueryResult.Status("Transaction aborted");
+                }
                 case "CREATE" -> new QueryResult.Status("Index created");
                 default -> throw new SyntaxException("Unrecognized statement: '" + keyword + "'");
             };
         }
 
-        /** {@inheritDoc} Only marks the session closed. */
+        /** {@inheritDoc} */
+        @Override
+        public TxState transactionState() {
+            return state;
+        }
+
+        /** {@inheritDoc} Marks the session closed and drops the open transaction, if any. */
         @Override
         public void close() {
             closed = true;
+            state = TxState.IDLE;
         }
 
         /** Returns the first word of the statement in upper case, or "" if there is none. */
