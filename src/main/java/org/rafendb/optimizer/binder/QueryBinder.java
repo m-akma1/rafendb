@@ -9,6 +9,7 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.query.CreateIndexQuery;
 import org.rafendb.common.query.DeleteQuery;
+import org.rafendb.common.query.ExplainQuery;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.InsertQuery;
 import org.rafendb.common.query.OrderByItem;
@@ -51,6 +52,7 @@ public final class QueryBinder implements Binder {
     public ParsedQuery bind(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
         if (parsed instanceof SelectQuery select) return bind(select);
+        if (parsed instanceof ExplainQuery explain) return bindExplain(explain);
         if (parsed instanceof InsertQuery insert) return bindInsert(insert);
         if (parsed instanceof UpdateQuery update) return bindUpdate(update);
         if (parsed instanceof DeleteQuery delete) return bindDelete(delete);
@@ -99,6 +101,11 @@ public final class QueryBinder implements Binder {
                 from,
                 where,
                 List.copyOf(orderBy));
+    }
+
+    private ExplainQuery bindExplain(ExplainQuery query) {
+        SelectQuery select = bind(query.selectQuery());
+        return new ExplainQuery(query.originalSql(), select);
     }
 
     private ParsedQuery bindInsert(InsertQuery query) {
