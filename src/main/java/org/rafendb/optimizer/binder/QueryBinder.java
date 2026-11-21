@@ -22,6 +22,7 @@ import org.rafendb.common.query.UpdateQuery;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.ForeignKey;
 import org.rafendb.common.schema.TableSchema;
+import org.rafendb.common.type.DataType;
 import org.rafendb.optimizer.catalog.Catalog;
 
 /**
@@ -30,6 +31,8 @@ import org.rafendb.optimizer.catalog.Catalog;
  * <p>This implementation is stateless after construction and is safe for concurrent use.
  */
 public final class QueryBinder implements Binder {
+    record SubqueryBinding(SelectQuery query, ExprBinder.Kind kind, DataType dataType) {}
+
     static final boolean ALLOW_INT_TO_FLOAT_WIDENING = true;
     private final Catalog catalog;
 
@@ -86,12 +89,16 @@ public final class QueryBinder implements Binder {
      * @throws ValidationException if catalog names, expressions, or join types are invalid
      */
     public SelectQuery bind(SelectQuery query) {
+        return bind(query, null);
+    }
+
+    private SelectQuery bind(SelectQuery query, Scope outerScope) {
         Objects.requireNonNull(query, "query");
-        Scope all = new Scope(catalog, query.from().tableRefs());
-        FromBinder fromBinder = new FromBinder(all);
+        Scope all = new Scope(catalog, query.from().tableRefs(), outerScope);
+        FromBinder fromBinder = new FromBinder(all, this);
         FromItem from = fromBinder.bind(query.from());
         Scope scope = all.withHidden(fromBinder.merged());
-        ExprBinder binder = new ExprBinder(scope);
+        ExprBinder binder = new ExprBinder(scope, this);
         Expr where = binder.condition(query.whereCondition(), "WHERE");
         List<Expr> boundProjection = new ArrayList<>();
         for (Expr expression : StarExpander.expand(query.projection(), scope))
@@ -114,6 +121,18 @@ public final class QueryBinder implements Binder {
         return new ExplainQuery(query.originalSql(), select);
     }
 
+    /** Binds a subquery and returns its single output type when a scalar value is required. */
+    SubqueryBinding bindSubquery(SelectQuery query, boolean requireSingleColumn, Scope outerScope) {
+        SelectQuery bound = bind(query, outerScope);
+        if (!requireSingleColumn) return new SubqueryBinding(bound, ExprBinder.Kind.BOOLEAN, null);
+        if (bound.projection().size() != 1)
+            throw new ValidationException("A scalar or IN subquery must return exactly one column");
+        Scope outputScope = new Scope(catalog, bound.from().tableRefs(), outerScope);
+        ExprBinder.Typed output =
+                new ExprBinder(outputScope, this).bind(bound.projection().getFirst());
+        return new SubqueryBinding(bound, output.kind(), output.dataType());
+    }
+
     private ParsedQuery bindInsert(InsertQuery query) {
         TableSchema schema = schema(query.table());
         if (query.values().size() != schema.columns().size())
@@ -125,7 +144,7 @@ public final class QueryBinder implements Binder {
                             + " values, got "
                             + query.values().size());
         Scope scope = new Scope(schema);
-        ExprBinder binder = new ExprBinder(scope);
+        ExprBinder binder = new ExprBinder(scope, this);
         List<Expr> values = new ArrayList<>();
         for (int i = 0; i < query.values().size(); i++) {
             Expr expr = query.values().get(i);
@@ -144,7 +163,7 @@ public final class QueryBinder implements Binder {
         TableSchema schema = schema(query.table());
         Column target = findColumn(schema, query.column());
         Scope scope = new Scope(schema);
-        ExprBinder binder = new ExprBinder(scope);
+        ExprBinder binder = new ExprBinder(scope, this);
         Expr value = binder.assign(query.value(), target, schema.table());
         Expr where = binder.condition(query.where(), "WHERE");
         return new UpdateQuery(query.originalSql(), schema.table(), target.name(), value, where);
@@ -152,7 +171,7 @@ public final class QueryBinder implements Binder {
 
     private ParsedQuery bindDelete(DeleteQuery query) {
         TableSchema schema = schema(query.table());
-        Expr where = new ExprBinder(new Scope(schema)).condition(query.where(), "WHERE");
+        Expr where = new ExprBinder(new Scope(schema), this).condition(query.where(), "WHERE");
         return new DeleteQuery(query.originalSql(), schema.table(), where);
     }
 
