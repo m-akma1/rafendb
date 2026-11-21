@@ -20,17 +20,19 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.FakeCcm;
 import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.write.DMLOperator;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.CreateTablePlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
 import org.rafendb.processor.schema.ColumnSchema;
@@ -51,16 +53,14 @@ class DefaultOperatorFactoryTest {
                     new Expr.ColumnRef(null, "salary"),
                     CreateIndexPlanNode.IndexKind.BTREE);
 
-    private final ExecutionContext context =
-            new ExecutionContext(
-                    new SessionContext(1),
+    private final FakeSession context =
+            new FakeSession(
                     new FakeCcm(),
                     new FakeStorage(
                             new TableSchema(
                                     "employees",
                                     List.of(new Column("id", DataType.INTEGER, 0, false, true))),
-                            List.of()),
-                    null);
+                            List.of()));
 
     @Test
     void scanBindingForwardsContextTableAndAliasWithoutOpening() {
@@ -127,9 +127,9 @@ class DefaultOperatorFactoryTest {
         assertEquals(2, built.size());
         assertNull(built.get(0).executedTx, "preparing must not run the insert");
 
-        context.getSContext().setCurrentTxId(new TxId(11));
+        context.setCurrentTx(new TxId(11));
         assertEquals(1, first.action().execute().affectedRows());
-        context.getSContext().setCurrentTxId(new TxId(12));
+        context.setCurrentTx(new TxId(12));
         second.action().execute();
 
         assertEquals(new TxId(11), built.get(0).executedTx);
@@ -213,7 +213,7 @@ class DefaultOperatorFactoryTest {
                             assertSame(context, ctx);
                             assertSame(INDEX, node);
                             return () -> {
-                                assertEquals(new TxId(31), ctx.getSContext().getCurrentTxId());
+                                assertEquals(new TxId(31), ctx.currentTx());
                                 runs[0]++;
                                 return new ExecutionPlan.CommandResult(0, "created");
                             };
@@ -221,7 +221,7 @@ class DefaultOperatorFactoryTest {
 
         var action = indexOnly(indexes).createIndex(INDEX);
         assertEquals(0, runs[0]);
-        context.getSContext().setCurrentTxId(new TxId(31));
+        context.setCurrentTx(new TxId(31));
 
         assertEquals(0, action.execute().affectedRows());
         assertEquals(1, runs[0]);
@@ -277,6 +277,75 @@ class DefaultOperatorFactoryTest {
         filter.close();
     }
 
+    @Test
+    void createAndDropTableBindingsForwardContextAndNodeAndDeferExecution() {
+        TableSchema schema =
+                new TableSchema(
+                        "new_table", List.of(new Column("id", DataType.INTEGER, 0, false, true)));
+        var createNode = new CreateTablePlanNode(schema);
+        var dropNode = new DropTablePlanNode("new_table", true);
+        int[] executions = {0};
+        var creates =
+                DefaultOperatorFactory.bindCreateTable(
+                        context,
+                        (ctx, node) -> {
+                            assertSame(context, ctx);
+                            assertSame(createNode, node);
+                            return () -> {
+                                executions[0]++;
+                                return new ExecutionPlan.CommandResult(0, "table created");
+                            };
+                        });
+        var drops =
+                DefaultOperatorFactory.bindDropTable(
+                        context,
+                        (ctx, node) -> {
+                            assertSame(context, ctx);
+                            assertSame(dropNode, node);
+                            return () -> {
+                                executions[0]++;
+                                return new ExecutionPlan.CommandResult(0, "table dropped");
+                            };
+                        });
+        var factory = ddlOnly(creates, drops);
+
+        var createAction = factory.createTable(createNode);
+        var dropAction = factory.dropTable(dropNode);
+        assertEquals(0, executions[0]);
+        assertEquals("table created", createAction.execute().status());
+        assertEquals("table dropped", dropAction.execute().status());
+        assertEquals(2, executions[0]);
+    }
+
+    @Test
+    void createAndDropTableRejectMissingOrNonZeroResults() {
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        ddlOnly(
+                                        node -> null,
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "ok"))
+                                .createTable(
+                                        new CreateTablePlanNode(
+                                                context.storageDQL().getSchema("employees"))));
+        assertThrows(
+                IllegalStateException.class,
+                ddlOnly(
+                                        node -> () -> new ExecutionPlan.CommandResult(1, "created"),
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "dropped"))
+                                .createTable(
+                                        new CreateTablePlanNode(
+                                                context.storageDQL().getSchema("employees")))
+                        ::execute);
+        assertThrows(
+                IllegalStateException.class,
+                ddlOnly(
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "created"),
+                                        node -> () -> new ExecutionPlan.CommandResult(1, "dropped"))
+                                .dropTable(new DropTablePlanNode("employees", false))
+                        ::execute);
+    }
+
     private static <T, R> Function<T, R> unexpected(String what) {
         return input -> {
             throw new AssertionError("Unexpected " + what);
@@ -297,7 +366,9 @@ class DefaultOperatorFactoryTest {
                 inserts,
                 unexpected2("UPDATE"),
                 unexpected2("DELETE"),
-                unexpected("CREATE INDEX"));
+                unexpected("CREATE INDEX"),
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
     }
 
     private static DefaultOperatorFactory writeOnly(
@@ -309,7 +380,9 @@ class DefaultOperatorFactoryTest {
                 unexpected("INSERT"),
                 updates,
                 deletes,
-                unexpected("CREATE INDEX"));
+                unexpected("CREATE INDEX"),
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
     }
 
     private static DefaultOperatorFactory indexOnly(
@@ -320,21 +393,37 @@ class DefaultOperatorFactoryTest {
                 unexpected("INSERT"),
                 unexpected2("UPDATE"),
                 unexpected2("DELETE"),
-                indexes);
+                indexes,
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
+    }
+
+    private static DefaultOperatorFactory ddlOnly(
+            Function<CreateTablePlanNode, ExecutionPlan.CommandAction> creates,
+            Function<DropTablePlanNode, ExecutionPlan.CommandAction> drops) {
+        return new DefaultOperatorFactory(
+                unexpected("scan"),
+                unexpected("index scan"),
+                unexpected("INSERT"),
+                unexpected2("UPDATE"),
+                unexpected2("DELETE"),
+                unexpected("CREATE INDEX"),
+                creates,
+                drops);
     }
 
     /** Records which transaction was active when it ran. */
     private static final class RecordingInsert implements DMLOperator {
-        private final ExecutionContext context;
+        private final SessionView context;
         private TxId executedTx;
 
-        private RecordingInsert(ExecutionContext context) {
+        private RecordingInsert(SessionView context) {
             this.context = context;
         }
 
         @Override
         public Long execute() {
-            executedTx = context.getSContext().getCurrentTxId();
+            executedTx = context.currentTx();
             return 1L;
         }
     }

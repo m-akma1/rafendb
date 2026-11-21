@@ -606,4 +606,131 @@ class RollbackManagerTest {
         assertEquals(r.toString(), back.toString());
         assertEquals(99L, back.getTimestamp());
     }
+
+    // --------------------------------------------------------------------------------------
+    // Pengerasan: pending stale, id transaksi sistem, pemulihan berulang
+    // --------------------------------------------------------------------------------------
+
+    @Test
+    void stalePendingIsDroppedWhenCrashRecoveryAlreadyAborted() throws Exception {
+        db.put("item", 1, "{a}");
+        begin(1);
+        write(1, LogType.UPDATE, "item", 1, "{b}");
+        write(1, LogType.INSERT, "item", 2, "{c}");
+        db.failOnCall = 1;
+        assertThrows(IllegalStateException.class, () -> frm.rollback(1));
+
+        // crash recovery di proses yang sama membatalkan T1 dan menulis ABORT
+        log.logDataChange(1, LogType.DELETE, now, "item", 2, "{c}", null);
+        db.put("item", 2, null);
+        log.logDataChange(1, LogType.UPDATE, now, "item", 1, "{b}", "{a}");
+        db.put("item", 1, "{a}");
+        log.logTransactionEvent(1, LogType.ABORT);
+        // transaksi lain lalu menulis baris yang sama
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{new}");
+        commit(2);
+        int size = log.size();
+        int calls = db.calls;
+
+        assertEquals(RollbackStatus.ALREADY_ABORTED, frm.rollback(1));
+
+        assertEquals("{new}", db.get("item", 1));
+        assertEquals(size, log.size());
+        assertEquals(calls, db.calls);
+    }
+
+    @Test
+    void recoveryUsesSystemTransactionIdFromGivenSource() throws Exception {
+        frm = new RollbackManager(log, db, () -> now, () -> 500);
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{a}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.INSERT, "item", 2, "{b}");
+        commit(2);
+
+        assertEquals(1, frm.recoverToPointInTime(target));
+
+        List<WALRecord> system = log.getLogsByTransaction(500);
+        assertEquals(LogType.BEGIN, system.getFirst().getLogType());
+        assertEquals(LogType.COMMIT, system.getLast().getLogType());
+        assertNull(db.get("item", 2));
+    }
+
+    @Test
+    void invalidOrUsedSystemTransactionIdIsRejectedBeforeAnythingChanges() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{a}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.INSERT, "item", 2, "{b}");
+        commit(2);
+        Map<String, String> data = db.snapshot();
+        int size = log.size();
+
+        for (int id : new int[] {0, -3, 2}) {
+            RollbackManager bad = new RollbackManager(log, db, () -> now, () -> id);
+            assertThrows(IllegalStateException.class, () -> bad.recoverToPointInTime(target));
+            assertEquals(data, db.snapshot());
+            assertEquals(size, log.size());
+        }
+    }
+
+    @Test
+    void repeatingRecoveryToSameTargetChangesNothing() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{v1}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{v2}");
+        write(2, LogType.INSERT, "item", 2, "{x}");
+        commit(2);
+        begin(3);
+        write(3, LogType.DELETE, "item", 1, null);
+        commit(3);
+        now += 10;
+
+        assertEquals(3, frm.recoverToPointInTime(target));
+        assertEquals("{v1}", db.get("item", 1));
+        assertNull(db.get("item", 2));
+        int size = log.size();
+        int calls = db.calls;
+
+        now += 10;
+        assertEquals(0, frm.recoverToPointInTime(target));
+        assertEquals(0, frm.recoverToTransaction(1));
+
+        assertEquals(size, log.size());
+        assertEquals(calls, db.calls);
+        assertEquals("{v1}", db.get("item", 1));
+        assertNull(db.get("item", 2));
+    }
+
+    @Test
+    void recoveryAfterRepeatedRecoveryStillReachesNewTarget() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{v1}");
+        commit(1);
+        long t1 = now;
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{v2}");
+        commit(2);
+        long t2 = now;
+        begin(3);
+        write(3, LogType.UPDATE, "item", 1, "{v3}");
+        commit(3);
+        now += 10;
+
+        frm.recoverToPointInTime(t2);
+        assertEquals("{v2}", db.get("item", 1));
+        now += 10;
+        frm.recoverToPointInTime(t2);
+        now += 10;
+        frm.recoverToPointInTime(t1);
+        assertEquals("{v1}", db.get("item", 1));
+    }
 }

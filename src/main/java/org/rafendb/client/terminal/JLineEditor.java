@@ -5,6 +5,7 @@ import java.io.InterruptedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import org.jline.reader.CompletingParsedLine;
 import org.jline.reader.EOFError;
@@ -30,6 +31,7 @@ import org.jline.terminal.TerminalBuilder;
 public final class JLineEditor implements LineEditor {
     private final Terminal terminal;
     private final LineReader reader;
+    private volatile boolean answering;
 
     /**
      * Opens the system terminal.
@@ -55,7 +57,7 @@ public final class JLineEditor implements LineEditor {
                 LineReaderBuilder.builder()
                         .terminal(terminal)
                         .appName("rafendb")
-                        .parser(new StatementParser(continuation))
+                        .parser(new StatementParser(continuation, () -> answering))
                         .variable(LineReader.SECONDARY_PROMPT_PATTERN, "%M")
                         .variable(LineReader.HISTORY_SIZE, historySize)
                         .variable(LineReader.HISTORY_FILE_SIZE, historySize)
@@ -75,6 +77,19 @@ public final class JLineEditor implements LineEditor {
             throw new InterruptedIOException("input cancelled");
         } catch (EndOfFileException e) {
             return null;
+        }
+    }
+
+    @Override
+    public String readAnswer(String prompt) throws IOException {
+        Object history = reader.getVariable(LineReader.DISABLE_HISTORY);
+        answering = true;
+        reader.setVariable(LineReader.DISABLE_HISTORY, true);
+        try {
+            return readLine(prompt);
+        } finally {
+            answering = false;
+            reader.setVariable(LineReader.DISABLE_HISTORY, history == null ? false : history);
         }
     }
 
@@ -104,13 +119,19 @@ public final class JLineEditor implements LineEditor {
         }
     }
 
-    /** Asks {@code continuation} whether Enter finishes the input; never splits into words. */
-    private record StatementParser(Function<String, String> continuation) implements Parser {
+    /**
+     * Asks {@code continuation} whether Enter finishes the input, except while an answer is read;
+     * never splits into words.
+     */
+    private record StatementParser(Function<String, String> continuation, BooleanSupplier answering)
+            implements Parser {
         @Override
         public CompletingParsedLine parse(String line, int cursor, ParseContext context) {
             // ACCEPT_LINE decides whether Enter sends; SECONDARY_PROMPT asks which prompt each line
-            // gets.
-            if (context == ParseContext.ACCEPT_LINE || context == ParseContext.SECONDARY_PROMPT) {
+            // gets. An answer such as "y" is never an unfinished statement.
+            if (!answering.getAsBoolean()
+                    && (context == ParseContext.ACCEPT_LINE
+                            || context == ParseContext.SECONDARY_PROMPT)) {
                 String next = continuation.apply(line);
                 if (next != null) {
                     throw new EOFError(-1, cursor, "statement continues", next);

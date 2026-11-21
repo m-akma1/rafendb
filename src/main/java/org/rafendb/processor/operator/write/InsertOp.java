@@ -8,7 +8,7 @@ import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 
 /**
  * INSERT: adds one row inside the session's current transaction.
@@ -23,11 +23,11 @@ import org.rafendb.processor.api.ExecutionContext;
 public final class InsertOp implements DMLOperator {
     private final String table;
     private final Row row;
-    private final ExecutionContext ctx;
+    private final SessionView ctx;
     private final WriteSupport support;
 
     /** {@code values} are already typed constants in table column order (InsertPlanNode). */
-    public InsertOp(String table, List<Value> values, ExecutionContext ctx) {
+    public InsertOp(String table, List<Value> values, SessionView ctx) {
         this.table = Objects.requireNonNull(table, "table");
         this.row = new Row(Objects.requireNonNull(values, "values"));
         this.ctx = Objects.requireNonNull(ctx, "ctx");
@@ -40,7 +40,7 @@ public final class InsertOp implements DMLOperator {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
 
-        StorageQuery sm = ctx.getStorageManager();
+        StorageQuery sm = ctx.storageDQL();
         Rid rid;
         try {
             // StorageRuntimeException (row does not fit the schema) propagates: nothing changed.

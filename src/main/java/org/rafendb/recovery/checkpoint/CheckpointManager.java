@@ -14,6 +14,7 @@ import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.LoggerErrorException;
+import org.rafendb.recovery.log.WALRecord;
 
 /**
  * Creates quiescent checkpoints for the Failure Recovery Manager.
@@ -93,6 +94,11 @@ public final class CheckpointManager {
                 Objects.requireNonNull(checkpointPointer, "checkpointPointer must not be null");
     }
 
+    /** Executes a checkpoint without external CCM admission coordination. */
+    public boolean createCheckpoint() {
+        return createCheckpoint(null);
+    }
+
     /**
      * Executes one quiescent checkpoint using the supplied {@link ConcurrencyControl} to pause new
      * transactions and await active transactions when non-null.
@@ -160,6 +166,49 @@ public final class CheckpointManager {
     /** @return the file containing the last-complete-checkpoint pointer */
     public Path getCheckpointPointer() {
         return checkpointPointer;
+    }
+
+    /**
+     * Reads and validates the last completed checkpoint pointer for a logger.
+     *
+     * @param logger logger whose checkpoint pointer belongs to the WAL
+     * @return valid completed CHECKPOINT_END LSN, or zero when none exists
+     */
+    public static long readLastCompletedCheckpointLsn(Logger logger) {
+        if (logger == null) {
+            return 0;
+        }
+        Path pointer = pointerFor(logger);
+        try {
+            if (!Files.exists(pointer)) {
+                return 0;
+            }
+            String value = Files.readString(pointer, StandardCharsets.US_ASCII).trim();
+            if (value.isEmpty()) {
+                return 0;
+            }
+            long lsn = Long.parseLong(value);
+            if (lsn <= 0) {
+                return 0;
+            }
+            long openBegin = -1;
+            for (WALRecord record : logger.getLogsSorted()) {
+                if (record.getLsn() > lsn) {
+                    break;
+                }
+                if (record.getLogType() == LogType.CHECKPOINT_BEGIN) {
+                    openBegin = record.getLsn();
+                } else if (record.getLogType() == LogType.CHECKPOINT_END) {
+                    if (record.getLsn() == lsn) {
+                        return openBegin >= 0 ? lsn : 0;
+                    }
+                    openBegin = -1;
+                }
+            }
+            return 0;
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
     }
 
     private void writePointerAtomically(long lsn) throws IOException {

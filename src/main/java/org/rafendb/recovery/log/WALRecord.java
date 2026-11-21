@@ -18,23 +18,22 @@ import org.rafendb.common.tuple.Rid;
  * {@code null}, {@code id_record} {@code -1}, serta nilai sebelum/sesudah {@code null}. INSERT
  * memiliki nilai sebelum {@code null}, sedangkan DELETE memiliki nilai sesudah {@code null}.
  *
- * <p>Tidak thread-safe karena {@link #setAfterValue} dan {@link #setLogType} dapat mengubahnya.
- * Bagikan record ke thread lain hanya setelah record selesai dibuat.
+ * <p>Immutable dan thread-safe.
  */
 public final class WALRecord {
     private static final int FORMAT_MAGIC_V2 = 0x57414C32; // "WAL2"
 
     private final long lsn;
     private final int idTransaction;
-    private LogType logType;
+    private final LogType logType;
     private final long timestamp;
     private final String tableName;
     private final long tableGeneration;
     private final int idRecord;
     private final Rid rid;
     private final String beforeVal;
-    private String afterVal;
-    private long checksum;
+    private final String afterVal;
+    private final long checksum;
 
     /**
      * Membuat record dengan idRecord numerik (kompatibilitas pengujian).
@@ -162,7 +161,9 @@ public final class WALRecord {
         CRC32 crc = new CRC32();
         updateLong(crc, lsn);
         updateInt(crc, idTransaction);
-        updateInt(crc, logType.ordinal());
+        byte[] typeBytes = logType.name().getBytes(StandardCharsets.UTF_8);
+        updateInt(crc, typeBytes.length);
+        crc.update(typeBytes);
         updateLong(crc, timestamp);
         if (tableName != null) {
             byte[] nameBytes = tableName.getBytes(StandardCharsets.UTF_8);
@@ -337,27 +338,6 @@ public final class WALRecord {
         return afterVal;
     }
 
-    /**
-     * Mengganti nilai sesudah perubahan.
-     *
-     * @param afterVal nilai sesudah yang baru, boleh null
-     */
-    public void setAfterValue(String afterVal) {
-        this.afterVal = afterVal;
-        this.checksum = calculateChecksum();
-    }
-
-    /**
-     * Mengganti jenis record.
-     *
-     * @param logType jenis baru, tidak boleh null
-     * @throws NullPointerException jika {@code logType} null
-     */
-    public void setLogType(LogType logType) {
-        this.logType = Objects.requireNonNull(logType, "logType");
-        this.checksum = calculateChecksum();
-    }
-
     /** Mencetak record ini dalam satu baris ke standard output. */
     public void printWALRecord() {
         System.out.println(this);
@@ -375,8 +355,6 @@ public final class WALRecord {
      * @return byte hasil encoding, tidak pernah null
      */
     public byte[] serialize() {
-        long currentChecksum = calculateChecksum();
-        this.checksum = currentChecksum;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(bytes)) {
             out.writeInt(FORMAT_MAGIC_V2);
@@ -394,7 +372,7 @@ public final class WALRecord {
             }
             writeNullableUtf8(out, beforeVal);
             writeNullableUtf8(out, afterVal);
-            out.writeLong(currentChecksum);
+            out.writeLong(checksum);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -447,6 +425,9 @@ public final class WALRecord {
                                         legacyIdRecord,
                                         before,
                                         after);
+                if (hasRid && record.getIdRecord() != legacyIdRecord) {
+                    throw new IllegalArgumentException("WAL record idRecord mismatch");
+                }
                 if (record.getChecksum() != storedChecksum) {
                     throw new IllegalArgumentException("WAL record checksum mismatch");
                 }

@@ -10,7 +10,7 @@ import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.SortPlanNode.Direction;
 import org.rafendb.common.plan.TableScanNode;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.expr.ExpressionEvaluator;
@@ -21,7 +21,9 @@ import org.rafendb.processor.operator.scan.ProjectOp;
 import org.rafendb.processor.operator.sort.SortOp;
 import org.rafendb.processor.operator.write.DMLOperator;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.CreateTablePlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
 import org.rafendb.processor.subquery.SubqueryEvaluator;
@@ -46,6 +48,8 @@ public final class DefaultOperatorFactory implements OperatorFactory {
     private final BiFunction<UpdatePlanNode, Operator, DMLOperator> updateBuilder;
     private final BiFunction<DeletePlanNode, Operator, DMLOperator> deleteBuilder;
     private final Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> createIndexBuilder;
+    private final Function<CreateTablePlanNode, ExecutionPlan.CommandAction> createTableBuilder;
+    private final Function<DropTablePlanNode, ExecutionPlan.CommandAction> dropTableBuilder;
 
     /**
      * Menyimpan pembentuk operator untuk satu sesi.
@@ -61,13 +65,17 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             Function<InsertPlanNode, DMLOperator> insertBuilder,
             BiFunction<UpdatePlanNode, Operator, DMLOperator> updateBuilder,
             BiFunction<DeletePlanNode, Operator, DMLOperator> deleteBuilder,
-            Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> createIndexBuilder) {
+            Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> createIndexBuilder,
+            Function<CreateTablePlanNode, ExecutionPlan.CommandAction> createTableBuilder,
+            Function<DropTablePlanNode, ExecutionPlan.CommandAction> dropTableBuilder) {
         this.scanBuilder = Objects.requireNonNull(scanBuilder, "scanBuilder");
         this.indexScanBuilder = Objects.requireNonNull(indexScanBuilder, "indexScanBuilder");
         this.insertBuilder = Objects.requireNonNull(insertBuilder, "insertBuilder");
         this.updateBuilder = Objects.requireNonNull(updateBuilder, "updateBuilder");
         this.deleteBuilder = Objects.requireNonNull(deleteBuilder, "deleteBuilder");
         this.createIndexBuilder = Objects.requireNonNull(createIndexBuilder, "createIndexBuilder");
+        this.createTableBuilder = Objects.requireNonNull(createTableBuilder, "createTableBuilder");
+        this.dropTableBuilder = Objects.requireNonNull(dropTableBuilder, "dropTableBuilder");
     }
 
     /**
@@ -85,7 +93,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @throws NullPointerException jika context, constructor, node, atau hasil pembentukan null
      */
     public static Function<InsertPlanNode, DMLOperator> bindInsert(
-            ExecutionContext context, InsertConstructor constructor) {
+            SessionView context, InsertConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
         return node -> {
@@ -106,7 +114,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param alias alias tabel, boleh null
          * @return operator baru yang tidak null
          */
-        Operator create(ExecutionContext context, String table, String alias);
+        Operator create(SessionView context, String table, String alias);
     }
 
     /** Membentuk operator Index Scan tanpa menjalankan lookup indeks. */
@@ -122,10 +130,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @return operator baru yang tidak null
          */
         Operator create(
-                ExecutionContext context,
-                String table,
-                String alias,
-                IndexScanDescriptor descriptor);
+                SessionView context, String table, String alias, IndexScanDescriptor descriptor);
     }
 
     /** Constructor INSERT QP5; pembentukan tidak menjalankan operasi atau memulai transaksi. */
@@ -139,7 +144,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param context context sesi yang tidak null
          * @return operator baru yang tidak null dan dimiliki satu eksekusi
          */
-        DMLOperator create(String table, List<Value> values, ExecutionContext context);
+        DMLOperator create(String table, List<Value> values, SessionView context);
     }
 
     /** Constructor UPDATE QP5; child membawa row tabel lengkap beserta RID. */
@@ -162,7 +167,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
                 Expr value,
                 Operator child,
                 ExpressionEvaluator evaluator,
-                ExecutionContext context);
+                SessionView context);
     }
 
     /** Constructor DELETE QP3; lifecycle child dimiliki operator DELETE. */
@@ -176,7 +181,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param table nama tabel yang tidak null
          * @return operator baru yang tidak null
          */
-        DMLOperator create(ExecutionContext context, Operator child, String table);
+        DMLOperator create(SessionView context, Operator child, String table);
     }
 
     /** Constructor CREATE INDEX QP5; pembentukan belum meminta lock atau mengubah storage. */
@@ -189,7 +194,33 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param node payload CREATE INDEX yang tidak null
          * @return aksi baru yang tidak null
          */
-        ExecutionPlan.CommandAction create(ExecutionContext context, CreateIndexPlanNode node);
+        ExecutionPlan.CommandAction create(SessionView context, CreateIndexPlanNode node);
+    }
+
+    /** Constructor CREATE TABLE; pembentukan belum mengubah catalog atau file tabel. */
+    @FunctionalInterface
+    public interface CreateTableConstructor {
+        /**
+         * Menyiapkan aksi CREATE TABLE untuk schema yang sudah divalidasi QO.
+         *
+         * @param context context sesi yang tidak null
+         * @param node payload schema yang tidak null
+         * @return aksi baru yang tidak null
+         */
+        ExecutionPlan.CommandAction create(SessionView context, CreateTablePlanNode node);
+    }
+
+    /** Constructor DROP TABLE; pembentukan belum mengubah catalog atau file tabel. */
+    @FunctionalInterface
+    public interface DropTableConstructor {
+        /**
+         * Menyiapkan aksi DROP TABLE dengan perilaku CASCADE/RESTRICT pada node.
+         *
+         * @param context context sesi yang tidak null
+         * @param node payload tabel dan cascade yang tidak null
+         * @return aksi baru yang tidak null
+         */
+        ExecutionPlan.CommandAction create(SessionView context, DropTablePlanNode node);
     }
 
     /**
@@ -203,13 +234,51 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @throws NullPointerException jika context, storage, constructor, node, atau hasil null
      */
     public static Function<CreateIndexPlanNode, ExecutionPlan.CommandAction> bindCreateIndex(
-            ExecutionContext context, CreateIndexConstructor constructor) {
+            SessionView context, CreateIndexConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
-        Objects.requireNonNull(context.getStorageManager(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(constructor.create(context, node), "CREATE INDEX action");
+        };
+    }
+
+    /**
+     * Mengikat CREATE TABLE ke context satu sesi. Aksinya memakai {@link SessionView#storageDDL()}.
+     *
+     * @param context context sesi yang tidak null
+     * @param constructor pembentuk aksi CREATE TABLE yang tidak null
+     * @return builder untuk parameter createTableBuilder
+     * @throws NullPointerException jika context, storageDDL, constructor, node, atau hasil null
+     */
+    public static Function<CreateTablePlanNode, ExecutionPlan.CommandAction> bindCreateTable(
+            SessionView context, CreateTableConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.storageDDL(), "storageDDL");
+        return node -> {
+            Objects.requireNonNull(node, "node");
+            return Objects.requireNonNull(constructor.create(context, node), "CREATE TABLE action");
+        };
+    }
+
+    /**
+     * Mengikat DROP TABLE ke context satu sesi. Aksinya memakai {@link SessionView#storageDDL()}.
+     *
+     * @param context context sesi yang tidak null
+     * @param constructor pembentuk aksi DROP TABLE yang tidak null
+     * @return builder untuk parameter dropTableBuilder
+     * @throws NullPointerException jika context, storageDDL, constructor, node, atau hasil null
+     */
+    public static Function<DropTablePlanNode, ExecutionPlan.CommandAction> bindDropTable(
+            SessionView context, DropTableConstructor constructor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.storageDDL(), "storageDDL");
+        return node -> {
+            Objects.requireNonNull(node, "node");
+            return Objects.requireNonNull(constructor.create(context, node), "DROP TABLE action");
         };
     }
 
@@ -225,9 +294,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @throws NullPointerException jika parameter, node, child, atau hasil pembentukan null
      */
     public static BiFunction<UpdatePlanNode, Operator, DMLOperator> bindUpdate(
-            ExecutionContext context,
-            ExpressionEvaluator evaluator,
-            UpdateConstructor constructor) {
+            SessionView context, ExpressionEvaluator evaluator, UpdateConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(evaluator, "evaluator");
         Objects.requireNonNull(constructor, "constructor");
@@ -251,7 +318,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @throws NullPointerException jika parameter, node, child, atau hasil pembentukan null
      */
     public static BiFunction<DeletePlanNode, Operator, DMLOperator> bindDelete(
-            ExecutionContext context, DeleteConstructor constructor) {
+            SessionView context, DeleteConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
         return (node, child) -> {
@@ -342,10 +409,31 @@ public final class DefaultOperatorFactory implements OperatorFactory {
     public ExecutionPlan.CommandAction createIndex(CreateIndexPlanNode node) {
         Objects.requireNonNull(node, "node");
         var action = Objects.requireNonNull(createIndexBuilder.apply(node), "CREATE INDEX action");
+        return zeroAffected(action, "CREATE INDEX");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ExecutionPlan.CommandAction createTable(CreateTablePlanNode node) {
+        Objects.requireNonNull(node, "node");
+        var action = Objects.requireNonNull(createTableBuilder.apply(node), "CREATE TABLE action");
+        return zeroAffected(action, "CREATE TABLE");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ExecutionPlan.CommandAction dropTable(DropTablePlanNode node) {
+        Objects.requireNonNull(node, "node");
+        var action = Objects.requireNonNull(dropTableBuilder.apply(node), "DROP TABLE action");
+        return zeroAffected(action, "DROP TABLE");
+    }
+
+    private static ExecutionPlan.CommandAction zeroAffected(
+            ExecutionPlan.CommandAction action, String operation) {
         return () -> {
-            var result = Objects.requireNonNull(action.execute(), "CREATE INDEX result");
+            var result = Objects.requireNonNull(action.execute(), operation + " result");
             if (result.affectedRows() != 0) {
-                throw new IllegalStateException("CREATE INDEX must report zero affected rows");
+                throw new IllegalStateException(operation + " must report zero affected rows");
             }
             return result;
         };
@@ -375,7 +463,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      *
      * <p>Context diteruskan sebagai objek yang sama agar READ lock memakai transaksi aktif
      * ketika operator dibuka. Binding tidak membuka cursor, meminta lock, atau memulai
-     * transaksi. Pemanggil menjalankan statement melalui AutoCommit atau setelah BEGIN.
+     * transaksi. Session yang memulai transaksinya sebelum statement dijalankan.
      *
      * @param context context sesi yang tidak null
      * @param constructor pembentuk Scan yang tidak null
@@ -384,11 +472,11 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      *     node, atau operator hasil pembentukan null
      */
     public static Function<TableScanNode, Operator> bindScan(
-            ExecutionContext context, ScanConstructor constructor) {
+            SessionView context, ScanConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
 
-        Objects.requireNonNull(context.getStorageManager(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
 
         return node -> {
             Objects.requireNonNull(node, "node");
@@ -408,10 +496,10 @@ public final class DefaultOperatorFactory implements OperatorFactory {
      * @throws NullPointerException jika context, storage, constructor, node, atau hasil null
      */
     public static Function<IndexScanNode, Operator> bindIndexScan(
-            ExecutionContext context, IndexScanConstructor constructor) {
+            SessionView context, IndexScanConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
-        Objects.requireNonNull(context.getStorageManager(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(
