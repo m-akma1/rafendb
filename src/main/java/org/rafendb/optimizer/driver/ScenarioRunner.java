@@ -3,6 +3,7 @@ package org.rafendb.optimizer.driver;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.error.OptimizerInternalException;
 import org.rafendb.common.error.OptimizerRuntimeException;
+import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
@@ -17,6 +18,7 @@ import org.rafendb.optimizer.explain.PlanExplainer;
 import org.rafendb.optimizer.join.JoinAccessPathOptimizer;
 import org.rafendb.optimizer.parser.QueryParser;
 import org.rafendb.optimizer.plan.InitialPlanBuilder;
+import org.rafendb.optimizer.rewrite.PlanRewriter;
 
 public final class ScenarioRunner {
     private final QueryParser parser;
@@ -51,11 +53,14 @@ public final class ScenarioRunner {
             ParsedQuery parsed = parser.parse(scenario.sql()); // may throw SYNTAX_ERROR
             ParsedQuery bound = binder.bind(parsed); // may throw VALIDATION_ERROR
             if (bound instanceof SelectQuery select) {
-                QueryPlan plan = planBuilder.build(select);
-                QueryPlan optimized = optimizer.optimize(plan);
+                PlanRewriter rewriter = new PlanRewriter(binder.catalog());
+                QueryPlan initial = planBuilder.build(select);
+                PlanNode rewrittenRoot = rewriter.rewrite(initial.root());
+                QueryPlan rewrittenPlan = new QueryPlan(rewrittenRoot, initial.totalCost());
+                QueryPlan optimized = optimizer.optimize(rewrittenPlan);
                 String detail =
                         "Pre-optimization plan:\n"
-                                + PlanExplainer.explain(plan)
+                                + PlanExplainer.explain(initial)
                                 + "\nPost-optimization plan:\n"
                                 + PlanExplainer.explain(optimized);
                 return classify(scenario, ScenarioOutcome.VALID, detail);
