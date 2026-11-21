@@ -34,8 +34,7 @@ import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.ConcurrencyControlManager;
 import org.rafendb.concurrency.driver.Scenario.ExecutedAccess;
-import org.rafendb.concurrency.protocol.LockBasedProtocol;
-import org.rafendb.concurrency.protocol.TimestampBasedProtocol;
+import org.rafendb.concurrency.protocol.ProtocolConfig;
 import org.rafendb.concurrency.txn.TransactionManager;
 import org.rafendb.concurrency.verify.PrecedenceGraphVerifier;
 import org.rafendb.concurrency.verify.SerializabilityVerifier.Access;
@@ -93,8 +92,11 @@ public final class ConcurrencyDriver extends Driver {
             throw new DriverException("mock both with --mock=sm,frm, or use both real components");
         }
         batch = option("run") != null;
-        protocol =
-                parseEnum(ProtocolType.class, option("protocol", ProtocolType.LOCK_BASED.name()));
+        try {
+            protocol = ProtocolConfig.parse(option("protocol"));
+        } catch (IllegalArgumentException e) {
+            throw new DriverException(e.getMessage());
+        }
         command(
                 "reset",
                 "reset",
@@ -153,13 +155,13 @@ public final class ConcurrencyDriver extends Driver {
                 mockScenario
                         ? "FRM and storage: in-memory mocks"
                         : "FRM and storage: real (temporary database and WAL)");
-        out().println("Protocol: " + protocol);
+        out().println("Protocol: " + ProtocolConfig.describe(protocol));
     }
 
     @Override
     protected void help() {
         super.help();
-        out().println("  --protocol=LOCK_BASED|TIMESTAMP_BASED    default: LOCK_BASED");
+        out().println("  --protocol=lock|timestamp    default: lock");
         out().println("  --mock=sm,frm    use the in-memory fallback for both dependencies");
         out().println(
                         "Use retry after WAITING. See test-scenarios/concurrency/README.md for inputs.");
@@ -195,10 +197,7 @@ public final class ConcurrencyDriver extends Driver {
         ccm =
                 new ConcurrencyControlManager(
                         new TransactionManager(),
-                        switch (protocol) {
-                            case LOCK_BASED -> new LockBasedProtocol();
-                            case TIMESTAMP_BASED -> new TimestampBasedProtocol();
-                        },
+                        ProtocolConfig.create(protocol),
                         scenario.recovery());
         ccm.initializeAfterRecovery(new RecoveryInfo(0, 0));
         if (previous != null) {
