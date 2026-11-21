@@ -7,7 +7,9 @@ import org.rafendb.common.plan.TableScanNode;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.CreateTablePlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
 
@@ -51,4 +53,10 @@ public interface OperatorFactory {
 
     /** Pembangunan indeks ditunda sampai execute; hasilnya nol affectedRows. */
     ExecutionPlan.CommandAction createIndex(CreateIndexPlanNode node);
+
+    /** Pembuatan tabel ditunda sampai execute; hasilnya nol affectedRows. */
+    ExecutionPlan.CommandAction createTable(CreateTablePlanNode node);
+
+    /** Penghapusan tabel ditunda sampai execute; hasilnya nol affectedRows. */
+    ExecutionPlan.CommandAction dropTable(DropTablePlanNode node);
 }
