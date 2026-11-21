@@ -332,10 +332,25 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     @Override
     public synchronized void logTransactionEvent(int idTransaction, LogType logType)
             throws LoggerErrorException {
+        logTransactionEvent(idTransaction, logType, System.currentTimeMillis());
+    }
+
+    /**
+     * Mencatat peristiwa transaksi (BEGIN, COMMIT, ABORT, atau checkpoint) dengan timestamp
+     * tertentu secara atomik dan mengembalikan LSN yang dialokasikan.
+     *
+     * @param idTransaction id transaksi
+     * @param logType jenis record peristiwa
+     * @param timestamp waktu record ditulis dalam milidetik epoch
+     * @return nomor LSN yang dialokasikan untuk record tersebut
+     * @throws LoggerErrorException jika record gagal ditulis atau di-flush saat COMMIT
+     */
+    public synchronized long logTransactionEvent(int idTransaction, LogType logType, long timestamp)
+            throws LoggerErrorException {
         long prevLsn = currentLSN.get();
         long lsn = currentLSN.incrementAndGet();
-        long now = System.currentTimeMillis();
-        WALRecord record = new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null);
+        WALRecord record =
+                new WALRecord(lsn, idTransaction, logType, timestamp, null, -1, null, null);
         try {
             writeRecordToDisk(record);
             if (logType == LogType.COMMIT) {
@@ -349,6 +364,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         if (logType == LogType.COMMIT) {
             lastCommittedLSN = lsn;
         }
+        return lsn;
     }
 
     /**

@@ -22,4 +22,4 @@
 #   - Record (3) == tidak ada        [UNDO berhasil]
 #
 # Cara Verifikasi Otomatis:
-#   Jalankan FRManagerDriver.runAllTests() -> [TEST] Real Storage Multi-Tx Recovery: PASSED
+#   Jalankan RecoveryDriver.runAllTests() -> [TEST] Real Storage Multi-Tx Recovery: PASSED

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
@@ -273,11 +273,11 @@ class StatsCostModelTest {
     @Test
     void storageManagerCatalogForwardsPublicMetadataCalls() throws Exception {
         MockCatalog fixture = MockCatalog.defaults();
-        StorageManager storage =
-                (StorageManager)
+        StorageMetadata storage =
+                (StorageMetadata)
                         java.lang.reflect.Proxy.newProxyInstance(
-                                StorageManager.class.getClassLoader(),
-                                new Class<?>[] {StorageManager.class},
+                                StorageMetadata.class.getClassLoader(),
+                                new Class<?>[] {StorageMetadata.class},
                                 (proxy, method, args) ->
                                         switch (method.getName()) {
                                             case "listTables" -> fixture.listTables();

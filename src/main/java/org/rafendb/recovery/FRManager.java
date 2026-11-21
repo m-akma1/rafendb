@@ -10,13 +10,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.ChangeRecord;
+import org.rafendb.common.txn.RecoveryInfo;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
@@ -44,7 +45,7 @@ public class FRManager implements RecoveryManager {
     private final RollbackManager rollbackManager;
     private final CheckpointManager checkpointManager;
     private final CrashRecoveryEngine crashRecoveryManager;
-    private final StorageManager storageManager;
+    private final StorageRecovery storageManager;
     private final boolean encodeBinaryImages;
     private final Map<Integer, TxStatus> txStatuses = new ConcurrentHashMap<>();
 
@@ -87,47 +88,35 @@ public class FRManager implements RecoveryManager {
     private FRManager(
             Logger logger,
             UndoStorage storage,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             boolean encodeBinaryImages) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
         this.rollbackManager = new RollbackManager(logger, storage);
-        this.checkpointManager = new CheckpointManager(logger);
+        this.checkpointManager =
+                storageManager != null
+                        ? new CheckpointManager(logger, storageManager)
+                        : new CheckpointManager(logger);
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
         this.storageManager = storageManager;
         this.encodeBinaryImages = encodeBinaryImages;
     }
 
     /**
-     * Konstruktor praktis yang menghubungkan langsung dengan kontrak resmi {@link StorageManager}.
+     * Konstruktor yang menghubungkan langsung dengan kontrak resmi {@link StorageRecovery} untuk
+     * recovery apply dan flush checkpoint. Untuk quiescent checkpoint, teruskan {@link
+     * ConcurrencyControl} ke {@link #createCheckpoint(ConcurrencyControl)}.
      *
      * @param logger logger WAL, tidak boleh null
-     * @param storageManager implementasi StorageManager untuk recovery apply, tidak boleh null
-     */
-    public FRManager(Logger logger, StorageManager storageManager) {
-        this(logger, storageAdapter(storageManager), storageManager, true);
-    }
-
-    /**
-     * Konstruktor terintegrasi penuh dengan {@link StorageManager} dan {@link ConcurrencyControl}
-     * sehingga checkpoint quiescent dapat menunggu transaksi aktif dan mem-flush storage.
-     *
-     * @param logger logger WAL, tidak boleh null
-     * @param storageManager implementasi StorageManager untuk recovery apply &amp; flush, tidak boleh
+     * @param storageManager implementasi StorageRecovery untuk recovery apply &amp; flush, tidak boleh
      *     null
-     * @param concurrencyControl manajer concurrency untuk quiescent checkpoint, tidak boleh null
      */
-    public FRManager(
-            Logger logger, StorageManager storageManager, ConcurrencyControl concurrencyControl) {
-        this.logger = Objects.requireNonNull(logger, "logger must not be null");
-        Objects.requireNonNull(storageManager, "storageManager must not be null");
-        Objects.requireNonNull(concurrencyControl, "concurrencyControl must not be null");
-        UndoStorage adapter = storageAdapter(storageManager);
-        this.rollbackManager = new RollbackManager(logger, adapter);
-        this.checkpointManager = new CheckpointManager(logger, concurrencyControl, storageManager);
-        this.crashRecoveryManager = new CrashRecoveryEngine(logger, adapter);
-        this.storageManager = storageManager;
-        this.encodeBinaryImages = true;
+    public FRManager(Logger logger, StorageRecovery storageManager) {
+        this(
+                logger,
+                storageAdapter(storageManager),
+                Objects.requireNonNull(storageManager, "storageManager must not be null"),
+                true);
     }
 
     private static final String BASE64_IMAGE_PREFIX = "B64:";
@@ -140,7 +129,7 @@ public class FRManager implements RecoveryManager {
         return encoded != 0L ? encoded : 1L;
     }
 
-    private static long resolveTableGeneration(StorageManager storageManager, String tableName) {
+    private static long resolveTableGeneration(StorageRecovery storageManager, String tableName) {
         if (storageManager == null
                 || tableName == null
                 || !storageManager.listTables().contains(tableName)) {
@@ -155,24 +144,24 @@ public class FRManager implements RecoveryManager {
 
     /**
      * Membuat adapter {@link UndoStorage} yang men-decode image biner memakai {@link
-     * StorageManager#decodeRow(String, byte[])} lalu meneruskan ke {@link
-     * StorageManager#applyRecovery(String, Rid, Optional, long)}.
+     * StorageRecovery#decodeRow(String, byte[])} lalu meneruskan ke {@link
+     * StorageRecovery#applyRecovery(String, Rid, Optional, long)}.
      *
-     * @param storageManager implementasi StorageManager, tidak boleh null
+     * @param storageManager implementasi StorageRecovery, tidak boleh null
      * @return adapter UndoStorage yang siap dipakai oleh RollbackManager dan CrashRecoveryEngine
      */
-    public static UndoStorage storageAdapter(StorageManager storageManager) {
+    public static UndoStorage storageAdapter(StorageRecovery storageManager) {
         return new StorageManagerUndoAdapter(storageManager);
     }
 
     /**
      * Adapter eksplisit yang menghubungkan antarmuka {@link UndoStorage} milik FRM ke
-     * implementasi resmi {@link StorageManager}.
+     * implementasi resmi {@link StorageRecovery}.
      */
     public static final class StorageManagerUndoAdapter implements UndoStorage {
-        private final StorageManager storageManager;
+        private final StorageRecovery storageManager;
 
-        public StorageManagerUndoAdapter(StorageManager storageManager) {
+        public StorageManagerUndoAdapter(StorageRecovery storageManager) {
             this.storageManager =
                     Objects.requireNonNull(storageManager, "storageManager must not be null");
         }
@@ -211,7 +200,7 @@ public class FRManager implements RecoveryManager {
             }
         }
 
-        public StorageManager getStorageManager() {
+        public StorageRecovery getStorageManager() {
             return storageManager;
         }
     }
@@ -231,14 +220,33 @@ public class FRManager implements RecoveryManager {
         return image.getBytes(StandardCharsets.UTF_8);
     }
 
+    private static int toTxIdInt(TxId tx) {
+        Objects.requireNonNull(tx, "tx must not be null");
+        try {
+            return Math.toIntExact(tx.value());
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Transaction ID exceeds 32-bit int range supported by WAL: " + tx.value(), e);
+        }
+    }
+
+    private void updateCachedTxStatus(int txId, LogType logType) {
+        switch (logType) {
+            case BEGIN -> txStatuses.put(txId, TxStatus.ACTIVE);
+            case COMMIT -> txStatuses.put(txId, TxStatus.COMMITTED);
+            case ABORT -> txStatuses.put(txId, TxStatus.ABORTED);
+            default -> {}
+        }
+    }
+
     @Override
     public long writeLog(org.rafendb.common.log.LogPayload payload)
             throws RecoveryInternalException {
         if (payload == null) {
             throw new NullPointerException("payload must not be null");
         }
+        int txId = toTxIdInt(payload.tx());
         try {
-            int txId = (int) payload.tx().value();
             LogType logType = LogType.valueOf(payload.type().name());
             if (payload.change().isPresent()) {
                 var change = payload.change().get();
@@ -261,8 +269,9 @@ public class FRManager implements RecoveryManager {
                 return logger.logDataChange(
                         txId, logType, payload.timestamp(), table, -1, beforeStr, afterStr);
             } else {
-                logger.logTransactionEvent(txId, logType);
-                return logger.getCurrentLSN();
+                long lsn = logger.logTransactionEvent(txId, logType, payload.timestamp());
+                updateCachedTxStatus(txId, logType);
+                return lsn;
             }
         } catch (Exception e) {
             throw new RecoveryInternalException("Failed to write log record", e);
@@ -394,13 +403,16 @@ public class FRManager implements RecoveryManager {
     }
 
     /**
-     * Memulai proses pembuatan checkpoint sistem.
+     * Memulai proses pembuatan quiescent checkpoint dengan menyalurkan {@link ConcurrencyControl}
+     * untuk menahan transaksi baru dan menunggu transaksi aktif selesai.
      *
+     * @param concurrencyControl pengelola concurrency opsional untuk quiescent checkpoint
      * @return {@code true} jika checkpoint berhasil dibuat; {@code false} jika gagal
      */
-    public boolean createCheckpoint() {
+    @Override
+    public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
         try {
-            return checkpointManager.createCheckpoint();
+            return checkpointManager.createCheckpoint(concurrencyControl);
         } catch (Exception e) {
             return false;
         }
@@ -418,6 +430,8 @@ public class FRManager implements RecoveryManager {
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -442,6 +456,8 @@ public class FRManager implements RecoveryManager {
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -451,12 +467,10 @@ public class FRManager implements RecoveryManager {
      * @param tx id transaksi yang sudah commit, tidak boleh null
      * @return {@code true} jika pemulihan berhasil; {@code false} jika gagal
      * @throws NullPointerException jika {@code tx} null
+     * @throws IllegalArgumentException jika nilai {@code tx} melebihi batas 32-bit int
      */
     public boolean recoverToTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return recoverToTransaction((int) tx.value());
+        return recoverToTransaction(toTxIdInt(tx));
     }
 
     /**
@@ -469,6 +483,8 @@ public class FRManager implements RecoveryManager {
             return crashRecoveryManager.recoverFromCrash();
         } catch (Exception e) {
             return false;
+        } finally {
+            txStatuses.clear();
         }
     }
 
@@ -479,7 +495,14 @@ public class FRManager implements RecoveryManager {
 
     @Override
     public boolean undo() {
-        return crashRecoveryManager != null && crashRecoveryManager.undo();
+        if (crashRecoveryManager == null) {
+            return false;
+        }
+        try {
+            return crashRecoveryManager.undo();
+        } finally {
+            txStatuses.clear();
+        }
     }
 
     /** @return instance WAL Logger yang digunakan */
@@ -502,36 +525,41 @@ public class FRManager implements RecoveryManager {
         return crashRecoveryManager;
     }
 
+    /**
+     * Mengembalikan informasi batas atas transaksi dan timestamp logis dari WAL saat ini untuk
+     * keperluan inisialisasi CCM pasca-recovery ({@code initializeAfterRecovery}).
+     *
+     * <p>Menggunakan batas atas ID transaksi sebagai {@code maxTimestamp} karena timestamp CCM
+     * bersifat logis (monotonik per transaksi), bukan wall-clock epoch milidetik.
+     *
+     * @return {@link RecoveryInfo} berisi {@code maxTransactionId} dan {@code maxTimestamp}
+     */
+    public RecoveryInfo getRecoveryInfo() {
+        long maxTxId = 0L;
+        for (WALRecord rec : logger.getLogsSorted()) {
+            maxTxId = Math.max(maxTxId, rec.getIdTransaction());
+        }
+        return new RecoveryInfo(maxTxId, maxTxId);
+    }
+
     @Override
     public boolean beginTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return beginTransaction((int) tx.value());
+        return beginTransaction(toTxIdInt(tx));
     }
 
     @Override
     public boolean commitTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return commitTransaction((int) tx.value());
+        return commitTransaction(toTxIdInt(tx));
     }
 
     @Override
     public boolean rollbackTransaction(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return rollbackTransaction((int) tx.value());
+        return rollbackTransaction(toTxIdInt(tx));
     }
 
     @Override
     public TxStatus getTransactionStatus(TxId tx) {
-        if (tx == null) {
-            throw new NullPointerException("tx must not be null");
-        }
-        return getTransactionStatus((int) tx.value());
+        return getTransactionStatus(toTxIdInt(tx));
     }
 
     public TxStatus getTransactionStatus(int idTransaction) {
