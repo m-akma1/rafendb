@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -245,6 +246,48 @@ class CrashRecoveryEngineTest {
 
         assertTrue(storage.data.isEmpty());
         assertTrue(restarted.analyze().loserTransactions().isEmpty());
+    }
+
+    @Test
+    void completedCheckpointLimitsRestartToPostCheckpointHistory(@TempDir Path dir)
+            throws Exception {
+        Path wal = dir.resolve("checkpoint-recovery.wal");
+        Rid committedBefore = new Rid(10L, 1);
+        Rid committedAfter = new Rid(11L, 2);
+        Rid loserAfter = new Rid(12L, 3);
+
+        Logger persistent = new Logger(wal);
+        persistent.logTransactionEvent(1, LogType.BEGIN);
+        persistent.logDataChange(
+                1, LogType.INSERT, 1000L, "t", 1L, committedBefore, null, "before");
+        persistent.logTransactionEvent(1, LogType.COMMIT);
+
+        CheckpointManager checkpoint = new CheckpointManager(persistent);
+        assertTrue(checkpoint.createCheckpoint());
+        long checkpointLsn = checkpoint.getLastCheckpointLsn();
+        assertTrue(checkpointLsn > 0);
+
+        persistent.logTransactionEvent(2, LogType.BEGIN);
+        persistent.logDataChange(2, LogType.INSERT, 2000L, "t", 1L, committedAfter, null, "after");
+        persistent.logTransactionEvent(2, LogType.COMMIT);
+
+        persistent.logTransactionEvent(3, LogType.BEGIN);
+        persistent.logDataChange(3, LogType.INSERT, 3000L, "t", 1L, loserAfter, null, "loser");
+        persistent.flushAll();
+        persistent.close();
+
+        Logger restarted = new Logger(wal);
+        TestStorage storage = new TestStorage();
+        storage.data.put(key("t", committedBefore), "before");
+
+        CrashRecoveryEngine recovery = new CrashRecoveryEngine(restarted, storage, () -> NOW);
+        assertTrue(recovery.recoverFromCrash());
+        assertEquals("before", storage.data.get(key("t", committedBefore)));
+        assertEquals("after", storage.data.get(key("t", committedAfter)));
+        assertNull(storage.data.get(key("t", loserAfter)));
+        assertTrue(recovery.getCommittedTransactions().contains(2));
+        assertTrue(recovery.getLoserTransactions().contains(3));
+        restarted.close();
     }
 
     @Test

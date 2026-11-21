@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.LongSupplier;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.LoggerErrorException;
@@ -149,9 +150,12 @@ public class CrashRecoveryEngine {
         highestTransactionId = 0;
 
         Set<Integer> allTxs = new LinkedHashSet<>();
+        List<WALRecord> completeLog = logger != null ? logger.getLogsSorted() : allLogs;
+        for (WALRecord rec : completeLog) {
+            highestTransactionId = Math.max(highestTransactionId, rec.getIdTransaction());
+        }
         for (WALRecord rec : allLogs) {
             int txId = rec.getIdTransaction();
-            highestTransactionId = Math.max(highestTransactionId, txId);
             if (txId > 0) {
                 allTxs.add(txId);
             }
@@ -332,7 +336,15 @@ public class CrashRecoveryEngine {
     }
 
     private List<WALRecord> readLogs() {
-        return logger != null ? logger.getLogsSorted() : List.of();
+        if (logger == null) {
+            return List.of();
+        }
+        List<WALRecord> allLogs = logger.getLogsSorted();
+        long checkpointLsn = CheckpointManager.readLastCompletedCheckpointLsn(logger);
+        if (checkpointLsn <= 0) {
+            return allLogs;
+        }
+        return allLogs.stream().filter(record -> record.getLsn() > checkpointLsn).toList();
     }
 
     /**
