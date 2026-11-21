@@ -9,7 +9,8 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 
 /** Per-query metadata cache; construct a new instance for each query because statistics change. */
-public final class CachingCatalog implements Catalog {
+public final class CachingCatalog
+        implements StatementScopedCatalog {
     private final Catalog delegate;
     private final Map<String, TableSchema> schemas = new ConcurrentHashMap<>();
     private final Map<String, TableStats> stats = new ConcurrentHashMap<>();
@@ -24,6 +25,17 @@ public final class CachingCatalog implements Catalog {
      */
     public CachingCatalog(Catalog delegate) {
         this.delegate = java.util.Objects.requireNonNull(delegate);
+    }
+
+    @Override
+    public void beginStatement() {
+        invalidateAll();
+    }
+
+    public void invalidateAll() {
+        schemas.clear();
+        stats.clear();
+        indexes.clear();
     }
 
     /** {@inheritDoc} */

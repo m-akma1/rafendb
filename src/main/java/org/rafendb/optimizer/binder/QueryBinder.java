@@ -23,6 +23,7 @@ import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.ForeignKey;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.optimizer.catalog.Catalog;
+import org.rafendb.optimizer.catalog.StatementScopedCatalog;
 
 /**
  * Binds parsed queries to canonical catalog names and validates their semantics.
@@ -58,6 +59,9 @@ public final class QueryBinder implements Binder {
     @Override
     public ParsedQuery bind(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
+        if(catalog instanceof StatementScopedCatalog scoped) {
+            scoped.beginStatement();
+        }
         if (parsed instanceof SelectQuery select) return bind(select);
         if (parsed instanceof ExplainQuery explain) return bindExplain(explain);
         if (parsed instanceof InsertQuery insert) return bindInsert(insert);
