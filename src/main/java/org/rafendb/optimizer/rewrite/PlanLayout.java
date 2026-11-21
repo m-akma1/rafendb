@@ -18,11 +18,13 @@ import org.rafendb.optimizer.catalog.Catalog;
 
 final class PlanLayout {
 
-    record Col(String qualifier, String table, String name) {}
+    record Col(String qualifier, String name) {}
 
     static final int NOT_FOUND = -1;
 
     static final int AMBIGUOUS = -2;
+
+    static final String COMPUTED_PREFIX = "$expr";
 
     private final Catalog catalog;
 
@@ -42,9 +44,10 @@ final class PlanLayout {
         if (!known) return false;
         if (node instanceof ProjectionPlanNode proj) {
             for (Expr column : proj.columns()) {
-                if (!(column instanceof Expr.ColumnRef)) return false;
+                if (column instanceof Expr.ColumnRef ref && ref.scopeDepth() != 0) return false;
             }
         }
+        if (node instanceof SortPlanNode sort && sort.column().scopeDepth() != 0) return false;
         for (PlanNode child : node.children()) {
             if (!supports(child)) return false;
         }
@@ -63,8 +66,13 @@ final class PlanLayout {
         if (node instanceof ProjectionPlanNode proj) {
             List<Col> input = of(proj.child());
             List<Col> out = new ArrayList<>();
-            for (Expr expr : proj.columns()) {
-                out.add(input.get(requireIndex(input, asColumn(expr))));
+            for (int i = 0; i < proj.columns().size(); i++) {
+                Expr expr = proj.columns().get(i);
+                if (expr instanceof Expr.ColumnRef ref) {
+                    out.add(input.get(requireIndex(input, ref)));
+                } else {
+                    out.add(new Col("", COMPUTED_PREFIX + i));
+                }
             }
             return out;
         }
@@ -76,7 +84,7 @@ final class PlanLayout {
         String qualifier = alias != null ? alias : table;
         List<Col> out = new ArrayList<>();
         for (Column column : catalog.getSchema(table).columns()) {
-            out.add(new Col(qualifier, table, column.name()));
+            out.add(new Col(qualifier, column.name()));
         }
         return out;
     }
@@ -86,9 +94,7 @@ final class PlanLayout {
         for (int i = 0; i < layout.size(); i++) {
             Col col = layout.get(i);
             if (!eq(col.name(), ref.column())) continue;
-            if (ref.table() != null
-                    && !eq(col.qualifier(), ref.table())
-                    && !eq(col.table(), ref.table())) {
+            if (ref.table() != null && !eq(col.qualifier(), ref.table())) {
                 continue;
             }
             if (found != NOT_FOUND) return AMBIGUOUS;
@@ -108,18 +114,7 @@ final class PlanLayout {
     }
 
     static List<Expr.ColumnRef> refs(Expr expr) {
-        List<Expr.ColumnRef> out = new ArrayList<>();
-        collectRefs(expr, out);
-        return out;
-    }
-
-    private static void collectRefs(Expr expr, List<Expr.ColumnRef> out) {
-        if (expr instanceof Expr.ColumnRef ref) {
-            out.add(ref);
-        } else if (expr instanceof Expr.Binary bin) {
-            collectRefs(bin.left(), out);
-            collectRefs(bin.right(), out);
-        }
+        return ExprWalker.rowRefs(expr);
     }
 
     static List<Expr> conjuncts(Expr expr) {
@@ -171,14 +166,14 @@ final class PlanLayout {
     }
 
     private static Expr rebind(Expr expr, List<Col> layout) {
-        if (expr instanceof Expr.ColumnRef ref) {
-            return new Expr.ColumnRef(ref.table(), ref.column(), requireIndex(layout, ref));
-        }
-        if (expr instanceof Expr.Binary bin) {
-            return new Expr.Binary(
-                    bin.op(), rebind(bin.left(), layout), rebind(bin.right(), layout));
-        }
-        return expr;
+        return ExprWalker.mapRowRefs(
+                expr,
+                ref ->
+                        new Expr.ColumnRef(
+                                ref.table(),
+                                ref.column(),
+                                requireIndex(layout, ref),
+                                ref.scopeDepth()));
     }
 
     private static Expr.ColumnRef asColumn(Expr expr) {

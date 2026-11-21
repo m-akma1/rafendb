@@ -97,6 +97,8 @@ public final class JoinOptimizer {
     }
 
     private Inputs reorderableInputs(PlanNode node) {
+        if (!(node instanceof JoinPlanNode || node instanceof CartesianPlanNode)
+                || PlanTrees.containsFixedPredicate(node)) return null;
         if (node instanceof JoinPlanNode join
                 && join.condition() != null
                 && join.algorithm() == JoinAlgorithm.BLOCK_NESTED_LOOP) {
@@ -167,7 +169,7 @@ public final class JoinOptimizer {
             // Only predicates wholly inside the new child can use this partial offset map.
             // Constants stay at the parent so regrouping does not change their placement.
             if (allColumnOffsetsInRange(predicate, newChildStart, newChildEnd)
-                    && containsColumnReference(predicate)) {
+                    && containsLocalColumn(predicate)) {
                 childCondition =
                         PlanTrees.and(
                                 childCondition,
@@ -187,23 +189,27 @@ public final class JoinOptimizer {
                         lastInput);
     }
 
-    /** Constants have no offsets, so they pass this half-open range check. */
+    /** Checks only offsets in the current query's row. */
     private boolean allColumnOffsetsInRange(Expr expr, int start, int end) {
         if (expr instanceof Expr.ColumnRef column) {
-            return column.offset() >= start && column.offset() < end;
+            return column.scopeDepth() > 0 || (column.offset() >= start && column.offset() < end);
         }
         if (expr instanceof Expr.Binary binary) {
             return allColumnOffsetsInRange(binary.left(), start, end)
                     && allColumnOffsetsInRange(binary.right(), start, end);
         }
+        if (expr instanceof Expr.Not not) {
+            return allColumnOffsetsInRange(not.child(), start, end);
+        }
         return true;
     }
 
-    private boolean containsColumnReference(Expr expr) {
-        return expr instanceof Expr.ColumnRef
+    private boolean containsLocalColumn(Expr expr) {
+        return expr instanceof Expr.ColumnRef column && column.scopeDepth() == 0
                 || expr instanceof Expr.Binary binary
-                        && (containsColumnReference(binary.left())
-                                || containsColumnReference(binary.right()));
+                        && (containsLocalColumn(binary.left())
+                                || containsLocalColumn(binary.right()))
+                || expr instanceof Expr.Not not && containsLocalColumn(not.child());
     }
 
     /** Normalization preserves output layout, so ancestor offsets stay valid. */
@@ -248,14 +254,19 @@ public final class JoinOptimizer {
     /** Merges filters without treating unresolved natural joins as Cartesian products. */
     private PlanNode rewriteSelectionOverJoin(
             SelectionPlanNode selection, StorageMetadata storage) {
-        if (selection.child() instanceof JoinPlanNode join && join.condition() != null) {
+        PlanNode child = selection.child();
+        if (!(child instanceof JoinPlanNode || child instanceof CartesianPlanNode))
+            return selection;
+        if (!ColumnLayouts.canMovePredicate(selection.condition())
+                || PlanTrees.containsFixedPredicate(child)) return selection;
+        if (child instanceof JoinPlanNode join && join.condition() != null) {
             return new JoinPlanNode(
                     join.algorithm(),
                     PlanTrees.and(selection.condition(), join.condition()),
                     join.left(),
                     join.right());
         }
-        if (!(selection.child() instanceof CartesianPlanNode cartesian)) {
+        if (!(child instanceof CartesianPlanNode cartesian)) {
             return selection;
         }
 
@@ -304,13 +315,14 @@ public final class JoinOptimizer {
         return referencesLeft && referencesRight;
     }
 
-    /** A null qualifier marks an unqualified column. */
     private void collectReferencedQualifiers(Expr expr, Set<String> references) {
-        if (expr instanceof Expr.ColumnRef column) {
+        if (expr instanceof Expr.ColumnRef column && column.scopeDepth() == 0) {
             references.add(column.table());
         } else if (expr instanceof Expr.Binary binary) {
             collectReferencedQualifiers(binary.left(), references);
             collectReferencedQualifiers(binary.right(), references);
+        } else if (expr instanceof Expr.Not not) {
+            collectReferencedQualifiers(not.child(), references);
         }
     }
 

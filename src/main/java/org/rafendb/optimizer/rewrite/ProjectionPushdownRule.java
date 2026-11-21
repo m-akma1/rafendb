@@ -61,12 +61,8 @@ public final class ProjectionPushdownRule implements RewriteRule {
         PlanNode child = proj.child();
 
         while (child instanceof ProjectionPlanNode inner) {
-            List<PlanLayout.Col> innerOut = layout.of(inner);
-            List<Expr> composed = new ArrayList<>();
-            for (Expr expr : columns) {
-                int index = PlanLayout.find(innerOut, (Expr.ColumnRef) expr);
-                composed.add(inner.columns().get(index));
-            }
+            List<Expr> composed = compose(columns, inner);
+            if (composed == null) break;
             columns = composed;
             child = inner.child();
         }
@@ -74,12 +70,27 @@ public final class ProjectionPushdownRule implements RewriteRule {
         if (required != null) columns = keepRequired(columns, child, required);
 
         List<Expr.ColumnRef> needed = new ArrayList<>();
-        for (Expr expr : columns) needed.add((Expr.ColumnRef) expr);
+        for (Expr expr : columns) needed.addAll(PlanLayout.refs(expr));
         return new ProjectionPlanNode(columns, prune(child, needed));
+    }
+
+    private List<Expr> compose(List<Expr> outer, ProjectionPlanNode inner) {
+        List<PlanLayout.Col> innerOut = layout.of(inner);
+        List<Expr> composed = new ArrayList<>();
+        for (Expr expr : outer) {
+            if (!(expr instanceof Expr.ColumnRef ref)) return null;
+            int index = PlanLayout.find(innerOut, ref);
+            if (index < 0) return null;
+            composed.add(inner.columns().get(index));
+        }
+        return composed;
     }
 
     private List<Expr> keepRequired(
             List<Expr> columns, PlanNode child, List<Expr.ColumnRef> required) {
+        for (Expr expr : columns) {
+            if (!(expr instanceof Expr.ColumnRef)) return columns;
+        }
         List<PlanLayout.Col> input = layout.of(child);
         List<PlanLayout.Col> output = new ArrayList<>();
         for (Expr expr : columns) {

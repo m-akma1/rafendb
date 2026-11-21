@@ -65,6 +65,7 @@ public final class JoinAccessPathOptimizer {
      * Normalizes joins, then compares complete join and access plans, including plans without joins.
      * Beam search explores bounded swaps and regroupings. GA explores left-deep permutations
      * and also compares the normalized original plan. Each arrangement has a bounded access search.
+     * Regions with subquery predicates that GA would move use beam search.
      * Neither search guarantees a global optimum. Ties keep discovery order. GA wins its final tie.
      * Without a cost model, only normalization runs and the supplied cost is preserved.
      *
@@ -84,9 +85,10 @@ public final class JoinAccessPathOptimizer {
         AccessPathSearch accessSearch =
                 new AccessPathSearch(access, validator, costs, config.accessPathBudget());
         AccessPathSearch.Result best =
-                config.mode() == SearchMode.HEURISTIC
-                        ? selectHeuristicPlan(normalized, accessSearch)
-                        : selectGeneticPlan(normalized, accessSearch);
+                config.mode() == SearchMode.GENETIC
+                                && !JoinOrderDecoder.hasFixedPredicateInJoinRegion(normalized)
+                        ? selectGeneticPlan(normalized, accessSearch)
+                        : selectHeuristicPlan(normalized, accessSearch);
         return best.root() == plan.root() && best.cost() == plan.totalCost()
                 ? plan
                 : new QueryPlan(best.root(), best.cost());
