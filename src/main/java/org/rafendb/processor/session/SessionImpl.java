@@ -210,7 +210,8 @@ final class SessionImpl implements Session, SessionView {
             case TransactionQuery transaction -> transaction(transaction.kind());
             case SelectQuery select -> {
                 QueryPlan plan = optimize(select);
-                yield runStatement(() -> ResultMapper.rows(translator.translate(plan)));
+                yield runStatement(
+                        () -> ResultMapper.rows(translator.translate(plan), select.limit()));
             }
             case ExplainQuery explain ->
                     new QueryResult.Status(optimizer.explain(optimize(explain.selectQuery())));

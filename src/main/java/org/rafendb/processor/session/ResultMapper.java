@@ -9,6 +9,7 @@ import org.rafendb.common.query.QueryResult;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.operator.Operator;
+import org.rafendb.processor.operator.limit.LimitOp;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
 
@@ -17,16 +18,18 @@ final class ResultMapper {
     private ResultMapper() {}
 
     /**
-     * Reads every row of a row-producing plan, then closes it. Run inside the statement's
+     * Reads the rows of a row-producing plan, then closes it. Run inside the statement's
      * transaction, so its read locks cover the whole read.
      *
      * @param plan a {@link ExecutionPlan.Rows}
+     * @param limit the SELECT's LIMIT, or {@code null} for all rows; QO's plan does not apply it
      * @return the rows, with one header per column
      */
-    static QueryResult.Rows rows(ExecutionPlan plan) {
-        if (!(plan instanceof ExecutionPlan.Rows rows)) {
+    static QueryResult.Rows rows(ExecutionPlan plan, Integer limit) {
+        if (!(plan instanceof ExecutionPlan.Rows whole)) {
             throw new IllegalStateException("Expected a row-producing plan, got " + plan);
         }
+        ExecutionPlan.Rows rows = LimitOp.wrap(whole, limit);
         List<Row> read = new ArrayList<>();
         try (Operator operator = rows.operator()) {
             operator.open();

@@ -80,6 +80,56 @@ class SessionIntegrationTest {
     }
 
     @Test
+    void limitOrNotAndSelfJoinAliasesWorkThroughTheSession() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+
+        var top = rows(session, "SELECT order_id FROM orders ORDER BY order_id DESC LIMIT 3");
+        assertEquals(
+                List.of(
+                        List.of(Value.ofInt(60)),
+                        List.of(Value.ofInt(59)),
+                        List.of(Value.ofInt(58))),
+                top.rows().stream().map(row -> row.values()).toList());
+        assertEquals(0, rows(session, "SELECT * FROM orders LIMIT 0").rows().size());
+
+        String someIds = "SELECT customer_id FROM customers WHERE ";
+        assertEquals(
+                2, rows(session, someIds + "customer_id = 1 OR customer_id = 60").rows().size());
+        assertEquals(2, rows(session, someIds + "NOT (customer_id > 2)").rows().size());
+        assertEquals(
+                3,
+                rows(session, someIds + "customer_id < 3 OR customer_id = 7 AND credit > -1")
+                        .rows()
+                        .size());
+
+        var pairs =
+                rows(
+                        session,
+                        "SELECT a.customer_id, b.customer_id FROM orders AS a JOIN orders AS b"
+                                + " ON a.customer_id = b.customer_id WHERE a.order_id = 1");
+        assertEquals(List.of(Value.ofInt(1), Value.ofInt(1)), pairs.rows().getFirst().values());
+        assertEquals(2, pairs.columns().stream().distinct().count(), pairs.columns().toString());
+    }
+
+    @Test
+    void explainTakesNoLocks() throws Exception {
+        stack = new Stack(dir, true);
+        Session writer = stack.processor.openSession();
+        Session reader = stack.processor.openSession();
+        writer.execute("BEGIN");
+        writer.execute("INSERT INTO customers VALUES (61, 'New', 1.5, 'A')");
+
+        // A SELECT would wait for the writer (see aReaderWaitsUntilTheWriterCommits).
+        CompletableFuture<QueryResult> explain =
+                CompletableFuture.supplyAsync(
+                        () -> reader.execute("EXPLAIN SELECT * FROM customers WHERE credit > 1"));
+        assertInstanceOf(QueryResult.Status.class, explain.get(5, TimeUnit.SECONDS));
+        assertEquals(TxState.IDLE, reader.transactionState());
+        writer.execute("ABORT");
+    }
+
+    @Test
     void committedWritesSurviveARestartAndAnOpenTransactionDoesNot() throws Exception {
         stack = new Stack(dir, true);
         Session session = stack.processor.openSession();

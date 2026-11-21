@@ -52,6 +52,7 @@ import org.rafendb.optimizer.cost.StatsCostModel;
 import org.rafendb.optimizer.join.JoinAccessPathOptimizer;
 import org.rafendb.optimizer.parser.QueryParser;
 import org.rafendb.optimizer.plan.InitialPlanBuilder;
+import org.rafendb.optimizer.rewrite.PlanRewriter;
 import org.rafendb.processor.session.QueryProcessorImpl;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.log.Logger;
@@ -336,8 +337,9 @@ public final class Engine implements AutoCloseable {
     }
 
     /**
-     * Builds one Query Optimizer over the storage's metadata. It is not thread-safe and caches
-     * metadata, so each session gets its own.
+     * Builds one Query Optimizer over the storage's metadata. It is not thread-safe, so each
+     * session gets its own. Its metadata cache is cleared at the start of every statement, so a
+     * session sees tables, indexes and statistics changed by other sessions.
      *
      * @param storage where table schemas, statistics, and indexes are read from
      * @return a new optimizer
@@ -349,7 +351,8 @@ public final class Engine implements AutoCloseable {
                 new QueryParser(),
                 new QueryBinder(catalog),
                 new JoinAccessPathOptimizer(storage, costs),
-                new InitialPlanBuilder(costs));
+                new InitialPlanBuilder(costs),
+                new PlanRewriter(catalog));
     }
 
     /**
