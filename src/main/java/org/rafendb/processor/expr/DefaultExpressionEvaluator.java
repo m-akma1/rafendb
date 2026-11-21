@@ -94,8 +94,15 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
     /** Menggabungkan kondisi dengan logika tiga nilai atau membandingkan dua nilai skalar. */
     private static TruthValue condition(Expr expression, ResultRow row, List<ColumnSchema> schema) {
         Objects.requireNonNull(expression, "condition operand");
+        if (expression instanceof Expr.Not not) {
+            return switch (condition(not.child(), row, schema)) {
+                case TRUE -> TruthValue.FALSE;
+                case FALSE -> TruthValue.TRUE;
+                case UNKNOWN -> TruthValue.UNKNOWN;
+            };
+        }
         if (!(expression instanceof Expr.Binary binary)) {
-            throw new IllegalArgumentException("Expected comparison or AND condition");
+            throw new IllegalArgumentException("Expected comparison, AND, OR, or NOT condition");
         }
         Expr.Op op = Objects.requireNonNull(binary.op(), "operator");
         if (op == Expr.Op.AND) {
@@ -107,9 +114,20 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
                     ? TruthValue.UNKNOWN
                     : TruthValue.TRUE;
         }
+        if (op == Expr.Op.OR) {
+            TruthValue left = condition(binary.left(), row, schema);
+            if (left == TruthValue.TRUE) return TruthValue.TRUE;
+            TruthValue right = condition(binary.right(), row, schema);
+            if (right == TruthValue.TRUE) return TruthValue.TRUE;
+            return left == TruthValue.UNKNOWN || right == TruthValue.UNKNOWN
+                    ? TruthValue.UNKNOWN
+                    : TruthValue.FALSE;
+        }
         switch (op) {
             case EQ, NE, GT, GE, LT, LE -> {}
-            default -> throw new IllegalArgumentException("Expected comparison or AND, got " + op);
+            default ->
+                    throw new IllegalArgumentException(
+                            "Expected comparison or logical condition, got " + op);
         }
         Value left = scalar(binary.left(), row, schema);
         Value right = scalar(binary.right(), row, schema);
