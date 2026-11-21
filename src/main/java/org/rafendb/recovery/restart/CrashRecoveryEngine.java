@@ -40,6 +40,10 @@ import org.rafendb.recovery.rollback.UndoStorage;
  * WALRecord}, bukan id record {@code int} yang sempit. Thread-safe: semua method publik
  * ter-synchronize.
  *
+ * <p>Redo bisa dimulai dari checkpoint terakhir jika sumber LSN checkpoint diberikan (lihat {@link
+ * #CrashRecoveryEngine(Logger, UndoStorage, LongSupplier, LongSupplier)}). Analysis tetap memindai
+ * seluruh log, dan redo kembali ke awal log jika checkpoint tersebut tidak terbukti aman.
+ *
  * <p>Kelas ini hanya bergantung pada {@link UndoStorage}, tidak pada {@code StorageManager} maupun
  * facade FRM, sehingga tidak ada dependensi siklik dengan {@code FRManager}. Adapter ke {@code
  * StorageManager} dibuat oleh pemanggil.
@@ -49,6 +53,7 @@ public class CrashRecoveryEngine {
     private final Logger logger;
     private final UndoStorage storage;
     private final LongSupplier clock;
+    private final LongSupplier checkpointLsn;
     private boolean crashRecovered = false;
     private boolean redoExecuted = false;
     private boolean undoExecuted = false;
@@ -59,6 +64,7 @@ public class CrashRecoveryEngine {
     private int highestTransactionId = 0;
     private int redoCount = 0;
     private int undoCount = 0;
+    private long redoStartLsn = 0;
 
     /**
      * Hasil analisis fasa Analysis pada pemulihan crash.
@@ -96,9 +102,32 @@ public class CrashRecoveryEngine {
      * @param clock sumber waktu (milidetik epoch), tidak boleh null
      */
     public CrashRecoveryEngine(Logger logger, UndoStorage storage, LongSupplier clock) {
+        this(logger, storage, clock, () -> 0L);
+    }
+
+    /**
+     * Membuat instance CrashRecoveryEngine yang memulai redo dari checkpoint terakhir, misalnya
+     * dengan {@code checkpointManager::getLastCheckpointLsn}.
+     *
+     * <p>Checkpoint hanya dipakai jika LSN-nya adalah record {@code CHECKPOINT_END} di log ini,
+     * didahului {@code CHECKPOINT_BEGIN}, dan tidak ada transaksi yang masih aktif saat {@code
+     * CHECKPOINT_BEGIN}. Selain itu (misalnya pointer basi atau milik log lain), redo mulai dari
+     * awal log. Pemanggil wajib memastikan checkpoint tersebut mem-flush storage; checkpoint tanpa
+     * {@code StorageManager} tidak boleh dipakai di sini.
+     *
+     * @param logger logger WAL
+     * @param storage storage adapter untuk menerapkan perubahan data pada buffer/storage
+     * @param clock sumber waktu (milidetik epoch), tidak boleh null
+     * @param checkpointLsn sumber LSN checkpoint lengkap terakhir, {@code 0} jika belum ada; tidak
+     *     boleh null
+     */
+    public CrashRecoveryEngine(
+            Logger logger, UndoStorage storage, LongSupplier clock, LongSupplier checkpointLsn) {
         this.logger = logger;
         this.storage = storage;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.checkpointLsn =
+                Objects.requireNonNull(checkpointLsn, "checkpointLsn must not be null");
     }
 
     /**
@@ -160,22 +189,25 @@ public class CrashRecoveryEngine {
 
     /**
      * Eksekusi fase Redo dengan mengulang sejarah: after-image setiap perubahan data di log
-     * diterapkan ulang sesuai urutan LSN, apa pun status transaksinya. Penerapan bersifat idempoten
-     * sehingga aman diulang.
+     * diterapkan ulang sesuai urutan LSN, apa pun status transaksinya. Jika ada checkpoint yang
+     * aman, perubahan sebelum checkpoint dilewati karena sudah ada di storage. Penerapan bersifat
+     * idempoten sehingga aman diulang.
      *
      * @return true jika fase Redo berhasil
      */
     public synchronized boolean redo() {
         this.redoExecuted = true;
         redoCount = 0;
+        redoStartLsn = 0;
         if (logger == null || storage == null) {
             return true;
         }
         try {
             List<WALRecord> allLogs = readLogs();
             performAnalysisPass(allLogs);
+            redoStartLsn = safeCheckpointLsn(allLogs);
             for (WALRecord rec : allLogs) {
-                if (rec.getLogType().isDataChange()) {
+                if (rec.getLogType().isDataChange() && rec.getLSN() > redoStartLsn) {
                     storage.applyUndo(
                             rec.getTableName(),
                             rec.getTableGeneration(),
@@ -248,6 +280,57 @@ public class CrashRecoveryEngine {
         undoCount++;
     }
 
+    /**
+     * Mengembalikan LSN checkpoint jika redo aman dimulai dari sana, atau {@code 0} untuk redo
+     * penuh. Aman berarti LSN tersebut adalah {@code CHECKPOINT_END} di log ini, ada {@code
+     * CHECKPOINT_BEGIN} sebelumnya, dan tidak ada transaksi aktif saat {@code CHECKPOINT_BEGIN}.
+     */
+    private long safeCheckpointLsn(List<WALRecord> allLogs) {
+        long target;
+        try {
+            target = checkpointLsn.getAsLong();
+        } catch (RuntimeException e) {
+            return 0;
+        }
+        if (target <= 0) {
+            return 0;
+        }
+        int endIndex = -1;
+        for (int i = 0; i < allLogs.size(); i++) {
+            if (allLogs.get(i).getLSN() == target) {
+                endIndex = i;
+                break;
+            }
+        }
+        if (endIndex < 0 || allLogs.get(endIndex).getLogType() != LogType.CHECKPOINT_END) {
+            return 0;
+        }
+        int beginIndex = -1;
+        for (int i = endIndex - 1; i >= 0; i--) {
+            if (allLogs.get(i).getLogType() == LogType.CHECKPOINT_BEGIN) {
+                beginIndex = i;
+                break;
+            }
+        }
+        if (beginIndex < 0) {
+            return 0;
+        }
+        Set<Integer> active = new HashSet<>();
+        for (int i = 0; i < beginIndex; i++) {
+            WALRecord rec = allLogs.get(i);
+            int txId = rec.getIdTransaction();
+            if (txId <= 0) {
+                continue;
+            }
+            if (rec.getLogType() == LogType.COMMIT || rec.getLogType() == LogType.ABORT) {
+                active.remove(txId);
+            } else {
+                active.add(txId);
+            }
+        }
+        return active.isEmpty() ? target : 0;
+    }
+
     private List<WALRecord> readLogs() {
         return logger != null ? logger.getLogsSorted() : List.of();
     }
@@ -278,6 +361,13 @@ public class CrashRecoveryEngine {
      */
     public synchronized int getRedoCount() {
         return redoCount;
+    }
+
+    /**
+     * @return LSN checkpoint tempat redo terakhir dimulai, atau {@code 0} jika redo dari awal log
+     */
+    public synchronized long getRedoStartLsn() {
+        return redoStartLsn;
     }
 
     /**
