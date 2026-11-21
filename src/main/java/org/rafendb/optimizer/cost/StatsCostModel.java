@@ -386,6 +386,8 @@ public final class StatsCostModel implements CostModel {
                     || binary.op() == Expr.Op.LE) {
                 if (isNullValue(binary.left()) || isNullValue(binary.right())) return 0;
             }
+            Boolean literalResult = literalComparison(binary);
+            if (literalResult != null) return literalResult ? 1 : 0;
             if (binary.op() == Expr.Op.GT
                     || binary.op() == Expr.Op.GE
                     || binary.op() == Expr.Op.LT
@@ -393,6 +395,40 @@ public final class StatsCostModel implements CostModel {
             if (binary.op() == Expr.Op.NE) return 1 - equality(binary.left(), binary.right(), node);
             if (binary.op() == Expr.Op.EQ) return equality(binary.left(), binary.right(), node);
             return parameters.defaultEqSelectivity();
+        }
+
+        /** Evaluates a comparison whose operands are known literals. */
+        Boolean literalComparison(Expr.Binary comparison) {
+            if (!(comparison.left() instanceof Expr.Literal left)
+                    || !(comparison.right() instanceof Expr.Literal right)) return null;
+            var a = left.value();
+            var b = right.value();
+            if (a.isNull() || b.isNull()) return false;
+            int order;
+            if (a.type().isNumeric() && b.type().isNumeric()) {
+                double x =
+                        a.type() == org.rafendb.common.type.DataType.INTEGER
+                                ? a.asInt()
+                                : a.asFloat();
+                double y =
+                        b.type() == org.rafendb.common.type.DataType.INTEGER
+                                ? b.asInt()
+                                : b.asFloat();
+                order = Double.compare(x, y);
+            } else if (a.type().isText() && b.type().isText()) {
+                order = a.compareTo(b);
+            } else {
+                return null;
+            }
+            return switch (comparison.op()) {
+                case EQ -> order == 0;
+                case NE -> order != 0;
+                case GT -> order > 0;
+                case GE -> order >= 0;
+                case LT -> order < 0;
+                case LE -> order <= 0;
+                default -> null;
+            };
         }
 
         boolean isNullValue(Expr expr) {
@@ -412,11 +448,22 @@ public final class StatsCostModel implements CostModel {
 
         double equality(Expr a, Expr b, PlanNode node)
                 throws OptimizerInternalException.CostEstimationException {
+            if (a instanceof Expr.ColumnRef col
+                    && b instanceof Expr.ColumnRef other
+                    && sameColumn(col, other)) return 1;
             if (a instanceof Expr.ColumnRef col && b instanceof Expr.ColumnRef other)
                 return 1.0 / Math.max(distinct(col, node), distinct(other, node));
             if (a instanceof Expr.ColumnRef col) return 1.0 / distinct(col, node);
             if (b instanceof Expr.ColumnRef col) return 1.0 / distinct(col, node);
             return parameters.defaultEqSelectivity();
+        }
+
+        boolean sameColumn(Expr.ColumnRef left, Expr.ColumnRef right) {
+            return left.scopeDepth() == right.scopeDepth()
+                    && (left.table() == null
+                            ? right.table() == null
+                            : right.table() != null && left.table().equalsIgnoreCase(right.table()))
+                    && left.column().equalsIgnoreCase(right.column());
         }
 
         long distinct(Expr.ColumnRef column, PlanNode node)
@@ -472,13 +519,14 @@ public final class StatsCostModel implements CostModel {
                 throws OptimizerInternalException.CostEstimationException {
             long product = safeMultiply(l, r);
             if (condition == null) return product;
-            return Math.max(
-                    product == 0 ? 0 : 1,
-                    Math.min(product, ceil(product * selectivity(condition, scope))));
+            double sel = selectivity(condition, scope);
+            if (product == 0 || sel <= 0) return 0;
+            return Math.max(1, Math.min(product, ceil(product * sel)));
         }
 
         long selected(long n, double sel) {
-            return n == 0 ? 0 : Math.max(1, Math.min(n, ceil(n * sel)));
+            if (n == 0 || sel <= 0) return 0;
+            return Math.max(1, Math.min(n, ceil(n * sel)));
         }
 
         long packed(long n, double size) {
