@@ -13,9 +13,10 @@ import org.rafendb.processor.api.SessionView;
 /**
  * INSERT: adds one row inside the session's current transaction.
  *
- * <p>Order, as required by {@link StorageQuery#reserveRid}: WRITE access (CCM), reserve the slot
- * (SM validates the row, nothing changes yet), log the INSERT (CCM to FRM), then store the row.
- * If anything fails after the reservation, the reservation is canceled.
+ * <p>Order, as required by {@link StorageQuery#reserveRid}: WRITE access (CCM), check the primary
+ * and foreign keys ({@link ConstraintChecker}), reserve the slot (SM validates the row, nothing
+ * changes yet), log the INSERT (CCM to FRM), then store the row. If anything fails after the
+ * reservation, the reservation is canceled.
  *
  * <p>Does not begin or commit: the caller guarantees an active transaction. One instance, one
  * execution.
@@ -39,6 +40,8 @@ public final class InsertOp implements DMLOperator {
     public Long execute() {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
+        // Before the slot is reserved, so a violation leaves nothing to release.
+        new ConstraintChecker(ctx).checkInsert(table, row);
 
         StorageQuery sm = ctx.storageDQL();
         Rid rid;

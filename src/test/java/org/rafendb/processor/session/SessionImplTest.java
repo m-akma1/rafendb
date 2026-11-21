@@ -95,7 +95,9 @@ class SessionImplTest {
             DELETE FROM mahasiswa WHERE kode_prodi = 'STI' => affected2 IDLE
             CREATE INDEX mahasiswa_nama_idx ON mahasiswa(nama) USING HASH => CREATE_INDEX IDLE
             INSERT INTO prodi VALUES ('XX') => ValidationException IDLE
-            BEGIN => BEGIN ACTIVE | INSERT INTO prodi VALUES ('XX', 'Prodi Baru') => affected1 ACTIVE | DELETE FROM prodi => affected3 ACTIVE | COMMIT => COMMIT IDLE
+            BEGIN => BEGIN ACTIVE | INSERT INTO prodi VALUES ('XX', 'Prodi Baru') => affected1 ACTIVE | DELETE FROM mahasiswa => affected5 ACTIVE | COMMIT => COMMIT IDLE
+            BEGIN => BEGIN ACTIVE | DELETE FROM prodi => ProcessorRuntimeException FAILED | ABORT => ABORT IDLE
+            INSERT INTO prodi VALUES ('IF', 'Duplikat') => ProcessorRuntimeException IDLE
             BEGIN => BEGIN ACTIVE | CREATE INDEX x ON mahasiswa(nope) => ValidationException FAILED | ABORT => ABORT IDLE
             """)
     void statementsGiveTheirResultAndLeaveTheSessionInTheExpectedState(String script) {

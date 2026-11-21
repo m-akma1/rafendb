@@ -40,6 +40,9 @@ import org.rafendb.processor.tuple.ResultRow;
  *       at the reserved Rid (the Rid changes, as the log requires for a relocation).
  * </ol>
  *
+ * <p>Between the two, {@link ConstraintChecker} checks the primary and foreign keys the new rows
+ * touch; a violation releases the reservations and changes nothing.
+ *
  * <p>A failure after a record was logged aborts the whole transaction: a statement has no
  * rollback of its own, and the log must not promise a change that was never applied.
  *
@@ -67,7 +70,8 @@ public final class UpdateOp implements DMLOperator {
      * Relocated: {@code fresh} is the reserved Rid, {@code first} is the DELETE at {@code rid}
      * and {@code second} the INSERT at {@code fresh}.
      */
-    private record Change(Rid rid, Row after, Rid fresh, ChangeRecord first, ChangeRecord second) {}
+    private record Change(
+            Rid rid, Row before, Row after, Rid fresh, ChangeRecord first, ChangeRecord second) {}
 
     public UpdateOp(
             String table,
@@ -96,6 +100,8 @@ public final class UpdateOp implements DMLOperator {
 
         int done = 0;
         try {
+            // Inside the try, so a violation gives every reservation back in the finally.
+            checkConstraints(changes);
             for (Change c : changes) {
                 if (c.fresh() == null) {
                     updateInPlace(tx, sm, c);
@@ -112,6 +118,19 @@ public final class UpdateOp implements DMLOperator {
             }
         }
         return (long) changes.size();
+    }
+
+    /** Primary and foreign keys of the new rows, before any of them is logged or written. */
+    private void checkConstraints(List<Change> changes) {
+        List<Rid> rids = new ArrayList<>(changes.size());
+        List<Row> before = new ArrayList<>(changes.size());
+        List<Row> after = new ArrayList<>(changes.size());
+        for (Change c : changes) {
+            rids.add(c.rid());
+            before.add(c.before());
+            after.add(c.after());
+        }
+        new ConstraintChecker(ctx).checkUpdate(table, rids, before, after);
     }
 
     private void updateInPlace(TxId tx, StorageQuery sm, Change c) {
@@ -200,6 +219,7 @@ public final class UpdateOp implements DMLOperator {
                         changes.add(
                                 new Change(
                                         old.rid(),
+                                        before,
                                         after,
                                         fresh,
                                         support.deleteChange(table, old.rid(), before),
@@ -212,6 +232,7 @@ public final class UpdateOp implements DMLOperator {
                     changes.add(
                             new Change(
                                     old.rid(),
+                                    before,
                                     after,
                                     null,
                                     support.updateChange(table, old.rid(), before, after),

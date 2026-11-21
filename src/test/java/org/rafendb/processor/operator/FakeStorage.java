@@ -213,9 +213,10 @@ public final class FakeStorage implements StorageQuery, StorageDefinition {
         }
     }
 
+    /** Satu-satunya tabel di storage ini. */
     @Override
     public List<String> listTables() {
-        throw new UnsupportedOperationException();
+        return List.of(schema.table());
     }
 
     @Override
@@ -223,9 +224,11 @@ public final class FakeStorage implements StorageQuery, StorageDefinition {
         throw new UnsupportedOperationException();
     }
 
+    /** Index yang udah dibikin lewat {@link #createIndex}. */
     @Override
     public List<IndexInfo> listIndexes(String table) {
-        throw new UnsupportedOperationException();
+        getSchema(table);
+        return List.copyOf(indexes);
     }
 
     @Override
