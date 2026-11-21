@@ -148,4 +148,44 @@ class MockRecoveryManagerTest {
         assertFalse(mockFrm.isRedoExecuted());
         assertFalse(mockFrm.isUndoExecuted());
     }
+
+    @Test
+    void testNullValidationAndCommitAdvancesFlushedLsn() {
+        assertThrows(NullPointerException.class, () -> mockFrm.beginTransaction(null));
+        assertThrows(NullPointerException.class, () -> mockFrm.commitTransaction(null));
+        assertThrows(NullPointerException.class, () -> mockFrm.rollbackTransaction(null));
+        assertThrows(NullPointerException.class, () -> mockFrm.getTransactionStatus(null));
+
+        mockFrm.beginTransaction(TX1);
+        long lsn = mockFrm.writeLog(LogPayload.ofChange(TX1, LogType.INSERT, insert("t", 0, 1, 9)));
+        assertTrue(mockFrm.commitTransaction(TX1));
+        assertTrue(mockFrm.getLastFlushedLsn() >= lsn);
+    }
+
+    @Test
+    void testConcurrentForceThroughIsMonotonic() throws Exception {
+        int threads = 8;
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads);
+
+        for (int t = 0; t < threads; t++) {
+            final long base = (t + 1) * 100L;
+            new Thread(
+                            () -> {
+                                try {
+                                    start.await();
+                                    for (long v = 1; v <= 100; v++) {
+                                        mockFrm.forceThrough(base + v);
+                                    }
+                                } catch (InterruptedException ignored) {
+                                } finally {
+                                    done.countDown();
+                                }
+                            })
+                    .start();
+        }
+        start.countDown();
+        assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(900L, mockFrm.getLastFlushedLsn());
+    }
 }

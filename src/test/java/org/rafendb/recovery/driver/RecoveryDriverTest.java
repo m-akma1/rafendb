@@ -150,4 +150,44 @@ class RecoveryDriverTest {
         assertEquals(1, runDriver(new RecoveryDriver(), "", "--unknown-flag"));
         assertTrue(output.contains("--unknown-flag"), output);
     }
+
+    @Test
+    void testOfficialRecoveryScenarioFilesPassInRealAndMockModes(@TempDir Path tempDir) {
+        List<String> scenarios =
+                List.of(
+                        "test-scenarios/recovery/crash-recovery.txt",
+                        "test-scenarios/recovery/rollback.txt",
+                        "test-scenarios/recovery/pitr.txt");
+        for (int i = 0; i < scenarios.size(); i++) {
+            Path scenarioPath = Path.of(scenarios.get(i));
+            if (!Files.exists(scenarioPath)) {
+                scenarioPath = Path.of("rafendb").resolve(scenarioPath);
+            }
+            assertTrue(Files.exists(scenarioPath), "Scenario file not found: " + scenarioPath);
+
+            Path realWork = tempDir.resolve("real-" + i);
+            int realCode =
+                    runDriver(
+                            new RecoveryDriver(),
+                            "",
+                            "--dir=" + realWork,
+                            "--frames=8",
+                            "--run=" + scenarioPath);
+            assertEquals(0, realCode, "Real mode failed for " + scenarios.get(i) + ":\n" + output);
+            assertTrue(output.contains("0 failed"), output);
+            assertTrue(!output.contains("RESULT: 0 passed"), output);
+
+            Path mockWork = tempDir.resolve("mock-" + i);
+            int mockCode =
+                    runDriver(
+                            new RecoveryDriver(),
+                            "",
+                            "--mock=sm,ccm",
+                            "--dir=" + mockWork,
+                            "--run=" + scenarioPath);
+            assertEquals(0, mockCode, "Mock mode failed for " + scenarios.get(i) + ":\n" + output);
+            assertTrue(output.contains("0 failed"), output);
+            assertTrue(!output.contains("RESULT: 0 passed"), output);
+        }
+    }
 }
