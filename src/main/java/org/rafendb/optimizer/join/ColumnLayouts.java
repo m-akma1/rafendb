@@ -3,7 +3,7 @@ package org.rafendb.optimizer.join;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.query.SelectQuery;
@@ -17,7 +17,7 @@ final class ColumnLayouts {
     private ColumnLayouts() {}
 
     /** Returns columns in output order, or null when the layout is unknown. */
-    static List<Expr.ColumnRef> outputColumns(PlanNode node, StorageManager storage) {
+    static List<Expr.ColumnRef> outputColumns(PlanNode node, StorageMetadata storage) {
         String table;
         String qualifier;
         if (node instanceof TableScanNode scan) {
@@ -56,7 +56,7 @@ final class ColumnLayouts {
     }
 
     private static List<Expr.ColumnRef> concatenatedColumns(
-            PlanNode left, PlanNode right, StorageManager storage) {
+            PlanNode left, PlanNode right, StorageMetadata storage) {
         List<Expr.ColumnRef> leftColumns = outputColumns(left, storage);
         List<Expr.ColumnRef> rightColumns = outputColumns(right, storage);
         if (leftColumns == null || rightColumns == null) return null;

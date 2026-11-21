@@ -2,7 +2,7 @@ package org.rafendb.optimizer.join;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
@@ -16,13 +16,13 @@ import org.rafendb.common.plan.*;
 final class JoinOrderDecoder {
     private final PlanNode original;
     private final PlanNode region;
-    private final StorageManager storage;
+    private final StorageMetadata storage;
     private final List<Expr.ColumnRef> originalColumns;
     private final List<Input> inputs = new ArrayList<>();
     private final List<Expr> predicates = new ArrayList<>();
 
     /** Finds the join region below outer selections, projections and sorts. */
-    JoinOrderDecoder(PlanNode original, StorageManager storage) throws CostEstimationException {
+    JoinOrderDecoder(PlanNode original, StorageMetadata storage) throws CostEstimationException {
         this.original = original;
         this.storage = storage;
         region = joinRegion(original);
