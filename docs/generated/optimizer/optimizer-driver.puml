@@ -1,0 +1,48 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.driver.OptimizerDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+enum org.rafendb.optimizer.driver.ScenarioOutcome {
+	{field} +SYNTAX_ERROR
+	{field} +VALID
+	{field} +VALIDATION_ERROR
+}
+
+
+class org.rafendb.optimizer.driver.ScenarioResult {
+	{method} +actual () : ScenarioOutcome
+	{method} +detail () : String
+	{method} +passed () : boolean
+	{method} +scenario () : TestScenario
+}
+
+
+class org.rafendb.optimizer.driver.ScenarioRunner {
+	{method} +run ( scenario : TestScenario ) : ScenarioResult
+}
+
+
+class org.rafendb.optimizer.driver.TestScenario {
+	{method} +expected () : ScenarioOutcome
+	{method} +name () : String
+	{method} +sql () : String
+}
+
+
+
+
+org.rafendb.optimizer.driver.OptimizerDriver -->  org.rafendb.optimizer.driver.ScenarioRunner : runner
+org.rafendb.optimizer.driver.ScenarioResult *--  org.rafendb.optimizer.driver.ScenarioOutcome : actual
+org.rafendb.optimizer.driver.ScenarioResult *--  org.rafendb.optimizer.driver.TestScenario : scenario
+org.rafendb.optimizer.driver.TestScenario *--  org.rafendb.optimizer.driver.ScenarioOutcome : expected
+
+
+@enduml

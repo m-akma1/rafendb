@@ -81,10 +81,6 @@ public class CatalogManager {
         return new StorageRuntimeException(message);
     }
 
-    private static StorageRuntimeException clientError(String message, Throwable cause) {
-        return new StorageRuntimeException(message, cause);
-    }
-
     // Lifecycle
 
     /** Reloads binary catalog/allocation metadata, publishing state only after a successful read. */

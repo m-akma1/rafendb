@@ -34,9 +34,8 @@ enum org.rafendb.api.concurrency.ProtocolType {
 
 
 interface org.rafendb.api.optimizer.QueryOptimizer {
-	{method}  {abstract} +bindAndValidate ( parsed : ParsedQuery ) : void
 	{method}  {abstract} +explain ( plan : QueryPlan ) : String
-	{method}  {abstract} +optimize ( parsed : ParsedQuery ) : QueryPlan
+	{method}  {abstract} +optimize ( bound : ParsedQuery ) : QueryPlan
 	{method}  {abstract} +parse ( sql : String ) : ParsedQuery
 }
 
@@ -49,6 +48,14 @@ interface org.rafendb.api.processor.QueryProcessor {
 interface org.rafendb.api.processor.Session {
 	{method}  {abstract} +close () : void
 	{method}  {abstract} +execute ( sql : String ) : QueryResult
+	{method}  {abstract} +transactionState () : TxState
+}
+
+
+enum org.rafendb.api.processor.Session$TxState {
+	{field} +ACTIVE
+	{field} +FAILED
+	{field} +IDLE
 }
 
 
@@ -56,7 +63,7 @@ interface org.rafendb.api.recovery.RecoveryManager {
 	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
 	{method} +close () : void
 	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
-	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
 	{method}  {abstract} +forceThrough ( lsn : long ) : void
 	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
 	{method}  {abstract} +recoverFromCrash () : boolean
@@ -75,11 +82,15 @@ interface org.rafendb.api.storage.RecordCursor {
 }
 
 
+interface org.rafendb.api.storage.StorageDefinition {
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+}
+
+
 interface org.rafendb.api.storage.StorageManager {
 	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
 	{method}  {abstract} +close () : void
-	{method}  {abstract} +createTable ( schema : TableSchema ) : void
-	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
 	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
 	{method}  {abstract} +loadSampleDatabase () : void
 	{method}  {abstract} +loadSampleDatabase ( logInsert : ToLongFunction ) : void
@@ -127,6 +138,7 @@ interface org.rafendb.api.storage.WalSync {
 
 
 org.rafendb.api.recovery.RecoveryManager ..|>  org.rafendb.api.storage.WalSync
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageDefinition
 org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageQuery
 org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageRecovery
 org.rafendb.api.storage.StorageQuery ..|>  org.rafendb.api.storage.StorageMetadata

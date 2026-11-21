@@ -1,0 +1,17 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.optimizer.plan.InitialPlanBuilder {
+	{method} +build ( query : SelectQuery ) : QueryPlan
+}
+
+
+
+
+
+
+@enduml

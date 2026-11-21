@@ -1,0 +1,21 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.bridge.FrmBridge {
+	{method} +abort ( tx : TxId ) : TxResult
+	{method} +commit ( tx : TxId ) : TxResult
+	{method} +initializeAfterRecovery ( recovery : RecoveryInfo ) : void <<synchronized>> 
+	{method} +logBegin ( tx : TxId ) : void
+	{method} +logChange ( tx : TxId , change : ChangeRecord ) : long
+}
+
+
+
+
+
+
+@enduml

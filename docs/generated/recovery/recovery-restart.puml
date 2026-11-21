@@ -1,0 +1,27 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.recovery.restart.CrashRecoveryEngine {
+	{method} +analyze () : AnalysisResult <<synchronized>> 
+	{method} +recoverFromCrash () : boolean <<synchronized>> 
+	{method} +redo () : boolean <<synchronized>> 
+	{method} +undo () : boolean <<synchronized>> 
+}
+
+
+class org.rafendb.recovery.restart.CrashRecoveryEngine$AnalysisResult {
+	{method} +committedTransactions () : Set
+	{method} +highestTransactionId () : int
+	{method} +loserTransactions () : Set
+}
+
+
+
+
+
+
+@enduml

@@ -7,6 +7,12 @@
 ### optimizer-cost
 ![optimizer-cost](optimizer-cost.svg)
 
+### optimizer-driver
+![optimizer-driver](optimizer-driver.svg)
+
+### optimizer-explain
+![optimizer-explain](optimizer-explain.svg)
+
 ### optimizer-join
 ![optimizer-join](optimizer-join.svg)
 
@@ -15,6 +21,9 @@
 
 ### optimizer-parser
 ![optimizer-parser](optimizer-parser.svg)
+
+### optimizer-plan
+![optimizer-plan](optimizer-plan.svg)
 
 ### optimizer-rewrite
 ![optimizer-rewrite](optimizer-rewrite.svg)

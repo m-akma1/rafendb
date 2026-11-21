@@ -106,7 +106,8 @@ class IndexScanOpTest {
 
     @Test
     void nextOutsideOpenIsRejectedAndReopenRestarts() {
-        try (IndexScanOp scan = nimScan(Expr.Op.GE, 13524276)) {
+        IndexScanOp scan = nimScan(Expr.Op.GE, 13524276);
+        try {
             assertThrows(IllegalStateException.class, scan::next);
             scan.open();
             scan.next();
@@ -114,6 +115,8 @@ class IndexScanOpTest {
             assertEquals(List.of(13524276, 18224278, 18224280), nims(scan));
             scan.close();
             assertThrows(IllegalStateException.class, scan::next);
+        } finally {
+            scan.close();
         }
     }
 

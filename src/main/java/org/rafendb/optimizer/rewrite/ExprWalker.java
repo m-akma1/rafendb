@@ -145,7 +145,7 @@ final class ExprWalker {
 
     private static void collectCorrelatedFrom(FromItem from, int level, List<Expr.ColumnRef> out) {
         switch (from) {
-            case FromItem.TableRef table -> {}
+            case FromItem.TableRef _ -> {}
             case FromItem.CartesianProduct product -> {
                 collectCorrelatedFrom(product.left(), level, out);
                 collectCorrelatedFrom(product.right(), level, out);

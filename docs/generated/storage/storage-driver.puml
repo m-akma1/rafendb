@@ -1,0 +1,17 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.storage.driver.StorageDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+
+
+
+
+@enduml

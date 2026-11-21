@@ -16,6 +16,9 @@
 ### common-schema
 ![common-schema](common-schema.svg)
 
+### common-token
+![common-token](common-token.svg)
+
 ### common-tuple
 ![common-tuple](common-tuple.svg)
 

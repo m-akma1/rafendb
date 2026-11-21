@@ -1,0 +1,30 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.subquery.PlanSubqueryRunner {
+	{method} +prepare ( query : SelectQuery ) : Rows
+}
+
+
+class org.rafendb.processor.subquery.SubqueryEvaluator {
+	{method} +evaluate ( expression : Expr , row : ResultRow , schema : List ) : Value
+	{method} +evaluateCondition ( condition : Expr , row : ResultRow , schema : List ) : TruthValue
+}
+
+
+interface org.rafendb.processor.subquery.SubqueryRunner {
+	{method}  {abstract} +prepare ( query : SelectQuery ) : Rows
+}
+
+
+
+
+org.rafendb.processor.subquery.PlanSubqueryRunner ..|>  org.rafendb.processor.subquery.SubqueryRunner
+org.rafendb.processor.subquery.SubqueryEvaluator -->  org.rafendb.processor.subquery.SubqueryRunner : runner
+
+
+@enduml

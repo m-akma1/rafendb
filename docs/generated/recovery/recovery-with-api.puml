@@ -9,7 +9,7 @@ interface org.rafendb.api.recovery.RecoveryManager {
 	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
 	{method} +close () : void
 	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
-	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
 	{method}  {abstract} +forceThrough ( lsn : long ) : void
 	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
 	{method}  {abstract} +recoverFromCrash () : boolean
@@ -28,16 +28,20 @@ class org.rafendb.recovery.FRManager {
 	{method} +close () : void
 	{method} +commitTransaction ( tx : TxId ) : boolean
 	{method} +commitTransaction ( idTransaction : int ) : boolean
-	{method} +createCheckpoint () : boolean
+	{method} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
 	{method} +forceThrough ( lsn : long ) : void
+	{method} +getRecoveryInfo () : RecoveryInfo
 	{method} +getTransactionStatus ( tx : TxId ) : TxStatus
 	{method} +getTransactionStatus ( idTransaction : int ) : TxStatus
 	{method} +recoverFromCrash () : boolean
 	{method} +recoverToPointInTime () : boolean
 	{method} +recoverToPointInTime ( targetTimestamp : long ) : boolean
+	{method} +recoverToTransaction ( tx : TxId ) : boolean
+	{method} +recoverToTransaction ( idTransaction : int ) : boolean
 	{method} +redo () : boolean
 	{method} +rollbackTransaction ( tx : TxId ) : boolean
 	{method} +rollbackTransaction ( idTransaction : int ) : boolean
+	{method}  {static} +storageAdapter ( storageManager : StorageRecovery ) : UndoStorage
 	{method} +undo () : boolean
 	{method} +writeLog ( payload : LogPayload ) : long
 	{method} +writeLog ( idTransaction : int , logType : LogType , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
@@ -45,9 +49,44 @@ class org.rafendb.recovery.FRManager {
 }
 
 
+class org.rafendb.recovery.FRManager$StorageManagerUndoAdapter {
+	{method} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+	{method} +applyUndo ( tableName : String , tableGeneration : long , rid : Rid , image : String , lsn : long ) : void
+}
+
+
 class org.rafendb.recovery.checkpoint.CheckpointManager {
 	{method} +createCheckpoint () : boolean
+	{method} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
 	{method} +getLastCheckpointLsn () : long
+	{method}  {static} +readLastCompletedCheckpointLsn ( logger : Logger ) : long
+}
+
+
+class org.rafendb.recovery.driver.RecoveryDriver {
+	{method} +getFRManager () : FRManager
+	{method}  {static} +main ( args : String[] ) : void
+	{method} +runAllTests () : boolean
+	{method}  {static} +runCrashChildSimulation ( dataDir : Path , walPath : Path ) : void
+	{method} +simulateCrashAndRestart () : void
+	{method} +testInterleavedTransactionsRecovery () : boolean
+	{method} +testPointInTime () : boolean
+	{method} +testRealStorageMultiTransactionCrashRecovery () : boolean
+	{method} +testRealStorageWithoutAndWithCheckpoint () : boolean
+	{method} +testRecovery () : boolean
+	{method} +testRedo () : boolean
+	{method} +testUndo () : boolean
+}
+
+
+class org.rafendb.recovery.driver.RecoveryDriver$MockStorage {
+	{method} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+	{method} +clear () : void
+	{method} +exists ( tableName : String , idRecord : int ) : boolean
+	{method} +get ( tableName : String , idRecord : int ) : String
+	{method} +getRaw ( tableName : String , idRecord : int ) : String
+	{method} +put ( tableName : String , idRecord : int , value : String ) : void
+	{method} +snapshot () : Map
 }
 
 
@@ -72,6 +111,7 @@ class org.rafendb.recovery.log.Logger {
 	{field} +lastCommittedLSN : long
 	{method} +appendRecord ( record : WALRecord ) : long <<synchronized>> 
 	{method} +close () : void <<synchronized>> 
+	{method} +closeWithoutFlush () : void <<synchronized>> 
 	{method} +displayLogs () : void
 	{method} +displayLogsByTransaction ( idTransaction : int ) : void
 	{method} +flush () : void
@@ -83,7 +123,9 @@ class org.rafendb.recovery.log.Logger {
 	{method} +getLogsSorted () : List
 	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , rid : Rid , beforeVal : String , afterVal : String ) : long <<synchronized>> 
 	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long <<synchronized>> 
+	{method} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , tableGeneration : long , rid : Rid , beforeVal : String , afterVal : String ) : long <<synchronized>> 
 	{method} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void <<synchronized>> 
+	{method} +logTransactionEvent ( idTransaction : int , logType : LogType , timestamp : long ) : long <<synchronized>> 
 	{method} +readAllLogs () : List
 }
 
@@ -104,7 +146,6 @@ class org.rafendb.recovery.log.WALRecord {
 	{method} +printWALRecord () : void
 	{method} +printWalRecord () : void
 	{method} +serialize () : byte[]
-	{method} +setAfterValue ( afterVal : String ) : void
 }
 
 
@@ -138,6 +179,7 @@ interface org.rafendb.recovery.rollback.RollbackLog {
 	{method}  {abstract} +getLogsByTransaction ( idTransaction : int ) : List
 	{method}  {abstract} +getLogsSorted () : List
 	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , tableGeneration : long , rid : Rid , beforeVal : String , afterVal : String ) : long
 	{method}  {abstract} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void
 }
 
@@ -160,6 +202,8 @@ enum org.rafendb.recovery.rollback.RollbackStatus {
 
 interface org.rafendb.recovery.rollback.UndoStorage {
 	{method}  {abstract} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+	{method} +applyUndo ( tableName : String , tableGeneration : long , rid : Rid , image : String , lsn : long ) : void
+	{method}  {static} +legacyId ( rid : Rid ) : int
 }
 
 
@@ -170,11 +214,17 @@ org.rafendb.recovery.FRManager *--  org.rafendb.recovery.log.Logger : logger
 org.rafendb.recovery.FRManager *--  org.rafendb.recovery.restart.CrashRecoveryEngine : crashRecoveryManager
 org.rafendb.recovery.FRManager *--  org.rafendb.recovery.rollback.RollbackManager : rollbackManager
 org.rafendb.recovery.FRManager ..|>  org.rafendb.api.recovery.RecoveryManager
+org.rafendb.recovery.FRManager$StorageManagerUndoAdapter ..|>  org.rafendb.recovery.rollback.UndoStorage
 org.rafendb.recovery.checkpoint.CheckpointManager *--  org.rafendb.recovery.log.Logger : logger
+org.rafendb.recovery.driver.RecoveryDriver *--  org.rafendb.recovery.driver.RecoveryDriver$MockStorage : sessionMockStorage
+org.rafendb.recovery.driver.RecoveryDriver *--  org.rafendb.recovery.driver.RecoveryDriver$MockStorage : storage
+org.rafendb.recovery.driver.RecoveryDriver -->  org.rafendb.recovery.FRManager : frm
+org.rafendb.recovery.driver.RecoveryDriver -->  org.rafendb.recovery.FRManager : sessionFrm
+org.rafendb.recovery.driver.RecoveryDriver$MockStorage ..|>  org.rafendb.recovery.rollback.UndoStorage
 org.rafendb.recovery.log.Logger "1" o-- "0..*"  org.rafendb.recovery.log.WALRecord : records
 org.rafendb.recovery.log.Logger ..|>  org.rafendb.recovery.log.ILogFlusher
 org.rafendb.recovery.log.Logger ..|>  org.rafendb.recovery.rollback.RollbackLog
-org.rafendb.recovery.log.WALRecord -->  org.rafendb.recovery.log.LogType : logType
+org.rafendb.recovery.log.WALRecord *--  org.rafendb.recovery.log.LogType : logType
 org.rafendb.recovery.pitr.PitrManager *--  org.rafendb.recovery.log.Logger : logger
 org.rafendb.recovery.restart.CrashRecoveryEngine *--  org.rafendb.recovery.log.Logger : logger
 org.rafendb.recovery.restart.CrashRecoveryEngine *--  org.rafendb.recovery.rollback.UndoStorage : storage

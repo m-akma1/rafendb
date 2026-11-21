@@ -1,0 +1,21 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.recovery.pitr.PitrManager {
+	{method} +captureSnapshot ( timestamp : long , rows : Map ) : void <<synchronized>> 
+	{method} +getWalRecords () : List <<synchronized>> 
+	{method} +recoverToLatestCommit () : boolean <<synchronized>> 
+	{method} +recoverToTimestamp ( targetTimestamp : long ) : boolean <<synchronized>> 
+	{method} +recoverToTransaction ( transactionId : int ) : boolean <<synchronized>> 
+}
+
+
+
+
+
+
+@enduml

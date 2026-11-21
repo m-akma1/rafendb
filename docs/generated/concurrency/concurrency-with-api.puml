@@ -56,6 +56,11 @@ class org.rafendb.concurrency.bridge.FrmBridge {
 }
 
 
+class org.rafendb.concurrency.driver.ConcurrencyDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
 interface org.rafendb.concurrency.lock.DeadlockDetector {
 	{method}  {abstract} +selectVictim ( waitFor : Map ) : Optional
 }
@@ -109,6 +114,13 @@ enum org.rafendb.concurrency.protocol.Protocol$Decision {
 	{field} +ABORT_REQUIRED
 	{field} +ALLOWED
 	{field} +WAITING
+}
+
+
+class org.rafendb.concurrency.protocol.ProtocolConfig {
+	{method}  {static} +create ( type : ProtocolType ) : Protocol
+	{method}  {static} +describe ( type : ProtocolType ) : String
+	{method}  {static} +parse ( value : String ) : ProtocolType
 }
 
 
@@ -191,11 +203,14 @@ org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.protocol.P
 org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.txn.TransactionManager : txns
 org.rafendb.concurrency.bridge.FrmBridge ..|>  org.rafendb.api.concurrency.ConcurrencyLogging
 org.rafendb.concurrency.bridge.FrmBridge ..|>  org.rafendb.api.concurrency.ConcurrencyMaintenance
+org.rafendb.concurrency.driver.ConcurrencyDriver -->  org.rafendb.api.concurrency.ProtocolType : protocol
+org.rafendb.concurrency.driver.ConcurrencyDriver -->  org.rafendb.concurrency.ConcurrencyControlManager : ccm
 org.rafendb.concurrency.lock.TableLockManager ..|>  org.rafendb.concurrency.lock.LockManager
 org.rafendb.concurrency.lock.WaitForDeadlockDetector ..|>  org.rafendb.concurrency.lock.DeadlockDetector
 org.rafendb.concurrency.protocol.LockBasedProtocol *--  org.rafendb.concurrency.lock.WaitForDeadlockDetector : detector
 org.rafendb.concurrency.protocol.LockBasedProtocol -->  org.rafendb.concurrency.lock.TableLockManager : locks
 org.rafendb.concurrency.protocol.LockBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
+org.rafendb.concurrency.protocol.ProtocolConfig *--  org.rafendb.api.concurrency.ProtocolType : DEFAULT
 org.rafendb.concurrency.protocol.TimestampBasedProtocol -->  org.rafendb.concurrency.timestamp.StrictTimestampProtocol : timestamps
 org.rafendb.concurrency.protocol.TimestampBasedProtocol ..|>  org.rafendb.concurrency.protocol.Protocol
 org.rafendb.concurrency.timestamp.StrictTimestampProtocol ..|>  org.rafendb.concurrency.timestamp.TimestampProtocol

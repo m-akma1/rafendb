@@ -343,6 +343,120 @@ class SessionIntegrationTest {
         assertEquals(TxState.IDLE, survivor.transactionState());
     }
 
+    @Test
+    void aPrimaryKeyRejectsDuplicatesFromInsertAndUpdate() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+        session.execute("CREATE TABLE pk (id INTEGER PRIMARY KEY, label VARCHAR(10))");
+        affected(session, "INSERT INTO pk VALUES (1, 'one')");
+        affected(session, "INSERT INTO pk VALUES (2, 'two')");
+        affected(session, "INSERT INTO pk VALUES (3, 'three')");
+
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("INSERT INTO pk VALUES (1, 'again')"));
+        // Onto a key another row keeps, and two rows onto one new key.
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("UPDATE pk SET id = 2 WHERE id = 1"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("UPDATE pk SET id = 9 WHERE id < 3"));
+
+        assertEquals(TxState.IDLE, session.transactionState());
+        assertEquals(1, affected(session, "UPDATE pk SET id = 4 WHERE id = 3"));
+        assertEquals(1, affected(session, "UPDATE pk SET id = 1 WHERE id = 1"));
+        assertEquals(
+                List.of(List.of(Value.ofInt(1)), List.of(Value.ofInt(2)), List.of(Value.ofInt(4))),
+                rows(session, "SELECT id FROM pk ORDER BY id").rows().stream()
+                        .map(row -> row.values())
+                        .toList());
+    }
+
+    @Test
+    void aForeignKeyNeedsItsParentAndProtectsReferencedRows() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("INSERT INTO orders VALUES (61, 999, 1.0, NULL)"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("UPDATE orders SET customer_id = 999 WHERE order_id = 1"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("DELETE FROM customers WHERE customer_id = 1"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () ->
+                        session.execute(
+                                "UPDATE customers SET customer_id = 99 WHERE customer_id = 1"));
+        assertEquals(60, rows(session, "SELECT * FROM customers").rows().size());
+        assertEquals(60, rows(session, "SELECT * FROM orders").rows().size());
+
+        // Children first, then the parent goes.
+        assertEquals(1, affected(session, "DELETE FROM order_items WHERE order_id = 1"));
+        assertEquals(1, affected(session, "DELETE FROM orders WHERE customer_id = 1"));
+        assertEquals(1, affected(session, "DELETE FROM customers WHERE customer_id = 1"));
+        assertEquals(1, affected(session, "INSERT INTO orders VALUES (61, 2, 1.0, NULL)"));
+
+        // A self-referencing table: a row may reference itself, a NULL references nothing, and a
+        // parent may leave together with its children but not before them.
+        session.execute(
+                "CREATE TABLE staff (id INTEGER PRIMARY KEY, boss INTEGER,"
+                        + " FOREIGN KEY (boss) REFERENCES staff (id))");
+        affected(session, "INSERT INTO staff VALUES (1, 1)");
+        affected(session, "INSERT INTO staff VALUES (2, NULL)");
+        affected(session, "INSERT INTO staff VALUES (3, 2)");
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("INSERT INTO staff VALUES (4, 7)"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("DELETE FROM staff WHERE id = 2"));
+        assertEquals(2, affected(session, "DELETE FROM staff WHERE id >= 2"));
+    }
+
+    @Test
+    void aViolationInsideBeginFailsTheTransactionAndUndoesItsWrites() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+        session.execute("BEGIN");
+        assertEquals(1, affected(session, "INSERT INTO customers VALUES (61, 'New', 1.5, 'A')"));
+
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("INSERT INTO customers VALUES (61, 'Again', 1.5, 'A')"));
+        assertEquals(TxState.FAILED, session.transactionState());
+        session.execute("ABORT");
+
+        assertEquals(
+                0, rows(session, "SELECT * FROM customers WHERE customer_id = 61").rows().size());
+    }
+
+    @Test
+    void aChildInsertHoldsTheParentSoAParentDeleteCannotSlipPast() throws Exception {
+        stack = new Stack(dir, true);
+        Session child = stack.processor.openSession();
+        Session parent = stack.processor.openSession();
+        affected(parent, "INSERT INTO customers VALUES (61, 'New', 1.5, 'A')");
+        child.execute("BEGIN");
+        affected(child, "INSERT INTO orders VALUES (61, 61, 1.0, NULL)");
+
+        // The delete must wait for the child's transaction, or it would miss the new reference.
+        CompletableFuture<QueryResult> delete =
+                CompletableFuture.supplyAsync(
+                        () -> parent.execute("DELETE FROM customers WHERE customer_id = 61"));
+        assertThrows(TimeoutException.class, () -> delete.get(300, TimeUnit.MILLISECONDS));
+        child.execute("COMMIT");
+
+        assertInstanceOf(
+                ProcessorRuntimeException.class, failureOf(() -> delete.get(10, TimeUnit.SECONDS)));
+        assertEquals(
+                1, rows(child, "SELECT * FROM customers WHERE customer_id = 61").rows().size());
+    }
+
     private static QueryResult.Rows rows(Session session, String sql) {
         return (QueryResult.Rows) session.execute(sql);
     }

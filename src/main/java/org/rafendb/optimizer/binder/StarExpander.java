@@ -10,9 +10,12 @@ import org.rafendb.common.expr.Expr.ColumnRef;
 final class StarExpander {
     private StarExpander() {}
 
-    /** An empty projection or a lone {@code *} / {@code t.*} means "all columns". */
+    /**
+     * An empty projection or a lone {@code *} / {@code t.*} means "all columns". The parser emits a
+     * star as a {@link ColumnRef} whose column is {@code *}; an empty projection comes from queries
+     * built by hand.
+     */
     static boolean isStar(List<Expr> projection) {
-        // TODO(contract): keep the accepted star encodings here as the parser contract settles.
         return projection.isEmpty() || projection.size() == 1 && isStarItem(projection.get(0));
     }
 

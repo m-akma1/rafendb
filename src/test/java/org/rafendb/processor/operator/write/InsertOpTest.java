@@ -13,7 +13,6 @@ import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.error.TransactionAbortedException;
@@ -38,8 +37,6 @@ class InsertOpTest {
                             Value.ofText(DataType.VARCHAR, "alice"),
                             Value.ofFloat(10f)));
     private static final Rid RID = new Rid(7, 50);
-    private static final TxId TX = new TxId(1);
-
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
     private final FakeStorage storage = new FakeStorage(SCHEMA, List.of(), events);
@@ -47,12 +44,13 @@ class InsertOpTest {
     private final InsertOp insert = new InsertOp("t", ROW.values(), session);
 
     @Test
-    void locksReservesLogsThenInserts() {
+    void locksChecksTheKeyReservesLogsThenInserts() {
         assertEquals(1L, insert.execute());
 
         assertEquals(
                 List.of(
                         "ccm.access WRITE t",
+                        "sm.scan",
                         "sm.reserveRid",
                         "ccm.log INSERT lsn=100",
                         "sm.insert lsn=100"),
@@ -89,7 +87,7 @@ class InsertOpTest {
         IllegalStateException e = assertThrows(IllegalStateException.class, insert::execute);
 
         assertInstanceOf(StorageInternalException.class, e.getCause());
-        assertEquals(List.of("ccm.access WRITE t", "sm.reserveRid (fails)"), events);
+        assertEquals(List.of("ccm.access WRITE t", "sm.scan", "sm.reserveRid (fails)"), events);
     }
 
     @Test
@@ -98,7 +96,7 @@ class InsertOpTest {
 
         assertThrows(StorageRuntimeException.class, insert::execute);
 
-        assertEquals(List.of("ccm.access WRITE t", "sm.reserveRid (fails)"), events);
+        assertEquals(List.of("ccm.access WRITE t", "sm.scan", "sm.reserveRid (fails)"), events);
     }
 
     @Test
@@ -110,6 +108,7 @@ class InsertOpTest {
         assertEquals(
                 List.of(
                         "ccm.access WRITE t",
+                        "sm.scan",
                         "sm.reserveRid",
                         "sm.encodeRow (fails)",
                         "sm.cancelReservation"),
@@ -126,6 +125,7 @@ class InsertOpTest {
         assertEquals(
                 List.of(
                         "ccm.access WRITE t",
+                        "sm.scan",
                         "sm.reserveRid",
                         "ccm.log (fails)",
                         "ccm.abort T1",
@@ -145,6 +145,7 @@ class InsertOpTest {
         assertEquals(
                 List.of(
                         "ccm.access WRITE t",
+                        "sm.scan",
                         "sm.reserveRid",
                         "ccm.log INSERT lsn=100",
                         "sm.insert (fails)",

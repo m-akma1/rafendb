@@ -5,6 +5,11 @@ hide empty members
 skinparam linetype ortho
 
 
+class org.rafendb.optimizer.rewrite.PlanRewriter {
+	{method} +rewrite ( root : PlanNode ) : PlanNode
+}
+
+
 class org.rafendb.optimizer.rewrite.ProjectionPushdownRule {
 	{method} +apply ( root : PlanNode ) : PlanNode
 }
@@ -24,6 +29,7 @@ class org.rafendb.optimizer.rewrite.SelectionPushdownRule {
 
 
 
+org.rafendb.optimizer.rewrite.PlanRewriter "1" o-- "0..*"  org.rafendb.optimizer.rewrite.RewriteRule : rules
 org.rafendb.optimizer.rewrite.ProjectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 org.rafendb.optimizer.rewrite.SelectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 

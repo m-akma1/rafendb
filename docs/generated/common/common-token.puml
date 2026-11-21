@@ -1,0 +1,47 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.common.token.SourcePosition {
+	{method} +column () : int
+	{method} +line () : int
+	{method} +offset () : int
+}
+
+
+class org.rafendb.common.token.Token {
+	{method} +isEof () : boolean
+	{method} +isKeyword ( keyword : String ) : boolean
+	{method} +isPunctuation ( symbol : String ) : boolean
+	{method}  {static} +isTextKeyword ( keyword : String ) : boolean
+	{method} +position () : SourcePosition
+	{method} +text () : String
+	{method} +type () : TokenType
+}
+
+
+enum org.rafendb.common.token.Token$TokenType {
+	{field} +ARITHMETIC_OPERATOR
+	{field} +COMPARISON_OPERATOR
+	{field} +EOF
+	{field} +FLOAT_LITERAL
+	{field} +IDENTIFIER
+	{field} +INTEGER_LITERAL
+	{field} +KEYWORD
+	{field} +PUNCTUATION
+	{field} +STRING_LITERAL
+	{field} +UNKNOWN
+}
+
+
+
+
+org.rafendb.common.token.SourcePosition *--  org.rafendb.common.token.SourcePosition : START
+org.rafendb.common.token.Token *--  org.rafendb.common.token.SourcePosition : position
+org.rafendb.common.token.Token *--  org.rafendb.common.token.Token$TokenType : type
+
+
+@enduml

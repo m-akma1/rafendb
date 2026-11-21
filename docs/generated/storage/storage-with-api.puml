@@ -11,30 +11,51 @@ interface org.rafendb.api.storage.RecordCursor {
 }
 
 
+interface org.rafendb.api.storage.StorageDefinition {
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+}
+
+
 interface org.rafendb.api.storage.StorageManager {
-	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
-	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
 	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
 	{method}  {abstract} +close () : void
-	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
-	{method}  {abstract} +createTable ( schema : TableSchema ) : void
-	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
-	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
-	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
-	{method}  {abstract} +flush () : void
+	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
+	{method}  {abstract} +loadSampleDatabase () : void
+	{method}  {abstract} +loadSampleDatabase ( logInsert : ToLongFunction ) : void
+	{method}  {abstract} +reloadAfterRestore () : void
+}
+
+
+interface org.rafendb.api.storage.StorageMetadata {
 	{method}  {abstract} +getSchema ( table : String ) : TableSchema
 	{method}  {abstract} +getStats ( table : String ) : TableStats
-	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
 	{method}  {abstract} +listIndexes ( table : String ) : List
-	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
 	{method}  {abstract} +listTables () : List
-	{method}  {abstract} +loadSampleDatabase () : void
+}
+
+
+interface org.rafendb.api.storage.StorageQuery {
+	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
+	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
+	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +encodeRow ( table : String , row : Row ) : byte[]
+	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
+	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
 	{method}  {abstract} +lookupIndex ( index : String , key : Value ) : List
 	{method}  {abstract} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
-	{method}  {abstract} +reloadAfterRestore () : void
 	{method}  {abstract} +reserveRid ( table : String , row : Row ) : Rid
 	{method}  {abstract} +scan ( table : String ) : RecordCursor
 	{method}  {abstract} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void
+}
+
+
+interface org.rafendb.api.storage.StorageRecovery {
+	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
+	{method}  {abstract} +decodeRow ( table : String , image : byte[] ) : Row
+	{method}  {abstract} +flush () : void
+	{method}  {abstract} +getTableGeneration ( table : String ) : UUID
+	{method}  {abstract} +listTables () : List
 }
 
 
@@ -50,18 +71,22 @@ class org.rafendb.storage.StorageManagerImpl {
 	{method} +close () : void <<synchronized>> 
 	{method} +createIndex ( index : IndexInfo ) : void <<synchronized>> 
 	{method} +createTable ( schema : TableSchema ) : void <<synchronized>> 
+	{method} +decodeRow ( table : String , image : byte[] ) : Row <<synchronized>> 
 	{method} +delete ( table : String , rid : Rid , lsn : long ) : boolean <<synchronized>> 
 	{method} +dropTable ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +encodeRow ( table : String , row : Row ) : byte[] <<synchronized>> 
 	{method} +fetch ( table : String , rid : Rid ) : Optional <<synchronized>> 
 	{method} +flush () : void <<synchronized>> 
 	{method} +getSchema ( table : String ) : TableSchema <<synchronized>> 
 	{method} +getStats ( table : String ) : TableStats <<synchronized>> 
+	{method} +getTableGeneration ( table : String ) : UUID <<synchronized>> 
 	{method} +initializeIndexes () : void <<synchronized>> 
 	{method} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid <<synchronized>> 
 	{method} +listIndexes ( table : String ) : List <<synchronized>> 
 	{method} +listReferencingForeignKeys ( table : String ) : List <<synchronized>> 
 	{method} +listTables () : List <<synchronized>> 
 	{method} +loadSampleDatabase () : void <<synchronized>> 
+	{method} +loadSampleDatabase ( logInsert : ToLongFunction ) : void <<synchronized>> 
 	{method} +lookupIndex ( index : String , key : Value ) : List <<synchronized>> 
 	{method} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List <<synchronized>> 
 	{method} +reloadAfterRestore () : void <<synchronized>> 
@@ -88,6 +113,7 @@ class org.rafendb.storage.catalog.CatalogManager {
 	{method} +dropTable ( table : String , cascade : boolean ) : void <<synchronized>> 
 	{method} +getIndex ( name : String ) : IndexInfo <<synchronized>> 
 	{method} +getSchema ( table : String ) : TableSchema <<synchronized>> 
+	{method} +getTableGeneration ( table : String ) : UUID <<synchronized>> 
 	{method} +indexFile ( name : String ) : String <<synchronized>> 
 	{method} +listIndexes ( table : String ) : List <<synchronized>> 
 	{method} +listReferencingForeignKeys ( table : String ) : List <<synchronized>> 
@@ -105,6 +131,11 @@ class org.rafendb.storage.catalog.CatalogManager {
 	{method} +validateDrop ( table : String , cascade : boolean ) : void <<synchronized>> 
 	{method} +validateRow ( table : String , row : Row ) : void <<synchronized>> 
 	{method} +validateTable ( schema : TableSchema ) : void <<synchronized>> 
+}
+
+
+class org.rafendb.storage.driver.StorageDriver {
+	{method}  {static} +main ( args : String[] ) : void
 }
 
 
@@ -256,17 +287,31 @@ class org.rafendb.storage.record.TableScan {
 }
 
 
+class org.rafendb.storage.seed.SampleDatabaseLoader {
+	{method} +countRows ( storage : StorageManager , table : String ) : long
+	{method} +load ( storage : StorageManager ) : void
+	{method} +load ( storage : StorageManager , logInsert : ToLongFunction ) : void
+	{method}  {static} +seededTables () : List
+}
 
 
+
+
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageDefinition
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageQuery
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageRecovery
+org.rafendb.api.storage.StorageQuery ..|>  org.rafendb.api.storage.StorageMetadata
 org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.buffer.BufferManager : buffers
 org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.catalog.CatalogManager : catalog
 org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.file.BlockManager : blocks
 org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.index.IndexManager : indexes
 org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.record.RecordSerializer : serializer
+org.rafendb.storage.StorageManagerImpl *--  org.rafendb.storage.seed.SampleDatabaseLoader : samples
 org.rafendb.storage.StorageManagerImpl ..|>  org.rafendb.api.storage.StorageManager
 org.rafendb.storage.buffer.BufferManager "1" o-- "0..*"  org.rafendb.storage.file.BlockId : cached
 org.rafendb.storage.buffer.BufferManager *--  org.rafendb.api.storage.WalSync : wal
 org.rafendb.storage.buffer.BufferManager *--  org.rafendb.storage.file.BlockManager : blocks
+org.rafendb.storage.driver.StorageDriver -->  org.rafendb.api.storage.StorageManager : storage
 org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.buffer.BufferManager : buffers
 org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.catalog.CatalogManager : catalog
 org.rafendb.storage.index.IndexManager *--  org.rafendb.storage.file.BlockManager : blocks

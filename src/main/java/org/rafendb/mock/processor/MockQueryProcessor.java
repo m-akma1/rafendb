@@ -5,7 +5,6 @@ import java.util.Locale;
 import java.util.Objects;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.processor.Session;
-import org.rafendb.api.processor.Session.TxState;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.QueryResult;
 import org.rafendb.common.tuple.Row;

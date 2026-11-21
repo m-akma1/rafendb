@@ -1,0 +1,18 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.schema.ColumnSchema {
+	{method} +reference () : ColumnRef
+	{method} +type () : DataType
+}
+
+
+
+
+
+
+@enduml

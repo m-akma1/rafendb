@@ -11,6 +11,7 @@ interface org.rafendb.recovery.rollback.RollbackLog {
 	{method}  {abstract} +getLogsByTransaction ( idTransaction : int ) : List
 	{method}  {abstract} +getLogsSorted () : List
 	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , idRecord : int , beforeVal : String , afterVal : String ) : long
+	{method}  {abstract} +logDataChange ( idTransaction : int , logType : LogType , timestamp : long , tableName : String , tableGeneration : long , rid : Rid , beforeVal : String , afterVal : String ) : long
 	{method}  {abstract} +logTransactionEvent ( idTransaction : int , logType : LogType ) : void
 }
 
@@ -33,6 +34,8 @@ enum org.rafendb.recovery.rollback.RollbackStatus {
 
 interface org.rafendb.recovery.rollback.UndoStorage {
 	{method}  {abstract} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+	{method} +applyUndo ( tableName : String , tableGeneration : long , rid : Rid , image : String , lsn : long ) : void
+	{method}  {static} +legacyId ( rid : Rid ) : int
 }
 
 

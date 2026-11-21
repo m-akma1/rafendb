@@ -1,0 +1,17 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.session.QueryProcessorImpl {
+	{method} +openSession () : Session
+}
+
+
+
+
+
+
+@enduml

@@ -1,0 +1,32 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.server.ResultRenderer {
+	{method}  {static} +cell ( value : Value ) : String
+	{method}  {static} +render ( result : QueryResult ) : String
+}
+
+
+class org.rafendb.server.ServerConfig {
+	{field} {static} +DEFAULT_PORT : int
+	{method}  {static} +defaults () : ServerConfig
+	{method} +port () : int
+	{method} +shutdownTimeout () : Duration
+}
+
+
+class org.rafendb.server.ServerMain {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+
+
+org.rafendb.server.ServerMain *--  org.rafendb.server.ServerConfig : config
+
+
+@enduml

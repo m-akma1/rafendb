@@ -7,6 +7,8 @@ import java.util.ArrayList;
  * urutan lintas komponen (lock, log, tulis ke SM) bisa dicek dalam satu list.
  */
 public final class EventLog extends ArrayList<String> {
+    private static final long serialVersionUID = 1L;
+
     /** Berapa kejadian yang diawali {@code prefix}. */
     public int count(String prefix) {
         return (int) stream().filter(event -> event.startsWith(prefix)).count();

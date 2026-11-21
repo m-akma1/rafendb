@@ -16,8 +16,9 @@ import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * Operator DELETE (QP-07). Kumpulin dulu semua baris target dari child sekalian encode
- * before-image-nya, child ditutup, baru tiap baris di-log ke CCM terus dihapus di SM satu-satu.
- * Lock tulis tabel diminta sekali di awal.
+ * before-image-nya, child ditutup, foreign key yang nunjuk ke baris-baris itu dicek ({@link
+ * ConstraintChecker}), baru tiap baris di-log ke CCM terus dihapus di SM satu-satu. Lock tulis
+ * tabel diminta sekali di awal.
  *
  * <p>Ga thread-safe, satu instance buat satu eksekusi.
  */
@@ -25,6 +26,7 @@ public final class DeleteOp implements DMLOperator {
     private final Operator child;
     private final String table;
     private final StorageQuery storage;
+    private final SessionView context;
     private final WriteSupport support;
 
     /**
@@ -41,6 +43,7 @@ public final class DeleteOp implements DMLOperator {
         this.child = Objects.requireNonNull(child, "child");
         this.table = Objects.requireNonNull(table, "table");
         this.storage = Objects.requireNonNull(context.storageDQL(), "storage");
+        this.context = context;
         this.support = new WriteSupport(context);
     }
 
@@ -56,6 +59,8 @@ public final class DeleteOp implements DMLOperator {
     public Long execute() {
         TxId tx;
         List<ChangeRecord> changes = new ArrayList<>();
+        List<Rid> rids = new ArrayList<>();
+        List<Row> rows = new ArrayList<>();
         try {
             tx = support.requireTx();
             support.acquireWrite(tx, table);
@@ -65,12 +70,17 @@ public final class DeleteOp implements DMLOperator {
                 if (row.rid() == null) {
                     throw new IllegalStateException("DELETE child produced a row without RID");
                 }
-                changes.add(support.deleteChange(table, row.rid(), new Row(row.values())));
+                Row before = new Row(row.values());
+                changes.add(support.deleteChange(table, row.rid(), before));
+                rids.add(row.rid());
+                rows.add(before);
                 row = child.next();
             }
         } finally {
             child.close();
         }
+        // Foreign keys that reference the deleted rows, before anything is logged.
+        new ConstraintChecker(context).checkDelete(table, rids, rows);
 
         long deleted = 0;
         for (ChangeRecord change : changes) {

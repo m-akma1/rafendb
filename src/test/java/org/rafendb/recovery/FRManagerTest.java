@@ -205,6 +205,7 @@ class FRManagerTest {
                                         return method.invoke(realSm, args);
                                     });
 
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager connectedFrm = new FRManager(connectedLogger, countingSm);
             Rid largeSlotRid = new Rid(3L, 1500);
             ChangeRecord change =
@@ -256,6 +257,7 @@ class FRManagerTest {
         try (Logger realLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager realSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(realLogger, realSm);
             realSm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -339,6 +341,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
@@ -369,6 +372,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -481,6 +485,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertTrue(restartedSm.fetch("items", committedRid).isPresent());
@@ -509,6 +514,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -585,6 +591,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
@@ -611,6 +618,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 16, logger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(logger, sm);
             TxId tx1 = new TxId(1);
             assertTrue(realFrm.beginTransaction(tx1));
@@ -648,6 +656,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 16, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             long customerCountAfter = 0;
@@ -708,6 +717,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -802,6 +812,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
@@ -875,6 +886,7 @@ class FRManagerTest {
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -966,6 +978,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
@@ -1234,6 +1247,7 @@ class FRManagerTest {
         try (Logger finalLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager finalSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, finalLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager finalFrm = new FRManager(finalLogger, finalSm);
             assertTrue(finalFrm.recoverFromCrash());
             assertEquals(
@@ -1368,6 +1382,7 @@ class FRManagerTest {
         try (Logger realLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager realSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager adapterFrm = new FRManager(realLogger, FRManager.storageAdapter(realSm));
             realSm.createTable(
                     new org.rafendb.common.schema.TableSchema(
@@ -1421,6 +1436,7 @@ class FRManagerTest {
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager restartedFrm =
                     new FRManager(restartedLogger, FRManager.storageAdapter(restartedSm));
             assertTrue(restartedFrm.recoverFromCrash());
@@ -1447,6 +1463,7 @@ class FRManagerTest {
         try (Logger realLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager realSm =
                         org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            @SuppressWarnings("resource") // closes only its Logger, which the try owns
             FRManager realFrm = new FRManager(realLogger, realSm);
             realSm.createTable(
                     new org.rafendb.common.schema.TableSchema(

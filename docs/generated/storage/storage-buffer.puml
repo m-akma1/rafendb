@@ -1,0 +1,25 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.storage.buffer.BufferManager {
+	{method} +close () : void
+	{method} +flushAll () : void
+	{method} +flushPage ( block : BlockId ) : void
+	{method} +invalidateAll () : void
+	{method} +invalidateFile ( fileName : String ) : void
+	{method} +markDirty ( block : BlockId , lsn : long ) : void <<synchronized>> 
+	{method} +markUnloggedDirty ( block : BlockId ) : void <<synchronized>> 
+	{method} +pin ( block : BlockId ) : ByteBuffer
+	{method} +unpin ( block : BlockId ) : void <<synchronized>> 
+}
+
+
+
+
+
+
+@enduml

@@ -56,6 +56,7 @@ import org.rafendb.optimizer.rewrite.PlanRewriter;
 import org.rafendb.processor.session.QueryProcessorImpl;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.storage.StorageManagerImpl;
 import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
@@ -360,7 +361,6 @@ public final class Engine implements AutoCloseable {
      * Wires the M1 storage graph with 4096-byte pages and the caller's FRM WAL implementation.
      * Loads the catalog and prepares indexes before FRM recovery; admission remains the startup
      * coordinator's job. Recovery must use applyRecovery so rebuilt indexes follow undo/redo.
-     * Module TODOs fail explicitly until their owners implement them.
      */
     public static StorageManager storage(Path directory, int bufferFrames, WalSync wal)
             throws StorageInternalException {
@@ -421,11 +421,11 @@ public final class Engine implements AutoCloseable {
             StorageManager storage,
             RecoveryManager recovery,
             long maxTransactionId,
-            AutoCloseable wal,
+            Logger wal,
             FileChannel lockFile)
             implements AutoCloseable {
         @Override
-        public void close() throws Exception {
+        public void close() throws IOException, LoggerErrorException, StorageInternalException {
             try (lockFile;
                     wal;
                     storage) {

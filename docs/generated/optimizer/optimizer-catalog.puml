@@ -6,7 +6,9 @@ skinparam linetype ortho
 
 
 class org.rafendb.optimizer.catalog.CachingCatalog {
+	{method} +beginStatement () : void
 	{method} +getSchema ( table : String ) : TableSchema
+	{method} +invalidateAll () : void
 	{method} +listIndexes ( table : String ) : List
 	{method} +listTables () : List
 }
@@ -17,6 +19,11 @@ interface org.rafendb.optimizer.catalog.Catalog {
 	{method}  {abstract} +getStats ( table : String ) : TableStats
 	{method}  {abstract} +listIndexes ( table : String ) : List
 	{method}  {abstract} +listTables () : List
+}
+
+
+interface org.rafendb.optimizer.catalog.StatementScopedCatalog {
+	{method}  {abstract} +beginStatement () : void
 }
 
 
@@ -31,7 +38,8 @@ class org.rafendb.optimizer.catalog.StorageManagerCatalog {
 
 
 org.rafendb.optimizer.catalog.CachingCatalog *--  org.rafendb.optimizer.catalog.Catalog : delegate
-org.rafendb.optimizer.catalog.CachingCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
+org.rafendb.optimizer.catalog.CachingCatalog ..|>  org.rafendb.optimizer.catalog.StatementScopedCatalog
+org.rafendb.optimizer.catalog.StatementScopedCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
 org.rafendb.optimizer.catalog.StorageManagerCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
 
 

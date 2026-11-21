@@ -13,6 +13,7 @@ interface org.rafendb.optimizer.binder.Binder {
 class org.rafendb.optimizer.binder.QueryBinder {
 	{method} +bind ( parsed : ParsedQuery ) : ParsedQuery
 	{method} +bind ( query : SelectQuery ) : SelectQuery
+	{method} +catalog () : Catalog
 }
 
 

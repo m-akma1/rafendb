@@ -28,6 +28,11 @@ class org.rafendb.concurrency.bridge.FrmBridge {
 }
 
 
+class org.rafendb.concurrency.driver.ConcurrencyDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
 interface org.rafendb.concurrency.lock.DeadlockDetector {
 	{method}  {abstract} +selectVictim ( waitFor : Map ) : Optional
 }
@@ -81,6 +86,14 @@ enum org.rafendb.concurrency.protocol.Protocol$Decision {
 	{field} +ABORT_REQUIRED
 	{field} +ALLOWED
 	{field} +WAITING
+}
+
+
+class org.rafendb.concurrency.protocol.ProtocolConfig {
+	{field} {static} +DEFAULT : ProtocolType
+	{method}  {static} +create ( type : ProtocolType ) : Protocol
+	{method}  {static} +describe ( type : ProtocolType ) : String
+	{method}  {static} +parse ( value : String ) : ProtocolType
 }
 
 
@@ -158,6 +171,7 @@ org.rafendb.concurrency.ConcurrencyControlManager *--  org.rafendb.concurrency.p
 org.rafendb.concurrency.ConcurrencyControlManager *--  org.rafendb.concurrency.txn.TransactionManager : txns
 org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.protocol.Protocol : protocol
 org.rafendb.concurrency.bridge.FrmBridge *--  org.rafendb.concurrency.txn.TransactionManager : txns
+org.rafendb.concurrency.driver.ConcurrencyDriver -->  org.rafendb.concurrency.ConcurrencyControlManager : ccm
 org.rafendb.concurrency.lock.TableLockManager ..|>  org.rafendb.concurrency.lock.LockManager
 org.rafendb.concurrency.lock.WaitForDeadlockDetector ..|>  org.rafendb.concurrency.lock.DeadlockDetector
 org.rafendb.concurrency.protocol.LockBasedProtocol *--  org.rafendb.concurrency.lock.WaitForDeadlockDetector : detector

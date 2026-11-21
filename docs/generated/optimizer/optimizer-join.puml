@@ -33,7 +33,7 @@ enum org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode {
 
 
 class org.rafendb.optimizer.join.JoinOptimizer {
-	{method} +generateCandidates ( root : PlanNode , storage : StorageManager ) : List
+	{method} +generateCandidates ( root : PlanNode , storage : StorageMetadata ) : List
 	{method} +normalize ( root : PlanNode ) : PlanNode
 }
 

@@ -1,0 +1,41 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.recovery.driver.RecoveryDriver {
+	{method} +getFRManager () : FRManager
+	{method}  {static} +main ( args : String[] ) : void
+	{method} +runAllTests () : boolean
+	{method}  {static} +runCrashChildSimulation ( dataDir : Path , walPath : Path ) : void
+	{method} +simulateCrashAndRestart () : void
+	{method} +testInterleavedTransactionsRecovery () : boolean
+	{method} +testPointInTime () : boolean
+	{method} +testRealStorageMultiTransactionCrashRecovery () : boolean
+	{method} +testRealStorageWithoutAndWithCheckpoint () : boolean
+	{method} +testRecovery () : boolean
+	{method} +testRedo () : boolean
+	{method} +testUndo () : boolean
+}
+
+
+class org.rafendb.recovery.driver.RecoveryDriver$MockStorage {
+	{method} +applyUndo ( tableName : String , idRecord : int , image : String , lsn : long ) : void
+	{method} +clear () : void
+	{method} +exists ( tableName : String , idRecord : int ) : boolean
+	{method} +get ( tableName : String , idRecord : int ) : String
+	{method} +getRaw ( tableName : String , idRecord : int ) : String
+	{method} +put ( tableName : String , idRecord : int , value : String ) : void
+	{method} +snapshot () : Map
+}
+
+
+
+
+org.rafendb.recovery.driver.RecoveryDriver *--  org.rafendb.recovery.driver.RecoveryDriver$MockStorage : sessionMockStorage
+org.rafendb.recovery.driver.RecoveryDriver *--  org.rafendb.recovery.driver.RecoveryDriver$MockStorage : storage
+
+
+@enduml
