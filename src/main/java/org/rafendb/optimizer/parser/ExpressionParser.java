@@ -14,6 +14,7 @@ import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.expr.Expr.Literal;
 import org.rafendb.common.expr.Expr.Null;
 import org.rafendb.common.expr.Expr.Op;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.token.Token;
 import org.rafendb.common.token.Token.TokenType;
 import org.rafendb.common.type.DataType;
@@ -37,29 +38,77 @@ final class ExpressionParser {
                     "=", Op.EQ, "<>", Op.NE, "!=", Op.NE, ">", Op.GT, ">=", Op.GE, "<", Op.LT, "<=",
                     Op.LE);
 
+    private final String sql;
     private final TokenCursor in;
+    private final boolean allowSubqueries;
 
     /**
      * Creates a parser that reads from, and advances, the given cursor.
      *
+     * @param sql the SQL string
      * @param in the shared token cursor
      */
     ExpressionParser(TokenCursor in) {
+        this.sql = "";
         this.in = in;
+        this.allowSubqueries = false;
     }
 
     /**
-     * Parses a WHERE / JOIN ... ON condition: comparisons joined by AND.
+     * Creates a parser that reads from, and advances, the given cursor.
      *
-     * @return the expression tree
-     * @throws SyntaxException if the expression is incomplete or malformed
+     * @param sql the SQL string
+     * @param in the shared token cursor
      */
+    ExpressionParser(String sql, TokenCursor in) {
+        this.sql = sql;
+        this.in = in;
+        this.allowSubqueries = false;
+    }
+
+    /**
+     * Creates a parser that reads from, and advances, the given cursor.
+     *
+     * @param sql the SQL string
+     * @param in the shared token cursor
+     * @param allowSubqueries whether subqueries are allowed
+     */
+    ExpressionParser(String sql, TokenCursor in, boolean allowSubqueries) {
+        this.sql = sql;
+        this.in = in;
+        this.allowSubqueries = allowSubqueries;
+    }
+
     Expr parseCondition() {
-        Expr left = parseComparison();
-        while (in.acceptKeyword("AND")) {
-            left = new Binary(Op.AND, left, parseComparison());
+        return parseOr();
+    }
+
+    private Expr parseOr() {
+        Expr left = parseAnd();
+
+        while (in.acceptKeyword("OR")) {
+            left = new Binary(Op.OR, left, parseAnd());
         }
+
         return left;
+    }
+
+    private Expr parseAnd() {
+        Expr left = parseNot();
+
+        while (in.acceptKeyword("AND")) {
+            left = new Binary(Op.AND, left, parseNot());
+        }
+
+        return left;
+    }
+
+    private Expr parseNot() {
+        if (in.acceptKeyword("NOT")) {
+            return new Expr.Not(parseNot());
+        }
+
+        return parseComparison();
     }
 
     /**
@@ -73,13 +122,41 @@ final class ExpressionParser {
     }
 
     private Expr parseComparison() {
-        Expr left = parseAdditive();
-        Op op = opAt(COMPARISON_OPERATOR, CMP);
-        if (op == null) {
-            return left;
+        Token t = in.peek();
+        if (in.acceptKeyword("EXISTS")) {
+            if (!allowSubqueries) {
+                throw in.error(t, "Subqueries are not allowed here");
+            }
+            in.expectPunct("(");
+            SelectQuery query = SelectParser.parseBody(sql, in);
+            in.expectPunct(")");
+            return new Expr.ExistsSubquery(query);
         }
-        in.next();
-        return new Binary(op, left, parseAdditive());
+        Expr left = parseAdditive();
+        t = in.peek();
+        boolean negated = false;
+        if (in.acceptKeyword("NOT")) {
+            if (!in.acceptKeyword("IN")) {
+                throw in.error(t, "IN");
+            }
+            negated = true;
+        } else if (!in.acceptKeyword("IN")) {
+            Op op = opAt(COMPARISON_OPERATOR, CMP);
+            if (op == null) {
+                return left;
+            }
+            in.next();
+            return new Binary(op, left, parseAdditive());
+        }
+        // IN subquery
+        if (!allowSubqueries) {
+            throw in.error(t, "Subqueries are not allowed here");
+        }
+        in.expectPunct("(");
+        SelectQuery query = SelectParser.parseBody(sql, in);
+        in.expectPunct(")");
+        Expr result = new Expr.InSubquery(left, query);
+        return negated ? new Expr.Not(result) : result;
     }
 
     private Expr parseAdditive() {
@@ -137,6 +214,14 @@ final class ExpressionParser {
             case PUNCTUATION -> {
                 if (!t.isPunctuation("(")) {
                     throw in.error(t, "an operand");
+                }
+                if (in.peek().isKeyword("SELECT")) {
+                    if (!allowSubqueries) {
+                        throw in.error(t, "Subqueries are not allowed here");
+                    }
+                    SelectQuery query = SelectParser.parseBody(sql, in);
+                    in.expectPunct(")");
+                    yield new Expr.ScalarSubquery(query);
                 }
                 Expr inner = parseCondition();
                 in.expectPunct(")");

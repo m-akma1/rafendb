@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.query.FromItem;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.schema.ColumnSchema;
@@ -191,6 +193,53 @@ class DefaultExpressionEvaluatorTest {
                         truth(binary(Expr.Op.AND, predicate(values[i]), predicate(values[j]))));
             }
         }
+    }
+
+    @Test
+    void handlesEveryThreeValuedOrAndNotCombination() {
+        TruthValue[] values = {TruthValue.TRUE, TruthValue.FALSE, TruthValue.UNKNOWN};
+        TruthValue[][] or = {
+            {TruthValue.TRUE, TruthValue.TRUE, TruthValue.TRUE},
+            {TruthValue.TRUE, TruthValue.FALSE, TruthValue.UNKNOWN},
+            {TruthValue.TRUE, TruthValue.UNKNOWN, TruthValue.UNKNOWN}
+        };
+        TruthValue[] not = {TruthValue.FALSE, TruthValue.TRUE, TruthValue.UNKNOWN};
+        for (int i = 0; i < values.length; i++) {
+            assertEquals(not[i], truth(new Expr.Not(predicate(values[i]))));
+            for (int j = 0; j < values.length; j++) {
+                assertEquals(
+                        or[i][j],
+                        truth(binary(Expr.Op.OR, predicate(values[i]), predicate(values[j]))));
+            }
+        }
+    }
+
+    @Test
+    void orShortCircuitsTrueButEvaluatesRightSideOfFalse() {
+        Expr divideByZero =
+                binary(Expr.Op.EQ, binary(Expr.Op.DIV, integer(1), integer(0)), integer(1));
+        assertEquals(
+                TruthValue.TRUE,
+                truth(binary(Expr.Op.OR, predicate(TruthValue.TRUE), divideByZero)));
+        assertThrows(
+                ArithmeticException.class,
+                () -> truth(binary(Expr.Op.OR, predicate(TruthValue.FALSE), divideByZero)));
+    }
+
+    @Test
+    void rejectsNotAndSubqueriesAsScalars() {
+        SelectQuery query =
+                new SelectQuery(
+                        "", List.of(integer(1)), new FromItem.TableRef("t"), null, List.of());
+        for (Expr expression :
+                List.of(
+                        new Expr.Not(predicate(TruthValue.TRUE)),
+                        new Expr.ScalarSubquery(query),
+                        new Expr.InSubquery(integer(1), query),
+                        new Expr.ExistsSubquery(query))) {
+            assertThrows(IllegalArgumentException.class, () -> scalar(expression));
+        }
+        assertThrows(IllegalArgumentException.class, () -> truth(new Expr.ExistsSubquery(query)));
     }
 
     @Test
