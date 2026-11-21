@@ -1,4 +1,5 @@
 - [api](api/index.md)
+- [app](app/index.md)
 - [common](common/index.md)
 - [concurrency](concurrency/index.md)
 - [optimizer](optimizer/index.md)

@@ -1,0 +1,193 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.client.ClientMain {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+class org.rafendb.client.terminal.JLineEditor {
+	{method} +close () : void
+	{method} +history () : List
+	{method} +printAbove ( text : String , prompt : String ) : void
+	{method} +readAnswer ( prompt : String ) : String
+	{method} +readLine ( prompt : String ) : String
+}
+
+
+interface org.rafendb.client.terminal.LineEditor {
+	{method}  {abstract} +close () : void
+	{method} +history () : List
+	{method} +printAbove ( text : String , prompt : String ) : void
+	{method} +readAnswer ( prompt : String ) : String
+	{method}  {abstract} +readLine ( prompt : String ) : String
+}
+
+
+class org.rafendb.client.terminal.ScriptInput {
+	{method} +close () : void
+	{method} +readLine ( prompt : String ) : String
+}
+
+
+abstract class org.rafendb.driver.Driver {
+	{method} +launch ( args : String[] ) : void
+	{method} +run ( args : String[] , in : InputStream , out : PrintStream ) : int
+}
+
+
+interface org.rafendb.driver.Driver$Command {
+	{method}  {abstract} +execute ( args : List , rest : String ) : void
+}
+
+
+class org.rafendb.driver.DriverException {
+}
+
+
+class org.rafendb.engine.Engine {
+	{method} +close () : void <<synchronized>> 
+	{method} +concurrencyProtocol () : ProtocolType
+	{method} +dataDirectory () : Optional
+	{method} +metaCommands () : MetaCommands
+	{method}  {static} +optimizer ( storage : StorageMetadata ) : QueryOptimizer
+	{method} +processor () : QueryProcessor
+	{method}  {static} +start ( config : EngineConfig ) : Engine
+	{method}  {static} +storage ( directory : Path , bufferFrames : int , wal : WalSync ) : StorageManager
+	{method}  {static} +storageDriver ( directory : Path , bufferFrames : int ) : DriverStorage
+}
+
+
+class org.rafendb.engine.Engine$DriverStorage {
+	{method} +close () : void
+	{method} +lockFile () : FileChannel
+	{method} +maxTransactionId () : long
+	{method} +recovery () : RecoveryManager
+	{method} +storage () : StorageManager
+	{method} +wal () : AutoCloseable
+}
+
+
+class org.rafendb.engine.Engine$StartupException {
+}
+
+
+class org.rafendb.engine.EngineConfig {
+	{method} +bufferFrames () : int
+	{method}  {static} +defaults () : EngineConfig
+	{method} +dir () : Path
+	{method} +drainTimeout () : Duration
+	{method}  {static} +fromFlags ( flags : Flags ) : EngineConfig
+	{method} +mocks () : Set
+	{method} +protocol () : ProtocolType
+	{method} +seed () : boolean
+	{method} +withDir ( dir : Path ) : EngineConfig
+	{method} +withDrainTimeout ( drainTimeout : Duration ) : EngineConfig
+	{method} +withFrames ( bufferFrames : int ) : EngineConfig
+	{method} +withMocks ( mocks : Set ) : EngineConfig
+	{method} +withProtocol ( protocol : ProtocolType ) : EngineConfig
+	{method} +withSeed ( seed : boolean ) : EngineConfig
+}
+
+
+class org.rafendb.engine.Flags {
+	{method} +has ( name : String ) : boolean
+	{method} +intValue ( name : String , fallback : int ) : int
+	{method}  {static} +parse ( args : String[] ) : Flags
+	{method} +rejectUnknown () : void
+	{method} +value ( name : String , fallback : String ) : String
+}
+
+
+class org.rafendb.engine.MetaCommands {
+	{method} +run ( line : String ) : List
+}
+
+
+class org.rafendb.engine.MetaCommands$Section {
+	{method} +rows () : Rows
+	{method} +title () : String
+}
+
+
+class org.rafendb.engine.Version {
+	{method}  {static} +banner ( program : String ) : String
+	{method}  {static} +current () : String
+	{method}  {static} +version () : String
+}
+
+
+class org.rafendb.net.Message {
+	{method}  {static} +of ( type : MessageType ) : Message
+	{method} +payload () : String
+	{method}  {static} +ready ( state : TxState ) : Message
+	{method} +type () : MessageType
+}
+
+
+class org.rafendb.net.MessageReader {
+	{method} +read () : Message
+}
+
+
+enum org.rafendb.net.MessageType {
+	{field} +BYE
+	{field} +CANCEL
+	{field} +CLOSING
+	{field} +ERROR
+	{field} +HELLO
+	{field} +META
+	{field} +NOTICE
+	{field} +QUERY
+	{field} +READY
+	{field} +RESULT
+	{field} +SHUTDOWN
+}
+
+
+class org.rafendb.net.MessageWriter {
+	{method} +write ( messages : Message[] ) : void <<synchronized>> 
+}
+
+
+enum org.rafendb.net.TxState {
+	{field} +ACTIVE
+	{field} +FAILED
+	{field} +IDLE
+}
+
+
+class org.rafendb.server.ResultRenderer {
+	{method}  {static} +cell ( value : Value ) : String
+	{method}  {static} +render ( result : QueryResult ) : String
+}
+
+
+class org.rafendb.server.ServerConfig {
+	{field} {static} +DEFAULT_PORT : int
+	{method}  {static} +defaults () : ServerConfig
+	{method} +port () : int
+	{method} +shutdownTimeout () : Duration
+}
+
+
+class org.rafendb.server.ServerMain {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+
+
+org.rafendb.client.terminal.JLineEditor ..|>  org.rafendb.client.terminal.LineEditor
+org.rafendb.client.terminal.ScriptInput ..|>  org.rafendb.client.terminal.LineEditor
+org.rafendb.engine.Engine *--  org.rafendb.engine.MetaCommands : metaCommands
+org.rafendb.net.Message *--  org.rafendb.net.MessageType : type
+org.rafendb.server.ServerMain *--  org.rafendb.engine.MetaCommands : metaCommands
+org.rafendb.server.ServerMain *--  org.rafendb.server.ServerConfig : config
+
+
+@enduml

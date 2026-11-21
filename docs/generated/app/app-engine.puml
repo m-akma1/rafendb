@@ -1,0 +1,85 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.engine.Engine {
+	{method} +close () : void <<synchronized>> 
+	{method} +concurrencyProtocol () : ProtocolType
+	{method} +dataDirectory () : Optional
+	{method} +metaCommands () : MetaCommands
+	{method}  {static} +optimizer ( storage : StorageMetadata ) : QueryOptimizer
+	{method} +processor () : QueryProcessor
+	{method}  {static} +start ( config : EngineConfig ) : Engine
+	{method}  {static} +storage ( directory : Path , bufferFrames : int , wal : WalSync ) : StorageManager
+	{method}  {static} +storageDriver ( directory : Path , bufferFrames : int ) : DriverStorage
+}
+
+
+class org.rafendb.engine.Engine$DriverStorage {
+	{method} +close () : void
+	{method} +lockFile () : FileChannel
+	{method} +maxTransactionId () : long
+	{method} +recovery () : RecoveryManager
+	{method} +storage () : StorageManager
+	{method} +wal () : AutoCloseable
+}
+
+
+class org.rafendb.engine.Engine$StartupException {
+}
+
+
+class org.rafendb.engine.EngineConfig {
+	{method} +bufferFrames () : int
+	{method}  {static} +defaults () : EngineConfig
+	{method} +dir () : Path
+	{method} +drainTimeout () : Duration
+	{method}  {static} +fromFlags ( flags : Flags ) : EngineConfig
+	{method} +mocks () : Set
+	{method} +protocol () : ProtocolType
+	{method} +seed () : boolean
+	{method} +withDir ( dir : Path ) : EngineConfig
+	{method} +withDrainTimeout ( drainTimeout : Duration ) : EngineConfig
+	{method} +withFrames ( bufferFrames : int ) : EngineConfig
+	{method} +withMocks ( mocks : Set ) : EngineConfig
+	{method} +withProtocol ( protocol : ProtocolType ) : EngineConfig
+	{method} +withSeed ( seed : boolean ) : EngineConfig
+}
+
+
+class org.rafendb.engine.Flags {
+	{method} +has ( name : String ) : boolean
+	{method} +intValue ( name : String , fallback : int ) : int
+	{method}  {static} +parse ( args : String[] ) : Flags
+	{method} +rejectUnknown () : void
+	{method} +value ( name : String , fallback : String ) : String
+}
+
+
+class org.rafendb.engine.MetaCommands {
+	{method} +run ( line : String ) : List
+}
+
+
+class org.rafendb.engine.MetaCommands$Section {
+	{method} +rows () : Rows
+	{method} +title () : String
+}
+
+
+class org.rafendb.engine.Version {
+	{method}  {static} +banner ( program : String ) : String
+	{method}  {static} +current () : String
+	{method}  {static} +version () : String
+}
+
+
+
+
+org.rafendb.engine.Engine *--  org.rafendb.engine.MetaCommands : metaCommands
+
+
+@enduml

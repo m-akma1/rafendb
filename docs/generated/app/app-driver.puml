@@ -1,0 +1,27 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+abstract class org.rafendb.driver.Driver {
+	{method} +launch ( args : String[] ) : void
+	{method} +run ( args : String[] , in : InputStream , out : PrintStream ) : int
+}
+
+
+interface org.rafendb.driver.Driver$Command {
+	{method}  {abstract} +execute ( args : List , rest : String ) : void
+}
+
+
+class org.rafendb.driver.DriverException {
+}
+
+
+
+
+
+
+@enduml

@@ -1,0 +1,53 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.net.Message {
+	{method}  {static} +of ( type : MessageType ) : Message
+	{method} +payload () : String
+	{method}  {static} +ready ( state : TxState ) : Message
+	{method} +type () : MessageType
+}
+
+
+class org.rafendb.net.MessageReader {
+	{method} +read () : Message
+}
+
+
+enum org.rafendb.net.MessageType {
+	{field} +BYE
+	{field} +CANCEL
+	{field} +CLOSING
+	{field} +ERROR
+	{field} +HELLO
+	{field} +META
+	{field} +NOTICE
+	{field} +QUERY
+	{field} +READY
+	{field} +RESULT
+	{field} +SHUTDOWN
+}
+
+
+class org.rafendb.net.MessageWriter {
+	{method} +write ( messages : Message[] ) : void <<synchronized>> 
+}
+
+
+enum org.rafendb.net.TxState {
+	{field} +ACTIVE
+	{field} +FAILED
+	{field} +IDLE
+}
+
+
+
+
+org.rafendb.net.Message *--  org.rafendb.net.MessageType : type
+
+
+@enduml

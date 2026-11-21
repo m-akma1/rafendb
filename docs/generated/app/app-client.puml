@@ -1,0 +1,43 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.client.ClientMain {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+class org.rafendb.client.terminal.JLineEditor {
+	{method} +close () : void
+	{method} +history () : List
+	{method} +printAbove ( text : String , prompt : String ) : void
+	{method} +readAnswer ( prompt : String ) : String
+	{method} +readLine ( prompt : String ) : String
+}
+
+
+interface org.rafendb.client.terminal.LineEditor {
+	{method}  {abstract} +close () : void
+	{method} +history () : List
+	{method} +printAbove ( text : String , prompt : String ) : void
+	{method} +readAnswer ( prompt : String ) : String
+	{method}  {abstract} +readLine ( prompt : String ) : String
+}
+
+
+class org.rafendb.client.terminal.ScriptInput {
+	{method} +close () : void
+	{method} +readLine ( prompt : String ) : String
+}
+
+
+
+
+org.rafendb.client.terminal.JLineEditor ..|>  org.rafendb.client.terminal.LineEditor
+org.rafendb.client.terminal.ScriptInput ..|>  org.rafendb.client.terminal.LineEditor
+
+
+@enduml
