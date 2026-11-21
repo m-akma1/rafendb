@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.rafendb.api.processor.Session;
 import org.rafendb.api.processor.Session.TxState;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.common.error.ProcessorRuntimeException;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.log.LogType;
@@ -127,6 +128,81 @@ class SessionIntegrationTest {
         assertInstanceOf(QueryResult.Status.class, explain.get(5, TimeUnit.SECONDS));
         assertEquals(TxState.IDLE, reader.transactionState());
         writer.execute("ABORT");
+    }
+
+    @Test
+    void aCreatedTableIsSeenByOtherSessionsAndSurvivesARestart() throws Exception {
+        stack = new Stack(dir, true);
+        Session creator = stack.processor.openSession();
+        Session other = stack.processor.openSession();
+        assertThrows(RuntimeException.class, () -> other.execute("SELECT * FROM pets"));
+
+        assertEquals(
+                new QueryResult.Status("CREATE TABLE"),
+                creator.execute(
+                        "CREATE TABLE pets (id INTEGER PRIMARY KEY, owner INTEGER, name VARCHAR(20),"
+                                + " FOREIGN KEY (owner) REFERENCES customers (customer_id))"));
+        assertEquals(0, rows(other, "SELECT * FROM pets").rows().size());
+        assertEquals(1, affected(other, "INSERT INTO pets VALUES (1, 7, 'Rex')"));
+
+        stack.shutDown();
+        stack = new Stack(dir, false);
+        Session after = stack.processor.openSession();
+        assertEquals(
+                List.of(Value.ofInt(7)),
+                rows(after, "SELECT owner FROM pets").rows().getFirst().values());
+    }
+
+    @Test
+    void dropTableWaitsForReadersAndCascadeKeepsReferencingRows() throws Exception {
+        stack = new Stack(dir, true);
+        Session reader = stack.processor.openSession();
+        Session dropper = stack.processor.openSession();
+        assertThrows(RuntimeException.class, () -> dropper.execute("DROP TABLE customers"));
+        assertEquals(60, rows(dropper, "SELECT * FROM customers").rows().size());
+
+        reader.execute("BEGIN");
+        rows(reader, "SELECT * FROM customers WHERE customer_id = 1");
+        CompletableFuture<QueryResult> drop =
+                CompletableFuture.supplyAsync(
+                        () -> dropper.execute("DROP TABLE customers CASCADE"));
+        assertThrows(TimeoutException.class, () -> drop.get(300, TimeUnit.MILLISECONDS));
+        reader.execute("COMMIT");
+
+        assertEquals(new QueryResult.Status("DROP TABLE"), drop.get(10, TimeUnit.SECONDS));
+        assertThrows(RuntimeException.class, () -> reader.execute("SELECT * FROM customers"));
+        assertEquals(60, rows(reader, "SELECT * FROM orders").rows().size());
+        assertEquals(1, affected(reader, "INSERT INTO orders VALUES (61, 999, 1.0, NULL)"));
+    }
+
+    @Test
+    void ddlInsideBeginFailsTheTransactionAndChangesNothing() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+        session.execute("BEGIN");
+        assertEquals(1, affected(session, "INSERT INTO customers VALUES (61, 'New', 1.5, 'A')"));
+
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () -> session.execute("CREATE TABLE pets (id INTEGER PRIMARY KEY)"));
+        assertEquals(TxState.FAILED, session.transactionState());
+        session.execute("ABORT");
+
+        assertThrows(RuntimeException.class, () -> session.execute("SELECT * FROM pets"));
+        assertEquals(60, rows(session, "SELECT * FROM customers").rows().size());
+        session.execute("BEGIN");
+        assertThrows(
+                ProcessorRuntimeException.class, () -> session.execute("DROP TABLE order_items"));
+        session.execute("ABORT");
+        assertEquals(60, rows(session, "SELECT * FROM order_items").rows().size());
+
+        String index = "CREATE INDEX items_sku_idx ON order_items(sku) USING HASH";
+        session.execute("BEGIN");
+        assertThrows(ProcessorRuntimeException.class, () -> session.execute(index));
+        assertEquals(TxState.FAILED, session.transactionState());
+        session.execute("ABORT");
+        assertEquals(
+                new QueryResult.Status("CREATE INDEX"), session.execute(index)); // not there yet
     }
 
     @Test

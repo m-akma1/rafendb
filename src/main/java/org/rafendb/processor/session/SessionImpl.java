@@ -11,6 +11,9 @@ import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.OptimizerInternalException;
 import org.rafendb.common.error.ProcessorRuntimeException;
 import org.rafendb.common.plan.QueryPlan;
+import org.rafendb.common.query.CreateIndexQuery;
+import org.rafendb.common.query.CreateTableQuery;
+import org.rafendb.common.query.DropTableQuery;
 import org.rafendb.common.query.ExplainQuery;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.QueryResult;
@@ -22,6 +25,8 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.operator.ddl.CreateTableOp;
+import org.rafendb.processor.operator.ddl.DropTableOp;
 import org.rafendb.processor.operator.index.CreateIndexOp;
 import org.rafendb.processor.operator.index.IndexScanOp;
 import org.rafendb.processor.operator.scan.TableScanOp;
@@ -85,7 +90,9 @@ final class SessionImpl implements Session, SessionView {
                                 DefaultOperatorFactory.bindUpdate(
                                         this, new DefaultExpressionEvaluator(), UpdateOp::new),
                                 DefaultOperatorFactory.bindDelete(this, DeleteOp::new),
-                                DefaultOperatorFactory.bindCreateIndex(this, CreateIndexOp::new)));
+                                DefaultOperatorFactory.bindCreateIndex(this, CreateIndexOp::new),
+                                DefaultOperatorFactory.bindCreateTable(this, CreateTableOp::new),
+                                DefaultOperatorFactory.bindDropTable(this, DropTableOp::new)));
     }
 
     @Override
@@ -228,6 +235,13 @@ final class SessionImpl implements Session, SessionView {
             case ExplainQuery explain ->
                     new QueryResult.Status(optimizer.explain(optimize(explain.selectQuery())));
             case ParsedQuery command when CommandPlanner.handles(command) -> {
+                if ((command instanceof CreateTableQuery
+                                || command instanceof DropTableQuery
+                                || command instanceof CreateIndexQuery)
+                        && state == TxState.ACTIVE) {
+                    throw new ProcessorRuntimeException(
+                            "Cannot run CREATE or DROP inside a transaction.");
+                }
                 QueryPlan plan = new QueryPlan(commands.plan(command), 0);
                 yield runStatement(() -> ResultMapper.command(translator.translate(plan)));
             }
@@ -365,7 +379,6 @@ final class SessionImpl implements Session, SessionView {
     }
 
     private static ProcessorRuntimeException onlyAbortAccepted() {
-        return new ProcessorRuntimeException(
-                "The current transaction has failed; only ABORT is accepted");
+        return new ProcessorRuntimeException("The current transaction has failed. Please ABORT;");
     }
 }

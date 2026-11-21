@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.rafendb.api.storage.RecordCursor;
+import org.rafendb.api.storage.StorageDefinition;
 import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -20,18 +21,18 @@ import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.Value;
 
 /**
- * StorageQuery palsu buat test QP: satu tabel di memori. Method mana pun bisa disuruh gagal di
+ * StorageQuery dan StorageDefinition palsu buat test QP: satu tabel di memori. Method mana pun bisa disuruh gagal di
  * panggilan ke-n ({@link #failOn}). Tiap panggilan yang ngubah sesuatu dicatat ke {@link EventLog}:
  *
  * <pre>
- * sm.scan | sm.reserveRid | sm.cancelReservation | sm.createIndex
+ * sm.scan | sm.reserveRid | sm.cancelReservation | sm.createIndex | sm.createTable | sm.dropTable
  * sm.insert lsn=N | sm.update lsn=N | sm.delete lsn=N | sm.&lt;method&gt; (fails)
  * </pre>
  *
  * <p>encodeRow sukses ga dicatat (dipanggil tiap baris). Image-nya opaque; {@link #decodeRow}
  * balikin baris aslinya, jadi test bisa ngecek isi log.
  */
-public final class FakeStorage implements StorageQuery {
+public final class FakeStorage implements StorageQuery, StorageDefinition {
     private record Failure(int nth, Exception error) {}
 
     private final TableSchema schema;
@@ -174,6 +175,20 @@ public final class FakeStorage implements StorageQuery {
         call("createIndex");
         indexes.add(index);
         events.add("sm.createIndex");
+    }
+
+    /** Cuma dicatat; tabel palsunya tetap satu. */
+    @Override
+    public void createTable(TableSchema schema) throws StorageInternalException {
+        call("createTable");
+        events.add("sm.createTable");
+    }
+
+    /** Cuma dicatat; tabel palsunya tetap satu. */
+    @Override
+    public void dropTable(String table, boolean cascade) throws StorageInternalException {
+        call("dropTable");
+        events.add("sm.dropTable");
     }
 
     /** Hitung panggilan; lempar error yang diatur kalau ini panggilan ke-n-nya. */

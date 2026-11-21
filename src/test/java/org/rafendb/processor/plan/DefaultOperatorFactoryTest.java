@@ -28,7 +28,9 @@ import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.write.DMLOperator;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.CreateTablePlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
 
@@ -243,6 +245,75 @@ class DefaultOperatorFactoryTest {
                         indexOnly(node -> failing).createIndex(INDEX)::execute));
     }
 
+    @Test
+    void createAndDropTableBindingsForwardContextAndNodeAndDeferExecution() {
+        TableSchema schema =
+                new TableSchema(
+                        "new_table", List.of(new Column("id", DataType.INTEGER, 0, false, true)));
+        var createNode = new CreateTablePlanNode(schema);
+        var dropNode = new DropTablePlanNode("new_table", true);
+        int[] executions = {0};
+        var creates =
+                DefaultOperatorFactory.bindCreateTable(
+                        context,
+                        (ctx, node) -> {
+                            assertSame(context, ctx);
+                            assertSame(createNode, node);
+                            return () -> {
+                                executions[0]++;
+                                return new ExecutionPlan.CommandResult(0, "table created");
+                            };
+                        });
+        var drops =
+                DefaultOperatorFactory.bindDropTable(
+                        context,
+                        (ctx, node) -> {
+                            assertSame(context, ctx);
+                            assertSame(dropNode, node);
+                            return () -> {
+                                executions[0]++;
+                                return new ExecutionPlan.CommandResult(0, "table dropped");
+                            };
+                        });
+        var factory = ddlOnly(creates, drops);
+
+        var createAction = factory.createTable(createNode);
+        var dropAction = factory.dropTable(dropNode);
+        assertEquals(0, executions[0]);
+        assertEquals("table created", createAction.execute().status());
+        assertEquals("table dropped", dropAction.execute().status());
+        assertEquals(2, executions[0]);
+    }
+
+    @Test
+    void createAndDropTableRejectMissingOrNonZeroResults() {
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        ddlOnly(
+                                        node -> null,
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "ok"))
+                                .createTable(
+                                        new CreateTablePlanNode(
+                                                context.storageDQL().getSchema("employees"))));
+        assertThrows(
+                IllegalStateException.class,
+                ddlOnly(
+                                        node -> () -> new ExecutionPlan.CommandResult(1, "created"),
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "dropped"))
+                                .createTable(
+                                        new CreateTablePlanNode(
+                                                context.storageDQL().getSchema("employees")))
+                        ::execute);
+        assertThrows(
+                IllegalStateException.class,
+                ddlOnly(
+                                        node -> () -> new ExecutionPlan.CommandResult(0, "created"),
+                                        node -> () -> new ExecutionPlan.CommandResult(1, "dropped"))
+                                .dropTable(new DropTablePlanNode("employees", false))
+                        ::execute);
+    }
+
     private static <T, R> Function<T, R> unexpected(String what) {
         return input -> {
             throw new AssertionError("Unexpected " + what);
@@ -263,7 +334,9 @@ class DefaultOperatorFactoryTest {
                 inserts,
                 unexpected2("UPDATE"),
                 unexpected2("DELETE"),
-                unexpected("CREATE INDEX"));
+                unexpected("CREATE INDEX"),
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
     }
 
     private static DefaultOperatorFactory writeOnly(
@@ -275,7 +348,9 @@ class DefaultOperatorFactoryTest {
                 unexpected("INSERT"),
                 updates,
                 deletes,
-                unexpected("CREATE INDEX"));
+                unexpected("CREATE INDEX"),
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
     }
 
     private static DefaultOperatorFactory indexOnly(
@@ -286,7 +361,23 @@ class DefaultOperatorFactoryTest {
                 unexpected("INSERT"),
                 unexpected2("UPDATE"),
                 unexpected2("DELETE"),
-                indexes);
+                indexes,
+                unexpected("CREATE TABLE"),
+                unexpected("DROP TABLE"));
+    }
+
+    private static DefaultOperatorFactory ddlOnly(
+            Function<CreateTablePlanNode, ExecutionPlan.CommandAction> creates,
+            Function<DropTablePlanNode, ExecutionPlan.CommandAction> drops) {
+        return new DefaultOperatorFactory(
+                unexpected("scan"),
+                unexpected("index scan"),
+                unexpected("INSERT"),
+                unexpected2("UPDATE"),
+                unexpected2("DELETE"),
+                unexpected("CREATE INDEX"),
+                creates,
+                drops);
     }
 
     /** Records which transaction was active when it ran. */

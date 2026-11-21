@@ -41,7 +41,9 @@ final class JoinAccessPathTestSupport {
                         insert -> fail("Unexpected INSERT"),
                         (update, child) -> fail("Unexpected UPDATE"),
                         (delete, child) -> fail("Unexpected DELETE"),
-                        create -> fail("Unexpected CREATE INDEX"));
+                        create -> fail("Unexpected CREATE INDEX"),
+                        create -> fail("Unexpected CREATE TABLE"),
+                        drop -> fail("Unexpected DROP TABLE"));
         var translated = new DefaultPlanTranslator(factory).translate(new QueryPlan(root, 0));
         var execution = assertInstanceOf(ExecutionPlan.Rows.class, translated);
 
