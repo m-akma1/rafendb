@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.concurrency.ProtocolType;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.common.error.ConcurrencyInternalException;
@@ -258,7 +259,7 @@ public final class ConcurrencyDriver {
         }
 
         @Override
-        public boolean createCheckpoint() {
+        public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
             return true;
         }
 

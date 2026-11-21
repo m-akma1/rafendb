@@ -1,6 +1,7 @@
 # Build output
 target/
-data/
+/data/*
+!/data/.gitkeep
 *.war
 *.ear
 *.nar
