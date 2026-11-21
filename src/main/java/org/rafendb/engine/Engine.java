@@ -56,6 +56,7 @@ import org.rafendb.optimizer.rewrite.PlanRewriter;
 import org.rafendb.processor.session.QueryProcessorImpl;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.storage.StorageManagerImpl;
 import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
@@ -421,11 +422,11 @@ public final class Engine implements AutoCloseable {
             StorageManager storage,
             RecoveryManager recovery,
             long maxTransactionId,
-            AutoCloseable wal,
+            Logger wal,
             FileChannel lockFile)
             implements AutoCloseable {
         @Override
-        public void close() throws Exception {
+        public void close() throws IOException, LoggerErrorException, StorageInternalException {
             try (lockFile;
                     wal;
                     storage) {

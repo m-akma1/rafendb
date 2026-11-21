@@ -16,7 +16,6 @@ import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.processor.error.TransactionAbortedException;
@@ -52,7 +51,6 @@ class UpdateOpBehaviorTest {
     private static final Rid R1 = new Rid(1, 0);
     private static final Rid R2 = new Rid(1, 1);
     private static final Rid R3 = new Rid(1, 2);
-    private static final TxId TX = new TxId(1);
 
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);

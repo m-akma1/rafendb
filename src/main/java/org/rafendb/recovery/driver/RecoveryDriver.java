@@ -1139,6 +1139,7 @@ public final class RecoveryDriver extends Driver {
 
             try (Logger logger = new Logger(walPath);
                     StorageManager sm = Engine.storage(dataDir, 8, logger)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager realFrm = new FRManager(logger, sm);
                 sm.createTable(schema);
 
@@ -1218,6 +1219,7 @@ public final class RecoveryDriver extends Driver {
 
             try (Logger restartedLogger = new Logger(walPath);
                     StorageManager restartedSm = Engine.storage(dataDir, 8, restartedLogger)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
                 boolean recovered = restartedFrm.recoverFromCrash();
                 Optional<Row> actualR1 = restartedSm.fetch("accounts", rid1).map(StoredRow::row);
@@ -1256,6 +1258,7 @@ public final class RecoveryDriver extends Driver {
     public static void runCrashChildSimulation(Path dataDir, Path walPath) throws Exception {
         Logger logger = new Logger(walPath);
         StorageManager sm = Engine.storage(dataDir, 8, logger);
+        @SuppressWarnings("resource") // left open: the process is killed to simulate a crash
         FRManager realFrm = new FRManager(logger, sm);
 
         sm.createTable(
@@ -1370,6 +1373,7 @@ public final class RecoveryDriver extends Driver {
             Rid ridA2;
             try (Logger loggerA = new Logger(walPathA);
                     StorageManager smA = Engine.storage(dataDirA, 8, loggerA)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager frmA = new FRManager(loggerA, smA);
                 smA.createTable(schema);
                 TxId tx1 = new TxId(1);
@@ -1414,6 +1418,7 @@ public final class RecoveryDriver extends Driver {
             boolean recAOk;
             try (Logger restartedA = new Logger(walPathA);
                     StorageManager smA2 = Engine.storage(dataDirA, 8, restartedA)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager frmA2 = new FRManager(restartedA, smA2);
                 recAOk = frmA2.recoverFromCrash();
                 actualA1 = smA2.fetch("notes", ridA1).map(StoredRow::row);
@@ -1429,6 +1434,7 @@ public final class RecoveryDriver extends Driver {
             boolean ckptOk;
             try (Logger loggerB = new Logger(walPathB);
                     StorageManager smB = Engine.storage(dataDirB, 8, loggerB)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager frmB = new FRManager(loggerB, smB);
                 smB.createTable(schema);
                 TxId tx1 = new TxId(1);
@@ -1493,6 +1499,7 @@ public final class RecoveryDriver extends Driver {
             boolean recBOk;
             try (Logger restartedB = new Logger(walPathB);
                     StorageManager smB2 = Engine.storage(dataDirB, 8, restartedB)) {
+                @SuppressWarnings("resource") // closes only its Logger, which the try owns
                 FRManager frmB2 = new FRManager(restartedB, smB2);
                 recBOk = frmB2.recoverFromCrash();
                 actualB1 = smB2.fetch("notes", ridB1).map(StoredRow::row);

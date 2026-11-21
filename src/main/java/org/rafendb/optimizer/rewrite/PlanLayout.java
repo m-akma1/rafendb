@@ -176,11 +176,6 @@ final class PlanLayout {
                                 ref.scopeDepth()));
     }
 
-    private static Expr.ColumnRef asColumn(Expr expr) {
-        if (expr instanceof Expr.ColumnRef ref) return ref;
-        throw new IllegalStateException("Projection only supports plain columns: " + expr);
-    }
-
     private static List<Col> concat(List<Col> a, List<Col> b) {
         List<Col> out = new ArrayList<>(a);
         out.addAll(b);
