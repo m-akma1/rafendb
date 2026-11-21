@@ -27,7 +27,7 @@ final class SelectParser {
         return query;
     }
 
-    static SelectQuery parseBody(String sql, TokenCursor in){
+    static SelectQuery parseBody(String sql, TokenCursor in) {
         in.expectKeyword("SELECT");
         List<Expr> projection = selectList(in);
         in.expectKeyword("FROM");

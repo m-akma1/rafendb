@@ -88,14 +88,14 @@ final class ExpressionParser {
     }
 
     private Expr parseComparison() {
-        if(in.acceptKeyword("EXISTS")){
+        if (in.acceptKeyword("EXISTS")) {
             in.expectPunct("(");
             SelectQuery query = SelectParser.parseBody(sql, in);
             in.expectPunct(")");
             return new Expr.ExistsSubquery(query);
         }
         Expr left = parseAdditive();
-        if(!in.acceptKeyword("IN")){
+        if (!in.acceptKeyword("IN")) {
             Op op = opAt(COMPARISON_OPERATOR, CMP);
             if (op == null) {
                 return left;
@@ -166,7 +166,7 @@ final class ExpressionParser {
                 if (!t.isPunctuation("(")) {
                     throw in.error(t, "an operand");
                 }
-                if(in.peek().isKeyword("SELECT")){
+                if (in.peek().isKeyword("SELECT")) {
                     SelectQuery query = SelectParser.parseBody(sql, in);
                     in.expectPunct(")");
                     yield new Expr.ScalarSubquery(query);

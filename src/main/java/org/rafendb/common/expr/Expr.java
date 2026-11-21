@@ -1,7 +1,7 @@
 package org.rafendb.common.expr;
 
-import org.rafendb.common.type.Value;
 import org.rafendb.common.query.SelectQuery;
+import org.rafendb.common.type.Value;
 
 /**
  * Expression tree produced by the query parser for WHERE conditions, JOIN ... ON conditions, and
