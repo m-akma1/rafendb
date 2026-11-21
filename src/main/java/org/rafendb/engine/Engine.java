@@ -220,16 +220,16 @@ public final class Engine implements AutoCloseable {
         StorageManager storage = r.storage;
         QueryProcessor processor = new QueryProcessorImpl(ccm, storage, () -> optimizer(storage));
         log(
-                "Engine ready: SM "
+                "Engine ready with "
                         + kind(mocks, Component.SM)
-                        + ", FRM "
+                        + " Storage Manager, "
                         + kind(mocks, Component.FRM)
-                        + ", CCM "
+                        + " Failure Recovery Manager, "
                         + (mocks.contains(Component.CCM) ? "mock" : protocol)
-                        + ", QP real; data in "
+                        + " Protocol Concurrency Control Manager, and real Query Processor.\nData directory in "
                         + dir
-                        + (r.tempDir != null ? " (temporary)" : "")
-                        + "; "
+                        + (r.tempDir != null ? "/ (temporary)" : "")
+                        + ", "
                         + seeded
                         + ".");
         return new Engine(processor, protocol, dir, r);
