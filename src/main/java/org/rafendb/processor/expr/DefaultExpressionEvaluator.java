@@ -51,7 +51,7 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
         return switch (expression) {
             case Expr.Literal literal -> Objects.requireNonNull(literal.value(), "literal value");
             case Expr.ColumnRef column -> columnValue(column, row, schema);
-            case Expr.Null ignored ->
+            case Expr.Null _ ->
                     throw new IllegalArgumentException(
                             "SQL NULL must be typed by QO before evaluation");
             case Expr.Binary binary -> {

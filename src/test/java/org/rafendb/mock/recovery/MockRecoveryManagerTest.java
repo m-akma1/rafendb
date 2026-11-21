@@ -13,6 +13,7 @@ import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxStatus;
+import org.rafendb.mock.concurrency.MockConcurrencyControl;
 
 class MockRecoveryManagerTest {
 
@@ -104,7 +105,7 @@ class MockRecoveryManagerTest {
         assertFalse(mockFrm.isCrashRecovered());
         assertEquals(0, mockFrm.getLastFlushedLsn());
 
-        assertTrue(mockFrm.createCheckpoint());
+        assertTrue(mockFrm.createCheckpoint(new MockConcurrencyControl()));
         assertTrue(mockFrm.isCheckpointCreated());
 
         assertTrue(mockFrm.recoverToPointInTime());
@@ -130,7 +131,7 @@ class MockRecoveryManagerTest {
         mockFrm.beginTransaction(TX1);
         mockFrm.writeLog(LogPayload.ofChange(TX1, LogType.INSERT, insert("t", 0, 1, 5)));
         mockFrm.forceThrough(50);
-        mockFrm.createCheckpoint();
+        mockFrm.createCheckpoint(new MockConcurrencyControl());
         mockFrm.redo();
         mockFrm.undo();
 

@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
@@ -12,7 +12,6 @@ import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
-import org.rafendb.common.tuple.RowImageCodec;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
@@ -36,7 +35,7 @@ import org.rafendb.processor.tuple.ResultRow;
  *       reserve a new Rid. Nothing is logged or written yet, so every failure we can foresee
  *       (evaluation error, NOT NULL, text too long, row too large, storage full) leaves the table
  *       and the transaction untouched.
- *   <li>Per row, in place: log UPDATE, then {@link StorageManager#update}. A record that would
+ *   <li>Per row, in place: log UPDATE, then {@link StorageQuery#update}. A record that would
  *       grow is relocated instead: log DELETE and delete the old Rid, then log INSERT and insert
  *       at the reserved Rid (the Rid changes, as the log requires for a relocation).
  * </ol>
@@ -77,24 +76,13 @@ public final class UpdateOp implements DMLOperator {
             Operator child,
             ExpressionEvaluator evaluator,
             ExecutionContext ctx) {
-        this(table, column, valueExpr, child, evaluator, ctx, RowImageCodec.DEFAULT);
-    }
-
-    public UpdateOp(
-            String table,
-            Expr.ColumnRef column,
-            Expr valueExpr,
-            Operator child,
-            ExpressionEvaluator evaluator,
-            ExecutionContext ctx,
-            RowImageCodec codec) {
         this.table = Objects.requireNonNull(table, "table");
         this.column = Objects.requireNonNull(column, "column");
         this.valueExpr = Objects.requireNonNull(valueExpr, "valueExpr");
         this.child = Objects.requireNonNull(child, "child");
         this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
         this.ctx = Objects.requireNonNull(ctx, "ctx");
-        this.support = new WriteSupport(ctx, codec);
+        this.support = new WriteSupport(ctx);
     }
 
     /** @return the number of rows that matched and were updated */
@@ -102,7 +90,7 @@ public final class UpdateOp implements DMLOperator {
     public Long execute() {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
-        StorageManager sm = ctx.getStorageManager();
+        StorageQuery sm = ctx.getStorageManager();
 
         List<Change> changes = collect(sm);
 
@@ -126,7 +114,7 @@ public final class UpdateOp implements DMLOperator {
         return (long) changes.size();
     }
 
-    private void updateInPlace(TxId tx, StorageManager sm, Change c) {
+    private void updateInPlace(TxId tx, StorageQuery sm, Change c) {
         long lsn = support.log(tx, c.first());
         try {
             sm.update(table, c.rid(), c.after(), lsn);
@@ -136,7 +124,7 @@ public final class UpdateOp implements DMLOperator {
     }
 
     /** DELETE at the old Rid, then INSERT at the Rid reserved in {@link #collect}. */
-    private void relocate(TxId tx, StorageManager sm, Change c) {
+    private void relocate(TxId tx, StorageQuery sm, Change c) {
         long deleteLsn = support.log(tx, c.first());
         try {
             if (!sm.delete(table, c.rid(), deleteLsn)) {
@@ -162,7 +150,7 @@ public final class UpdateOp implements DMLOperator {
      * Reads all targets and prepares every write before any of them happens. On failure the
      * reservations made so far are released.
      */
-    private List<Change> collect(StorageManager sm) {
+    private List<Change> collect(StorageQuery sm) {
         TableSchema tableSchema = sm.getSchema(table);
         List<Change> changes = new ArrayList<>();
         try {
@@ -246,7 +234,7 @@ public final class UpdateOp implements DMLOperator {
      * StorageRuntimeException (a user error); a full or failing disk as an internal failure.
      * Either way nothing has been logged or changed yet.
      */
-    private Rid reserve(StorageManager sm, Row after) {
+    private Rid reserve(StorageQuery sm, Row after) {
         try {
             return sm.reserveRid(table, after);
         } catch (StorageInternalException e) {
@@ -255,7 +243,7 @@ public final class UpdateOp implements DMLOperator {
         }
     }
 
-    private void cancelQuietly(StorageManager sm, Rid rid) {
+    private void cancelQuietly(StorageQuery sm, Rid rid) {
         if (rid == null) return;
         try {
             sm.cancelReservation(table, rid);
@@ -267,9 +255,6 @@ public final class UpdateOp implements DMLOperator {
     /**
      * Whether the serialized record gets bigger, in which case it may not fit at the same Rid.
      * A record that does not grow always fits: SlottedPage writes it into the slot's capacity.
-     *
-     * <p>TODO(team): replace by an exact SM pre-check (e.g. {@code canUpdateInPlace}) once SM1
-     * offers one. This estimate relocates every growing row, even if its page had room.
      */
     static boolean growsRecord(Value before, Value after, Column column) {
         return storedSize(after, column) > storedSize(before, column);
@@ -309,7 +294,7 @@ public final class UpdateOp implements DMLOperator {
             return Value.ofFloat(v.asInt());
         }
         if (target == DataType.INTEGER && v.type() == DataType.FLOAT) {
-            return Value.ofInt(Math.round(v.asFloat())); // TODO(team): round or reject?
+            return Value.ofInt(Math.round(v.asFloat()));
         }
         if (target.isText() && v.type().isText()) return Value.ofText(target, v.asText());
         return v;

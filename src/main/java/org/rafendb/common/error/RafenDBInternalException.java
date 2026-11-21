@@ -1,5 +1,7 @@
 package org.rafendb.common.error;
 
+import org.rafendb.common.Component;
+
 /**
  * Root checked exception. An error the client did not cause, such as a disk failure or a broken
  * contract between components.
@@ -7,7 +9,11 @@ package org.rafendb.common.error;
  * <p>
  * DO NOT SHOW TO CLIENT, INTERNAL MUST BE HANDLED BY INTERNAL CALLER.
  */
-public class RafenDBInternalException extends Exception {
+public abstract sealed class RafenDBInternalException extends Exception
+        permits StorageInternalException,
+                RecoveryInternalException,
+                ConcurrencyInternalException,
+                OptimizerInternalException {
     private static final long serialVersionUID = 1L;
     private final Component component;
 
@@ -33,5 +39,14 @@ public class RafenDBInternalException extends Exception {
     @Override
     public String getMessage() {
         return "Internal error at " + component.displayName() + ": " + super.getMessage();
+    }
+
+    /**
+     * Returns the component this error is attributed to.
+     *
+     * @return the component, never {@code null}
+     */
+    public Component component() {
+        return component;
     }
 }

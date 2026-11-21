@@ -1,15 +1,12 @@
 package org.rafendb.processor.operator;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.function.ToLongFunction;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import org.rafendb.api.storage.RecordCursor;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.IndexInfo;
-import org.rafendb.common.schema.ReferencingForeignKey;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
@@ -18,21 +15,34 @@ import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.Value;
 
 /**
- * StorageManager palsu buat test: isinya satu tabel di memori, nyatet cursor yang dibuka sama
+ * StorageQuery palsu buat test: isinya satu tabel di memori, nyatet cursor yang dibuka sama
  * ditutup, dan bisa disuruh lempar StorageInternalException. Method lain ga dipakai.
  */
-public final class FakeStorage implements StorageManager {
+public final class FakeStorage implements StorageQuery {
     private final TableSchema schema;
     private final List<StoredRow> rows;
     private final List<FakeCursor> cursors = new ArrayList<>();
     private boolean failNextScan;
     private boolean failNextRead;
     private List<String> events;
+    private boolean failNextDelete;
+    private final Map<String, Row> encodedRows = new HashMap<>();
+    private int nextImageId;
 
     /** Bikin storage palsu dengan satu tabel. */
     public FakeStorage(TableSchema schema, List<StoredRow> rows) {
         this.schema = schema;
-        this.rows = rows;
+        this.rows = new ArrayList<>(rows);
+    }
+
+    /** Bikin delete() berikutnya gagal pakai StorageInternalException. */
+    public void failNextDelete() {
+        failNextDelete = true;
+    }
+
+    /** Berapa baris yang masih ada di tabel. */
+    public int getRowCount() {
+        return rows.size();
     }
 
     /** Bikin scan() berikutnya gagal pakai StorageInternalException. */
@@ -84,7 +94,7 @@ public final class FakeStorage implements StorageManager {
             failNextScan = false;
             throw new StorageInternalException("Disk read failed");
         }
-        FakeCursor cursor = new FakeCursor(rows, failNextRead);
+        FakeCursor cursor = new FakeCursor(new ArrayList<>(rows), failNextRead);
         failNextRead = false;
         cursors.add(cursor);
         return cursor;
@@ -92,21 +102,6 @@ public final class FakeStorage implements StorageManager {
 
     @Override
     public List<String> listTables() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<ReferencingForeignKey> listReferencingForeignKeys(String table) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void createTable(TableSchema schema) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void dropTable(String table, boolean cascade) {
         throw new UnsupportedOperationException();
     }
 
@@ -146,13 +141,22 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public boolean delete(String table, Rid rid, long lsn) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public long clearTable(String table, ToLongFunction<StoredRow> logDelete) {
-        throw new UnsupportedOperationException();
+    public boolean delete(String table, Rid rid, long lsn) throws StorageInternalException {
+        getSchema(table);
+        if (events != null) {
+            events.add("delete " + table + " " + rid + " lsn=" + lsn);
+        }
+        if (failNextDelete) {
+            failNextDelete = false;
+            throw new StorageInternalException("Disk write failed");
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).rid().equals(rid)) {
+                rows.remove(i);
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -172,28 +176,27 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public void flush() {
-        throw new UnsupportedOperationException();
+    public byte[] encodeRow(String table, Row row) {
+        getSchema(table);
+
+        String imageId = "fake-image-" + nextImageId++;
+        encodedRows.put(imageId, row);
+
+        return imageId.getBytes(StandardCharsets.UTF_8);
     }
 
-    @Override
-    public void applyRecovery(String table, Rid rid, Optional<Row> image, long lsn) {
-        throw new UnsupportedOperationException();
-    }
+    /** Balikin baris dari image buatan {@link #encodeRow}, buat ngecek isi log di test. */
+    public Row decodeRow(String table, byte[] image) throws StorageInternalException {
+        getSchema(table);
 
-    @Override
-    public void reloadAfterRestore() {
-        throw new UnsupportedOperationException();
-    }
+        String imageId = new String(image, StandardCharsets.UTF_8);
+        Row row = encodedRows.get(imageId);
 
-    @Override
-    public void loadSampleDatabase() {
-        throw new UnsupportedOperationException();
-    }
+        if (row == null) {
+            throw new StorageInternalException("Unknown row image: " + imageId);
+        }
 
-    @Override
-    public void close() {
-        throw new UnsupportedOperationException();
+        return row;
     }
 
     /** Cursor palsu: ngeluarin baris dari list, bisa gagal pas dibaca. */

@@ -9,10 +9,11 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 
 /**
  * Creates quiescent checkpoints for the Failure Recovery Manager.
@@ -28,8 +29,7 @@ public final class CheckpointManager {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(1);
 
     private final Logger logger;
-    private final ConcurrencyControl concurrencyControl;
-    private final StorageManager storageManager;
+    private final StorageRecovery storageManager;
     private final Duration awaitTimeout;
     private final Path checkpointPointer;
     private final Object checkpointLock = new Object();
@@ -46,49 +46,44 @@ public final class CheckpointManager {
      * @param logger WAL logger, not null
      */
     public CheckpointManager(Logger logger) {
-        this(logger, null, null, DEFAULT_TIMEOUT, pointerFor(logger));
+        this(logger, null, DEFAULT_TIMEOUT, pointerFor(logger));
     }
 
     /**
-     * Creates a checkpoint manager connected to CCM and SM.
+     * Creates a checkpoint manager connected to a storage manager.
      *
      * @param logger WAL logger, not null
-     * @param concurrencyControl CCM admission and active-transaction tracker, not null
      * @param storageManager storage manager to flush, not null
      */
-    public CheckpointManager(
-            Logger logger, ConcurrencyControl concurrencyControl, StorageManager storageManager) {
-        this(logger, concurrencyControl, storageManager, DEFAULT_TIMEOUT, pointerFor(logger));
+    public CheckpointManager(Logger logger, StorageRecovery storageManager) {
+        this(
+                logger,
+                Objects.requireNonNull(storageManager, "storageManager must not be null"),
+                DEFAULT_TIMEOUT,
+                pointerFor(logger));
     }
 
     /**
      * Creates a checkpoint manager with an explicit wait timeout.
      *
      * @param logger WAL logger, not null
-     * @param concurrencyControl CCM admission and active-transaction tracker, not null
      * @param storageManager storage manager to flush, not null
      * @param awaitTimeout maximum time to wait for active transactions, not null and non-negative
      */
-    public CheckpointManager(
-            Logger logger,
-            ConcurrencyControl concurrencyControl,
-            StorageManager storageManager,
-            Duration awaitTimeout) {
-        this(logger, concurrencyControl, storageManager, awaitTimeout, pointerFor(logger));
+    public CheckpointManager(Logger logger, StorageRecovery storageManager, Duration awaitTimeout) {
+        this(
+                logger,
+                Objects.requireNonNull(storageManager, "storageManager must not be null"),
+                awaitTimeout,
+                pointerFor(logger));
     }
 
     CheckpointManager(
             Logger logger,
-            ConcurrencyControl concurrencyControl,
-            StorageManager storageManager,
+            StorageRecovery storageManager,
             Duration awaitTimeout,
             Path checkpointPointer) {
         this.logger = Objects.requireNonNull(logger, "logger must not be null");
-        if ((concurrencyControl == null) != (storageManager == null)) {
-            throw new NullPointerException(
-                    "concurrencyControl and storageManager must be supplied together");
-        }
-        this.concurrencyControl = concurrencyControl;
         this.storageManager = storageManager;
         this.awaitTimeout = Objects.requireNonNull(awaitTimeout, "awaitTimeout must not be null");
         if (awaitTimeout.isNegative()) {
@@ -99,11 +94,13 @@ public final class CheckpointManager {
     }
 
     /**
-     * Executes one quiescent checkpoint.
+     * Executes one quiescent checkpoint using the supplied {@link ConcurrencyControl} to pause new
+     * transactions and await active transactions when non-null.
      *
+     * @param concurrencyControl optional CCM admission and active-transaction tracker
      * @return true only when the complete checkpoint and its pointer are durable
      */
-    public boolean createCheckpoint() {
+    public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
         synchronized (checkpointLock) {
             boolean paused = false;
             try {
@@ -116,8 +113,7 @@ public final class CheckpointManager {
                 }
 
                 logger.logTransactionEvent(CHECKPOINT_TRANSACTION, LogType.CHECKPOINT_BEGIN);
-                long beginLsn = logger.getCurrentLSN();
-                logger.forceThrough(beginLsn);
+                logger.forceThrough(logger.getCurrentLSN());
 
                 if (storageManager != null) {
                     storageManager.flush();
@@ -131,7 +127,10 @@ public final class CheckpointManager {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
-            } catch (StorageInternalException | IOException | RuntimeException e) {
+            } catch (StorageInternalException
+                    | LoggerErrorException
+                    | IOException
+                    | RuntimeException e) {
                 return false;
             } finally {
                 if (paused) {
@@ -178,6 +177,11 @@ public final class CheckpointManager {
                     temporary,
                     Long.toString(lsn) + System.lineSeparator(),
                     StandardCharsets.US_ASCII);
+            try (var channel =
+                    java.nio.channels.FileChannel.open(
+                            temporary, java.nio.file.StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
                 Files.move(
                         temporary,
@@ -186,6 +190,16 @@ public final class CheckpointManager {
                         StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
                 Files.move(temporary, checkpointPointer, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (parent != null) {
+                try (var channel =
+                        java.nio.channels.FileChannel.open(
+                                parent, java.nio.file.StandardOpenOption.READ)) {
+                    channel.force(true);
+                } catch (UnsupportedOperationException
+                        | java.nio.file.FileSystemException ignored) {
+                    // Some filesystems do not support directory fsync.
+                }
             }
         } finally {
             Files.deleteIfExists(temporary);

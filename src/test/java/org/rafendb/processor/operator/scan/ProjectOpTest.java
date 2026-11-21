@@ -38,6 +38,7 @@ class ProjectOpTest {
         project.open();
         assertEquals(List.of(Value.ofInt(1), Value.ofFloat(3.5f)), project.next().values());
         assertNull(project.next());
+        project.close();
     }
 
     @Test
@@ -51,6 +52,7 @@ class ProjectOpTest {
         assertEquals(expected, project.schema());
         project.open();
         assertEquals(List.of(Value.ofFloat(3.5f), Value.ofInt(1)), project.next().values());
+        project.close();
     }
 
     @Test
@@ -60,6 +62,7 @@ class ProjectOpTest {
         project.open();
         Value budi = Value.ofText(DataType.VARCHAR, "Budi");
         assertEquals(List.of(budi, budi), project.next().values());
+        project.close();
     }
 
     @Test
@@ -74,6 +77,7 @@ class ProjectOpTest {
                         new ColumnSchema(new Expr.ColumnRef("mahasiswa", "nama"), DataType.VARCHAR),
                         new ColumnSchema(new Expr.ColumnRef("mahasiswa", "ipk"), DataType.FLOAT)),
                 project.schema());
+        project.close();
     }
 
     @Test
@@ -84,6 +88,7 @@ class ProjectOpTest {
         ProjectOp project = new ProjectOp(child, List.of(withAlias, nullQualifier));
         assertEquals(new Expr.ColumnRef("m", "nim"), project.schema().get(0).reference());
         assertEquals(new Expr.ColumnRef(null, "ipk"), project.schema().get(1).reference());
+        project.close();
     }
 
     @Test
@@ -99,6 +104,7 @@ class ProjectOpTest {
         assertNull(project.next());
         assertNull(project.next());
         assertEquals(expected, project.schema());
+        project.close();
     }
 
     @Test
@@ -118,6 +124,7 @@ class ProjectOpTest {
             result = project.next();
         }
         assertEquals(1000, count);
+        project.close();
     }
 
     @Test
@@ -126,6 +133,7 @@ class ProjectOpTest {
         ProjectOp project = new ProjectOp(child, List.of(NIM));
         project.open();
         assertNull(project.next().rid());
+        project.close();
     }
 
     @Test
@@ -141,6 +149,7 @@ class ProjectOpTest {
         ProjectOp project = new ProjectOp(child, List.of(IPK));
         project.open();
         assertTrue(project.next().get(0).isNull());
+        project.close();
     }
 
     @Test
@@ -220,6 +229,7 @@ class ProjectOpTest {
 
         IllegalStateException error = assertThrows(IllegalStateException.class, project::next);
         assertEquals("ProjectOp is not open", error.getMessage());
+        project.close();
     }
 
     @Test

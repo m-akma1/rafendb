@@ -1,6 +1,8 @@
 # RafenDB
 
-![RafenDB Logo](./docs/RafenDB.png)
+<p align="center" style="margin: 1.5rem 0;">
+	<img src="./docs/RafenDB.png" alt="RafenDB Logo" width="50%">
+</p>
 
 Yes, you're right! **A mini Database Management System (mDBMS) from scratch.**
 
@@ -26,6 +28,21 @@ scripts/run.sh driver <component>     # interactive driver for one component
 ```
 
 On Windows use `mvnw.cmd` and `scripts\run.cmd` with the same arguments.
+
+The storage driver keeps its database and `wal.log` in `data/` at the repository root when
+started through the launchers. Restarting the driver opens the same data and runs recovery.
+Use `--dir=<path>` for a different database and `--frames=<n>` to change the buffer size:
+
+```bash
+scripts/run.sh driver storage --run=test-scenarios/storage/basic.txt
+scripts/run.sh driver storage --dir=data --frames=8
+```
+
+The basic scenario expects a fresh database. `sample` loads the three example tables into an
+empty database; existing tables are kept. Only one storage driver may open a directory at a
+time. Every INSERT, DELETE, or clear command commits its own WAL transaction. DDL such as
+`drop` remains unlogged. The application server still uses its existing mock engine.
+The client's `--home` selects its history/config directory; it does not select the database.
 
 ## Layout
 
@@ -78,13 +95,12 @@ PIC: 13524063 Marcel Luther Sitorus ([@Celtors](https://github.com/Celtors))
 **Group 2 Golang · Concurrency Control Manager**  
 PIC: 13524105 Nicholas Luis Chandra ([@staplesmaster](https://github.com/staplesmaster))
 
-| Role | NIM      | Name                        | Handle                                             |
-|------|----------|-----------------------------|----------------------------------------------------|
-| CC1  | 13524039 | Rhenaldy Cahyadi Putra      | [@rhenprojects](https://github.com/rhenprojects)   |
-| CC2  | 13524105 | Nicholas Luis Chandra       | [@staplesmaster](https://github.com/staplesmaster) |
-| CC3  | 13524069 | Miguel Rangga Deardo Sinaga | [@miguelsinaga](https://github.com/miguelsinaga)   |
-| CC4  | 13524147 | Muh. Hartawan Haidir        | [@Awan-Haidir](https://github.com/Awan-Haidir)     |
-| CC5  | 13522132 | Hafizh Hananta Akbari       | ?                                                  |
+| Role     | NIM      | Name                        | Handle                                             |
+|----------|----------|-----------------------------|----------------------------------------------------|
+| CC1      | 13524039 | Rhenaldy Cahyadi Putra      | [@rhenprojects](https://github.com/rhenprojects)   |
+| CC2, CC5 | 13524105 | Nicholas Luis Chandra       | [@staplesmaster](https://github.com/staplesmaster) |
+| CC3      | 13524069 | Miguel Rangga Deardo Sinaga | [@miguelsinaga](https://github.com/miguelsinaga)   |
+| CC4      | 13524147 | Muh. Hartawan Haidir        | [@Awan-Haidir](https://github.com/Awan-Haidir)     |
 
 **Group 3 Fortran · Query Optimizer**  
 PIC: 13524048 Josh Reinhart Zidik ([@achideon](https://github.com/achideon))
@@ -111,13 +127,11 @@ PIC: 13524090 Nashiruddin Akram ([@Akram17t](https://github.com/Akram17t))
 **Group 5 Python · Failure Recovery Manager**  
 PIC: 13524033 Ray Owen Martin ([@Tensai-033](https://github.com/Tensai-033))
 
-| Role | NIM      | Name                         | Handle                                           |
-|------|----------|------------------------------|--------------------------------------------------|
-| FR1  | 13524033 | Ray Owen Martin              | [@Tensai-033](https://github.com/Tensai-033)     |
-| FR2  | 13524033 | Ray Owen Martin              | [@Tensai-033](https://github.com/Tensai-033)     |
-| FR3  | 13524012 | Tengku Naufal Saqib          | [@tengkuNaufal](https://github.com/tengkuNaufal) |
-| FR4  | 13524072 | I Gusti Ngurah Alit Dharma Y | [@SukaBotol](https://github.com/SukaBotol)       |
-| FR5  | 13524108 | Daffa Mutaqin Tetaputra      | ?                                                |
+| Role     | NIM      | Name                         | Handle                                           |
+|----------|----------|------------------------------|--------------------------------------------------|
+| FR1, FR2 | 13524033 | Ray Owen Martin              | [@Tensai-033](https://github.com/Tensai-033)     |
+| FR3, FR5 | 13524012 | Tengku Naufal Saqib          | [@tengkuNaufal](https://github.com/tengkuNaufal) |
+| FR4      | 13524072 | I Gusti Ngurah Alit Dharma Y | [@SukaBotol](https://github.com/SukaBotol)       |
 
 **IF3140 Database System**  
 *Semester 1 2026/2027*

@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
+import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
 
 /**
@@ -16,8 +18,8 @@ import org.rafendb.recovery.log.WALRecord;
  */
 public final class PitrManager {
     private final Logger logger;
-    private Map<String, Map<Integer, String>> snapshotRows = Map.of();
-    private Map<String, Map<Integer, String>> currentRows = Map.of();
+    private Map<String, Map<Rid, String>> snapshotRows = Map.of();
+    private Map<String, Map<Rid, String>> currentRows = Map.of();
     private long snapshotTimestamp;
     private long snapshotLsn;
     private boolean snapshotAvailable;
@@ -27,7 +29,7 @@ public final class PitrManager {
     private int recoveredHighestTransactionId;
     private long recoveredHighestTimestamp;
 
-    public PitrManager(Logger logger) {
+    public PitrManager(Logger logger) throws LoggerErrorException {
         this.logger = Objects.requireNonNull(logger, "logger");
         captureSnapshot(0, Map.of());
     }
@@ -38,7 +40,8 @@ public final class PitrManager {
      * boundary.
      */
     public synchronized void captureSnapshot(
-            long timestamp, Map<String, ? extends Map<Integer, String>> rows) {
+            long timestamp, Map<String, ? extends Map<Rid, String>> rows)
+            throws LoggerErrorException {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
         logger.flushAll();
@@ -52,7 +55,8 @@ public final class PitrManager {
     }
 
     /** Restores the state after every transaction whose COMMIT timestamp is at most the target. */
-    public synchronized boolean recoverToTimestamp(long targetTimestamp) {
+    public synchronized boolean recoverToTimestamp(long targetTimestamp)
+            throws LoggerErrorException {
         if (!snapshotAvailable || targetTimestamp < snapshotTimestamp) return false;
         List<WALRecord> wal = durableWal();
         long latestCommitTimestamp = latestCommitTimestamp(wal);
@@ -72,7 +76,8 @@ public final class PitrManager {
      * Restores through the target transaction's COMMIT LSN. Earlier LSNs define the boundary;
      * transaction ID ordering is deliberately irrelevant.
      */
-    public synchronized boolean recoverToTransaction(int transactionId) {
+    public synchronized boolean recoverToTransaction(int transactionId)
+            throws LoggerErrorException {
         if (!snapshotAvailable || transactionId <= 0) return false;
         List<WALRecord> wal = durableWal();
         WALRecord targetCommit = null;
@@ -88,7 +93,7 @@ public final class PitrManager {
     }
 
     /** Restores through the latest durable COMMIT, or to the snapshot if there are no commits. */
-    public synchronized boolean recoverToLatestCommit() {
+    public synchronized boolean recoverToLatestCommit() throws LoggerErrorException {
         if (!snapshotAvailable) return false;
         List<WALRecord> wal = durableWal();
         WALRecord latest = null;
@@ -204,7 +209,7 @@ public final class PitrManager {
 
         // Build off to the side so a malformed record or invalid target never partially mutates
         // state.
-        Map<String, Map<Integer, String>> restored = copyRows(snapshotRows);
+        Map<String, Map<Rid, String>> restored = copyRows(snapshotRows);
         Set<Integer> replayedTransactions = new HashSet<>();
         int replayed = 0;
         long lastLsn = 0;
@@ -215,24 +220,24 @@ public final class PitrManager {
                     || !eligible.contains(record.getIdTransaction())) continue;
             WALRecord commit = commits.get(record.getIdTransaction());
             if (commit == null || record.getLSN() >= commit.getLSN()) continue;
-            if (record.getTableName() == null || record.getIdRecord() < 0) return false;
+            if (record.getTableName() == null || record.getRid() == null) return false;
             if (record.getLogType() != LogType.DELETE && record.getAfterValue() == null)
                 return false;
-            Map<Integer, String> table =
+            Map<Rid, String> table =
                     restored.computeIfAbsent(record.getTableName(), k -> new HashMap<>());
-            boolean rowExists = table.containsKey(record.getIdRecord());
+            boolean rowExists = table.containsKey(record.getRid());
             switch (record.getLogType()) {
                 case INSERT -> {
                     if (rowExists) return false;
-                    table.put(record.getIdRecord(), record.getAfterValue());
+                    table.put(record.getRid(), record.getAfterValue());
                 }
                 case UPDATE -> {
                     if (!rowExists) return false;
-                    table.put(record.getIdRecord(), record.getAfterValue());
+                    table.put(record.getRid(), record.getAfterValue());
                 }
                 case DELETE -> {
                     if (!rowExists) return false;
-                    table.remove(record.getIdRecord());
+                    table.remove(record.getRid());
                 }
                 default -> throw new IllegalStateException("Not a data change");
             }
@@ -249,7 +254,7 @@ public final class PitrManager {
         return true;
     }
 
-    private List<WALRecord> durableWal() {
+    private List<WALRecord> durableWal() throws LoggerErrorException {
         logger.flushAll();
         return logger.getLogsSorted();
     }
@@ -264,9 +269,9 @@ public final class PitrManager {
         return latest;
     }
 
-    private static Map<String, Map<Integer, String>> copyRows(
-            Map<String, ? extends Map<Integer, String>> rows) {
-        Map<String, Map<Integer, String>> copy = new HashMap<>();
+    private static Map<String, Map<Rid, String>> copyRows(
+            Map<String, ? extends Map<Rid, String>> rows) {
+        Map<String, Map<Rid, String>> copy = new HashMap<>();
         rows.forEach((table, records) -> copy.put(table, new HashMap<>(records)));
         return copy;
     }
@@ -280,7 +285,7 @@ public final class PitrManager {
     }
 
     /** Returns a defensive copy of the current mock database contents. */
-    public synchronized Map<String, Map<Integer, String>> getCurrentRows() {
+    public synchronized Map<String, Map<Rid, String>> getCurrentRows() {
         return copyRows(currentRows);
     }
 

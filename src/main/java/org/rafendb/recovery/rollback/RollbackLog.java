@@ -1,6 +1,7 @@
 package org.rafendb.recovery.rollback;
 
 import java.util.List;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
@@ -34,7 +35,7 @@ public interface RollbackLog {
      * @param logType BEGIN, COMMIT, atau ABORT; tidak boleh null
      * @throws LoggerErrorException jika record gagal ditambahkan
      */
-    void logTransactionEvent(int idTransaction, LogType logType);
+    void logTransactionEvent(int idTransaction, LogType logType) throws LoggerErrorException;
 
     /**
      * Menambahkan record INSERT, UPDATE, atau DELETE. Belum di-flush ke disk.
@@ -56,14 +57,42 @@ public interface RollbackLog {
             String tableName,
             int idRecord,
             String beforeVal,
-            String afterVal);
+            String afterVal)
+            throws LoggerErrorException;
+
+    /**
+     * Sama seperti {@link #logDataChange(int, LogType, long, String, int, String, String)}, tetapi
+     * memakai alamat baris {@link Rid} penuh dan generasi tabel. Dipakai FR3 untuk menulis record
+     * kompensasi agar alamat dan generasi tabelnya sama persis dengan record asal.
+     *
+     * @param idTransaction id transaksi
+     * @param logType INSERT, UPDATE, atau DELETE; tidak boleh null
+     * @param timestamp waktu perubahan terjadi, dalam milidetik epoch
+     * @param tableName tabel yang diubah, tidak boleh null
+     * @param tableGeneration generasi tabel saat perubahan dicatat
+     * @param rid alamat baris yang diubah, tidak boleh null
+     * @param beforeVal isi record sebelum perubahan, {@code null} untuk INSERT
+     * @param afterVal isi record sesudah perubahan, {@code null} untuk DELETE
+     * @return LSN record yang baru
+     * @throws LoggerErrorException jika record gagal ditambahkan
+     */
+    long logDataChange(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            long tableGeneration,
+            Rid rid,
+            String beforeVal,
+            String afterVal)
+            throws LoggerErrorException;
 
     /**
      * Menyimpan permanen (flush) semua record yang sudah ditambahkan ke stable storage.
      *
      * @throws LoggerErrorException jika log gagal di-flush
      */
-    void flushAll();
+    void flushAll() throws LoggerErrorException;
 
     /**
      * Mengembalikan id transaksi tertinggi di log.

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -49,13 +50,14 @@ public class CatalogManager {
     private static final String ALLOC_TMP = "alloc.hw.tmp";
 
     private static final int SNAPSHOT_MAGIC = 0x52414643; // "RAFC"
-    private static final int SNAPSHOT_VERSION = 1;
+    private static final int SNAPSHOT_VERSION = 2;
     private static final int ALLOC_MAGIC = 0x52414641; // "RAFA"
     private static final int ALLOC_VERSION = 1;
 
     // In-memory state
     private final Map<String, TableSchema> schemas = new LinkedHashMap<>();
     private final Map<String, String> tableFiles = new LinkedHashMap<>();
+    private final Map<String, UUID> tableGenerations = new HashMap<>();
     private final Map<String, TableStats> stats = new HashMap<>();
     private final Map<String, IndexInfo> indexesByName = new LinkedHashMap<>();
     private final Map<String, String> indexFiles = new LinkedHashMap<>();
@@ -102,6 +104,7 @@ public class CatalogManager {
         if (!snapExists && !allocExists) {
             schemas.clear();
             tableFiles.clear();
+            tableGenerations.clear();
             stats.clear();
             indexesByName.clear();
             indexFiles.clear();
@@ -118,12 +121,20 @@ public class CatalogManager {
 
         Map<String, TableSchema> newSchemas = new LinkedHashMap<>();
         Map<String, String> newTableFiles = new LinkedHashMap<>();
+        Map<String, UUID> newGenerations = new HashMap<>();
         Map<String, TableStats> newStats = new HashMap<>();
         Map<String, IndexInfo> newIndexes = new LinkedHashMap<>();
         Map<String, String> newIndexFiles = new LinkedHashMap<>();
         Map<String, Long> newAlloc = new HashMap<>();
 
-        readSnapshot(snap, newSchemas, newTableFiles, newStats, newIndexes, newIndexFiles);
+        readSnapshot(
+                snap,
+                newSchemas,
+                newTableFiles,
+                newGenerations,
+                newStats,
+                newIndexes,
+                newIndexFiles);
         readAlloc(alloc, newAlloc);
 
         // Prune allocation entries whose table is not in the snapshot. A DROP TABLE that failed
@@ -142,6 +153,8 @@ public class CatalogManager {
         schemas.putAll(newSchemas);
         tableFiles.clear();
         tableFiles.putAll(newTableFiles);
+        tableGenerations.clear();
+        tableGenerations.putAll(newGenerations);
         stats.clear();
         stats.putAll(newStats);
         indexesByName.clear();
@@ -236,6 +249,12 @@ public class CatalogManager {
         return s;
     }
 
+    /** Returns the persistent identity of an existing table incarnation. */
+    public synchronized UUID getTableGeneration(String table) {
+        getSchema(table);
+        return tableGenerations.get(table);
+    }
+
     /**
      * Maps a normalized table name to its canonical physical file, including before registration.
      * Does not create/register the table; callers use getSchema when existence must be checked.
@@ -269,6 +288,7 @@ public class CatalogManager {
         }
         validateSchemaBody(schema, schemas);
         schemas.put(schema.table(), schema);
+        tableGenerations.put(schema.table(), UUID.randomUUID());
         tableFiles.put(schema.table(), safeRelativeFile("tbl_" + hex(schema.table()) + ".dat"));
         stats.put(schema.table(), new TableStats(0L, 0L, 0.0, 0.0, zeroDistinct(schema)));
     }
@@ -396,6 +416,7 @@ public class CatalogManager {
         }
 
         schemas.remove(table);
+        tableGenerations.remove(table);
         tableFiles.remove(table);
         stats.remove(table);
 
@@ -724,6 +745,9 @@ public class CatalogManager {
                 }
 
                 writeString(out, tableFiles.get(s.table()));
+                UUID generation = tableGenerations.get(s.table());
+                out.writeLong(generation.getMostSignificantBits());
+                out.writeLong(generation.getLeastSignificantBits());
 
                 TableStats st = stats.get(s.table());
                 writeStats(out, st);
@@ -749,6 +773,7 @@ public class CatalogManager {
             Path file,
             Map<String, TableSchema> outSchemas,
             Map<String, String> outTableFiles,
+            Map<String, UUID> outGenerations,
             Map<String, TableStats> outStats,
             Map<String, IndexInfo> outIndexes,
             Map<String, String> outIndexFiles)
@@ -765,9 +790,11 @@ public class CatalogManager {
                 throw new IOException("bad snapshot magic: " + Integer.toHexString(magic));
             }
             int version = in.readInt();
-            if (version != SNAPSHOT_VERSION) {
+            if (version != 1 && version != SNAPSHOT_VERSION) {
                 throw new IOException("unsupported snapshot version: " + version);
             }
+            // Legacy identities stay stable before the next save persists them in version 2.
+            UUID legacyNamespace = version == 1 ? UUID.nameUUIDFromBytes(bytes) : null;
             int tableCount = in.readInt();
             if (tableCount < 0) {
                 throw new IOException("negative table count");
@@ -791,10 +818,17 @@ public class CatalogManager {
                     fks.add(readForeignKey(in));
                 }
                 String tfile = readString(in);
+                UUID generation =
+                        version == 1
+                                ? UUID.nameUUIDFromBytes(
+                                        (legacyNamespace + "\u0000" + table)
+                                                .getBytes(StandardCharsets.UTF_8))
+                                : new UUID(in.readLong(), in.readLong());
                 TableStats st = readStats(in);
                 TableSchema schema = new TableSchema(table, cols, fks);
                 outSchemas.put(table, schema);
                 outTableFiles.put(table, tfile);
+                outGenerations.put(table, generation);
                 outStats.put(table, st);
             }
             int idxCount = in.readInt();

@@ -11,10 +11,10 @@
   <packaging>jar</packaging>
 
   <name>RafenDB</name>
-  <description>mini Database Management System from scratch. Made for IF3140 Database System Sem 1 2026/2027</description>
+  <description>mini Database Management System from scratch. Made for IF3140 Database Systems Sem 1 2026/2027</description>
 
   <properties>
-    <revision>2.2.0-dev-SNAPSHOT</revision>
+    <revision>3.1.0-dev-SNAPSHOT</revision>
 
     <!-- Language level. javac checks against the Java 25 API even on a newer JDK. -->
     <maven.compiler.release>25</maven.compiler.release>
@@ -23,6 +23,8 @@
 
     <!-- Test library: any JUnit 6 is fine-->
     <junit.version>6.1.3</junit.version>
+    <!-- Line editor of the interactive client: history, multi-line editing, Ctrl+C/L/D. -->
+    <jline.version>4.5.0</jline.version>
 
     <!-- Formatter. Pinned explicitly so a plugin upgrade never reformats the codebase. -->
     <spotless.version>3.10.4</spotless.version>
@@ -43,6 +45,7 @@
     <!-- Bundles PlantUML 1.2025.0. Don't override it: newer PlantUML breaks this plugin without any error. -->
     <plantuml-maven-plugin.version>0.2.13</plantuml-maven-plugin.version>
     <maven-antrun-plugin.version>3.1.0</maven-antrun-plugin.version>
+    <maven-dependency-plugin.version>3.7.0</maven-dependency-plugin.version>
 
     <!-- Where -Pdiagrams writes the class diagrams (.puml, .svg, .png). One folder per package group. -->
     <diagrams.outputDirectory>${project.basedir}/docs/generated</diagrams.outputDirectory>
@@ -68,8 +71,16 @@
     </dependencies>
   </dependencyManagement>
 
-  <!-- Test scope only. Main code has zero dependencies, the enforcer checks this. -->
+  <!--
+    Main code uses the JDK only, with one exception the enforcer allows: JLine, which only
+    org.rafendb.client.terminal may import. Everything else is test scope.
+  -->
   <dependencies>
+    <dependency>
+      <groupId>org.jline</groupId>
+      <artifactId>jline</artifactId>
+      <version>${jline.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -172,6 +183,11 @@
           <artifactId>maven-antrun-plugin</artifactId>
           <version>${maven-antrun-plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>${maven-dependency-plugin.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
 
@@ -206,9 +222,31 @@
                     <exclude>*:*:*:*:provided</exclude>
                     <exclude>*:*:*:*:system</exclude>
                   </excludes>
-                  <message>Only test-scope dependencies are allowed. RafenDB uses the JDK only.</message>
+                  <includes>
+                    <include>org.jline:jline</include>
+                  </includes>
+                  <message>Only test-scope dependencies are allowed, except org.jline:jline for the client terminal. RafenDB uses the JDK only.</message>
                 </bannedDependencies>
               </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Runtime libraries next to the jar, so scripts/run.sh can put target/lib/* on the classpath. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-runtime-libraries</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <includeScope>runtime</includeScope>
+              <outputDirectory>${project.build.directory}/lib</outputDirectory>
             </configuration>
           </execution>
         </executions>
