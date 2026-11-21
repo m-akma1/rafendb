@@ -1,5 +1,6 @@
 package org.rafendb.storage;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -7,8 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.engine.Engine;
+import org.rafendb.mock.storage.MockStorageManager;
 
 /** Tests the Storage Manager facade over the real block, buffer, record and index modules. */
 class StorageManagerImplTest {
@@ -93,6 +97,133 @@ class StorageManagerImplTest {
     void nullValuesSurviveARoundTrip() throws StorageInternalException {
         Rid rid = add(2, null);
         assertEquals(row(2, null), sm.fetch(TABLE, rid).orElseThrow().row());
+    }
+
+    @Test
+    void rowImagesPreserveTypesUnicodeNullAndEmptyTextAcrossRestart()
+            throws StorageInternalException {
+        sm.createTable(
+                new TableSchema(
+                        "images",
+                        List.of(
+                                new Column("id", DataType.INTEGER, 0, false, true),
+                                new Column("score", DataType.FLOAT, 0, false, false),
+                                new Column("code", DataType.CHAR, 8, false, false),
+                                new Column("text", DataType.VARCHAR, 50, false, false),
+                                new Column("missing", DataType.VARCHAR, 50, true, false),
+                                new Column("empty", DataType.VARCHAR, 50, true, false))));
+        Row original =
+                new Row(
+                        List.of(
+                                Value.ofInt(-42),
+                                Value.ofFloat(3.75f),
+                                Value.ofText(DataType.CHAR, "I\0F"),
+                                text("Budi \u4f60\u597d \ud83d\ude00\0"),
+                                Value.nullOf(DataType.VARCHAR),
+                                text("")));
+        byte[] image = sm.encodeRow("images", original);
+        byte[] snapshot = image.clone();
+        UUID generation = sm.getTableGeneration("images");
+        sm.close();
+        sm = (StorageManagerImpl) Engine.storage(dir, 32, l -> {});
+        assertEquals(generation, sm.getTableGeneration("images"));
+        assertEquals(original, sm.decodeRow("images", image));
+        assertArrayEquals(snapshot, image);
+    }
+
+    @Test
+    void decodedImageRestoresADeletedRowAndItsIndex() throws StorageInternalException {
+        sm.createIndex(new IndexInfo("idx_name", TABLE, "name", IndexType.HASH));
+        Rid rid = add(7, "Budi \u00e9");
+        Row original = sm.fetch(TABLE, rid).orElseThrow().row();
+        byte[] image = sm.encodeRow(TABLE, original);
+        sm.delete(TABLE, rid, ++lsn);
+        sm.applyRecovery(TABLE, rid, Optional.of(sm.decodeRow(TABLE, image)), ++lsn);
+        assertEquals(original, sm.fetch(TABLE, rid).orElseThrow().row());
+        assertEquals(List.of(rid), sm.lookupIndex("idx_name", original.get(1)));
+    }
+
+    @Test
+    void rowCodecRejectsInvalidInputsAndCorruptImages() {
+        byte[] image = sm.encodeRow(TABLE, row(1, "Budi"));
+        assertThrows(NullPointerException.class, () -> sm.encodeRow(TABLE, null));
+        assertThrows(NullPointerException.class, () -> sm.decodeRow(TABLE, null));
+        assertThrows(NullPointerException.class, () -> sm.encodeRow(null, row(1, null)));
+        assertThrows(NullPointerException.class, () -> sm.decodeRow(null, image));
+        assertThrows(NullPointerException.class, () -> sm.getTableGeneration(null));
+        assertThrows(StorageRuntimeException.class, () -> sm.encodeRow("missing", row(1, null)));
+        assertThrows(StorageRuntimeException.class, () -> sm.decodeRow("missing", image));
+        assertThrows(StorageRuntimeException.class, () -> sm.getTableGeneration("missing"));
+        assertThrows(
+                StorageRuntimeException.class,
+                () -> sm.encodeRow(TABLE, new Row(List.of(Value.ofInt(1)))));
+        assertThrows(StorageInternalException.class, () -> sm.decodeRow(TABLE, new byte[0]));
+        assertThrows(
+                StorageInternalException.class,
+                () -> sm.decodeRow(TABLE, Arrays.copyOf(image, image.length - 1)));
+        assertThrows(
+                StorageInternalException.class,
+                () -> sm.decodeRow(TABLE, Arrays.copyOf(image, image.length + 1)));
+        byte[] invalidUtf8 = image.clone();
+        invalidUtf8[invalidUtf8.length - 1] = (byte) 0xff;
+        assertThrows(StorageInternalException.class, () -> sm.decodeRow(TABLE, invalidUtf8));
+    }
+
+    @Test
+    void rejectedTextDoesNotChangeExistingRows() throws StorageInternalException {
+        Rid rid = add(1, "original");
+        Row malformed = row(1, "\uD800");
+        assertThrows(StorageRuntimeException.class, () -> sm.encodeRow(TABLE, malformed));
+        assertThrows(StorageRuntimeException.class, () -> sm.reserveRid(TABLE, malformed));
+        assertThrows(StorageRuntimeException.class, () -> sm.update(TABLE, rid, malformed, ++lsn));
+        assertThrows(
+                StorageInternalException.class,
+                () -> sm.applyRecovery(TABLE, rid, Optional.of(malformed), ++lsn));
+        assertEquals(row(1, "original"), sm.fetch(TABLE, rid).orElseThrow().row());
+    }
+
+    @Test
+    void recreatedTableHasANewGenerationEvenAtTheSameRid() throws StorageInternalException {
+        UUID generation = sm.getTableGeneration(TABLE);
+        Rid original = add(1, "old");
+        TableSchema schema = sm.getSchema(TABLE);
+        sm.dropTable(TABLE, false);
+        sm.createTable(schema);
+        assertFalse(generation.equals(sm.getTableGeneration(TABLE)));
+        assertEquals(original, add(2, "new"));
+    }
+
+    @Test
+    void mockAndRealStorageUseCompatibleImages() throws StorageInternalException {
+        try (MockStorageManager mock = new MockStorageManager()) {
+            sm.createTable(mock.getSchema("prodi"));
+            sm.createTable(mock.getSchema("mahasiswa"));
+            Row original =
+                    new Row(
+                            List.of(
+                                    Value.ofInt(42),
+                                    text("Budi \u4f60\u597d"),
+                                    Value.nullOf(DataType.FLOAT),
+                                    Value.ofText(DataType.CHAR, "IF")));
+            byte[] image = mock.encodeRow("mahasiswa", original);
+            assertArrayEquals(sm.encodeRow("mahasiswa", original), image);
+            assertEquals(original, sm.decodeRow("mahasiswa", image));
+            assertEquals(original, mock.decodeRow("mahasiswa", image));
+            assertThrows(
+                    StorageInternalException.class, () -> mock.decodeRow("mahasiswa", new byte[0]));
+            assertThrows(
+                    StorageRuntimeException.class, () -> mock.encodeRow("mahasiswa", row(1, null)));
+            try (MockStorageManager other = new MockStorageManager()) {
+                assertEquals(
+                        mock.getTableGeneration("mahasiswa"),
+                        other.getTableGeneration("mahasiswa"));
+            }
+            mock.loadSampleDatabase(
+                    change -> {
+                        throw new AssertionError("dummy tables already exist");
+                    });
+            assertThrows(NullPointerException.class, () -> mock.loadSampleDatabase(null));
+        }
     }
 
     @Test
@@ -353,7 +484,7 @@ class StorageManagerImplTest {
     @Test
     void sampleDatabaseLoadsAndIsQueryable() throws StorageInternalException {
         sm.dropTable(TABLE, false);
-        sm.loadSampleDatabase();
+        sm.loadSampleDatabase(change -> ++lsn);
         assertTrue(sm.listTables().containsAll(List.of("customers", "orders", "order_items")));
         try (RecordCursor c = sm.scan("customers")) {
             assertTrue(c.next() != null);
@@ -367,6 +498,10 @@ class StorageManagerImplTest {
         sm.close();
         assertThrows(IllegalStateException.class, () -> sm.listTables());
         assertThrows(IllegalStateException.class, () -> sm.scan(TABLE));
+        assertThrows(IllegalStateException.class, () -> sm.encodeRow(TABLE, row(1, null)));
+        assertThrows(IllegalStateException.class, () -> sm.decodeRow(TABLE, new byte[0]));
+        assertThrows(IllegalStateException.class, () -> sm.getTableGeneration(TABLE));
+        assertThrows(IllegalStateException.class, () -> sm.loadSampleDatabase(change -> 1));
         sm.close();
     }
 }

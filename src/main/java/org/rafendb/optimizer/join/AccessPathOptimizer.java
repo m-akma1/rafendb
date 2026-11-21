@@ -3,7 +3,7 @@ package org.rafendb.optimizer.join;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
 import org.rafendb.common.schema.IndexInfo;
@@ -11,9 +11,9 @@ import org.rafendb.common.schema.TableSchema;
 
 /** Finds eligible index scans for a query plan. */
 public final class AccessPathOptimizer {
-    private final StorageManager storage;
+    private final StorageMetadata storage;
 
-    public AccessPathOptimizer(StorageManager storage) {
+    public AccessPathOptimizer(StorageMetadata storage) {
         this.storage = Objects.requireNonNull(storage, "storage");
     }
 
@@ -51,7 +51,8 @@ public final class AccessPathOptimizer {
             collectSelectionIndexAlternatives(root, selection, candidates);
         } else if (current instanceof JoinPlanNode join
                 && join.condition() != null
-                && join.algorithm() == JoinAlgorithm.BLOCK_NESTED_LOOP) {
+                && join.algorithm() == JoinAlgorithm.BLOCK_NESTED_LOOP
+                && !PlanTrees.containsFixedPredicate(join)) {
             List<Expr.ColumnRef> left = ColumnLayouts.outputColumns(join.left(), storage);
             List<Expr.ColumnRef> layout = ColumnLayouts.outputColumns(join, storage);
             if (left != null && layout != null) {
@@ -67,9 +68,11 @@ public final class AccessPathOptimizer {
     /** Combines adjacent selections while preserving every predicate the index does not answer. */
     private void collectSelectionIndexAlternatives(
             PlanNode root, SelectionPlanNode selection, List<PlanNode> candidates) {
+        if (!ColumnLayouts.canMovePredicate(selection.condition())) return;
         List<Expr> predicates = new ArrayList<>(PlanTrees.conjuncts(selection.condition()));
         PlanNode child = selection.child();
         while (child instanceof SelectionPlanNode nested) {
+            if (!ColumnLayouts.canMovePredicate(nested.condition())) return;
             predicates.addAll(PlanTrees.conjuncts(nested.condition()));
             child = nested.child();
         }
@@ -185,6 +188,7 @@ public final class AccessPathOptimizer {
                 && op != Expr.Op.LE) return null;
 
         if (!(left instanceof Expr.ColumnRef column)
+                || column.scopeDepth() != 0
                 || !(right instanceof Expr.Literal literal)
                 || literal.value().isNull()) return null;
 

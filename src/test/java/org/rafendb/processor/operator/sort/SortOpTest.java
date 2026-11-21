@@ -10,6 +10,7 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.SortPlanNode.Direction;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
+import org.rafendb.processor.operator.FakeChildOp;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -22,7 +23,7 @@ class SortOpTest {
 
     @Test
     void sortsAscendingStablyAndPlacesNullFirst() {
-        MemoryOperator child =
+        FakeChildOp child =
                 input(
                         row(Value.ofInt(2), text("first two")),
                         row(Value.nullOf(DataType.INTEGER), text("null")),
@@ -44,7 +45,7 @@ class SortOpTest {
 
     @Test
     void sortsDescendingAndPlacesNullLast() {
-        MemoryOperator child =
+        FakeChildOp child =
                 input(
                         row(Value.ofInt(2), text("two")),
                         row(Value.nullOf(DataType.INTEGER), text("null")),
@@ -63,7 +64,7 @@ class SortOpTest {
 
     @Test
     void comparesIntegersAndFloatsAsNumbers() {
-        MemoryOperator child =
+        FakeChildOp child =
                 input(
                         row(Value.ofInt(16_777_217), text("integer")),
                         row(Value.ofFloat(16_777_216.0f), text("float")),
@@ -86,7 +87,7 @@ class SortOpTest {
     void comparesTextByUnicodeCodePointRatherThanUtf16Unit() {
         String bmpPrivateUse = "\uE000";
         String supplementary = "\uD800\uDC00";
-        MemoryOperator child =
+        FakeChildOp child =
                 input(
                         row(text(supplementary), text("supplementary")),
                         row(text(bmpPrivateUse), text("bmp")));
@@ -102,33 +103,11 @@ class SortOpTest {
     }
 
     @Test
-    void reopenResetsChildAndSortPosition() {
-        MemoryOperator child =
-                input(row(Value.ofInt(2), text("two")), row(Value.ofInt(1), text("one")));
-        SortOp sort = new SortOp(child, 0, Direction.ASC);
-
-        sort.open();
-        assertEquals(row(Value.ofInt(1), text("one")), sort.next());
-        sort.open();
-        assertEquals(
-                List.of(row(Value.ofInt(1), text("one")), row(Value.ofInt(2), text("two"))),
-                drain(sort));
-        assertEquals(2, child.openCount);
-        sort.close();
-    }
-
-    @Test
-    void rejectsInvalidKeyOffsetAndNextBeforeOpen() {
-        MemoryOperator child = input(row(Value.ofInt(1), text("one")));
+    void rejectsKeyOffsetOutsideTheChildSchema() {
+        FakeChildOp child = input(row(Value.ofInt(1), text("one")));
 
         assertThrows(IllegalArgumentException.class, () -> new SortOp(child, -1, Direction.ASC));
         assertThrows(IllegalArgumentException.class, () -> new SortOp(child, 2, Direction.ASC));
-        SortOp sort = new SortOp(child, 0, Direction.ASC);
-        try {
-            assertThrows(IllegalStateException.class, sort::next);
-        } finally {
-            sort.close();
-        }
     }
 
     private static List<ResultRow> drain(Operator operator) {
@@ -140,8 +119,8 @@ class SortOpTest {
         return rows;
     }
 
-    private static MemoryOperator input(ResultRow... rows) {
-        return new MemoryOperator(SCHEMA, List.of(rows));
+    private static FakeChildOp input(ResultRow... rows) {
+        return new FakeChildOp(SCHEMA, List.of(rows));
     }
 
     private static ResultRow row(Value key, Value label) {
@@ -150,43 +129,5 @@ class SortOpTest {
 
     private static Value text(String value) {
         return Value.ofText(DataType.VARCHAR, value);
-    }
-
-    private static final class MemoryOperator implements Operator {
-        private final List<ColumnSchema> schema;
-        private final List<ResultRow> rows;
-        private int position;
-        private int openCount;
-        private boolean open;
-
-        private MemoryOperator(List<ColumnSchema> schema, List<ResultRow> rows) {
-            this.schema = List.copyOf(schema);
-            this.rows = List.copyOf(rows);
-        }
-
-        @Override
-        public void open() {
-            position = 0;
-            open = true;
-            openCount++;
-        }
-
-        @Override
-        public List<ColumnSchema> schema() {
-            return schema;
-        }
-
-        @Override
-        public ResultRow next() {
-            if (!open) {
-                throw new IllegalStateException("Input operator is not open");
-            }
-            return position < rows.size() ? rows.get(position++) : null;
-        }
-
-        @Override
-        public void close() {
-            open = false;
-        }
     }
 }

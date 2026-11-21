@@ -10,7 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
 import org.rafendb.common.plan.IndexScanNode;
@@ -37,7 +37,7 @@ public final class JoinOptimizer {
     }
 
     /** Uses the catalog, when available, to recognize bound unqualified connecting predicates. */
-    PlanNode normalize(PlanNode root, StorageManager storage) {
+    PlanNode normalize(PlanNode root, StorageMetadata storage) {
         return rewriteSelectionsIntoJoins(Objects.requireNonNull(root, "root"), storage);
     }
 
@@ -50,7 +50,7 @@ public final class JoinOptimizer {
      * @param storage schema information for resolving columns
      * @return the original plan and its layout-preserving alternatives
      */
-    public List<PlanNode> generateCandidates(PlanNode root, StorageManager storage) {
+    public List<PlanNode> generateCandidates(PlanNode root, StorageMetadata storage) {
         Objects.requireNonNull(root, "root");
         Objects.requireNonNull(storage, "storage");
         List<PlanNode> candidates = new ArrayList<>();
@@ -61,7 +61,7 @@ public final class JoinOptimizer {
 
     /** Visits the source tree only. The search combines successive transformations. */
     private void collectJoinAlternatives(
-            PlanNode root, PlanNode current, StorageManager storage, List<PlanNode> candidates) {
+            PlanNode root, PlanNode current, StorageMetadata storage, List<PlanNode> candidates) {
         Inputs join = reorderableInputs(current);
         if (join != null) {
             PlanNode swapped = swap(join, storage);
@@ -78,7 +78,7 @@ public final class JoinOptimizer {
     }
 
     /** A restoring projection preserves output column order after swapping inputs. */
-    private PlanNode swap(Inputs join, StorageManager storage) {
+    private PlanNode swap(Inputs join, StorageMetadata storage) {
         List<Expr.ColumnRef> left = outputColumns(join.left(), storage);
         List<Expr.ColumnRef> right = outputColumns(join.right(), storage);
         if (left == null || right == null) return null;
@@ -97,6 +97,8 @@ public final class JoinOptimizer {
     }
 
     private Inputs reorderableInputs(PlanNode node) {
+        if (!(node instanceof JoinPlanNode || node instanceof CartesianPlanNode)
+                || PlanTrees.containsFixedPredicate(node)) return null;
         if (node instanceof JoinPlanNode join
                 && join.condition() != null
                 && join.algorithm() == JoinAlgorithm.BLOCK_NESTED_LOOP) {
@@ -117,7 +119,7 @@ public final class JoinOptimizer {
      * so ancestors need no remapping. Old child predicates first use offsets in the ABC layout.
      * Predicates using only the new child's columns then use that child's local offsets.
      */
-    private PlanNode regroup(Inputs join, StorageManager storage, boolean toRight) {
+    private PlanNode regroup(Inputs join, StorageMetadata storage, boolean toRight) {
         Inputs nested = reorderableInputs(toRight ? join.left() : join.right());
         if (nested == null) return null;
         PlanNode firstInput = toRight ? nested.left() : join.left();
@@ -167,7 +169,7 @@ public final class JoinOptimizer {
             // Only predicates wholly inside the new child can use this partial offset map.
             // Constants stay at the parent so regrouping does not change their placement.
             if (allColumnOffsetsInRange(predicate, newChildStart, newChildEnd)
-                    && containsColumnReference(predicate)) {
+                    && containsLocalColumn(predicate)) {
                 childCondition =
                         PlanTrees.and(
                                 childCondition,
@@ -187,27 +189,31 @@ public final class JoinOptimizer {
                         lastInput);
     }
 
-    /** Constants have no offsets, so they pass this half-open range check. */
+    /** Checks only offsets in the current query's row. */
     private boolean allColumnOffsetsInRange(Expr expr, int start, int end) {
         if (expr instanceof Expr.ColumnRef column) {
-            return column.offset() >= start && column.offset() < end;
+            return column.scopeDepth() > 0 || (column.offset() >= start && column.offset() < end);
         }
         if (expr instanceof Expr.Binary binary) {
             return allColumnOffsetsInRange(binary.left(), start, end)
                     && allColumnOffsetsInRange(binary.right(), start, end);
         }
+        if (expr instanceof Expr.Not not) {
+            return allColumnOffsetsInRange(not.child(), start, end);
+        }
         return true;
     }
 
-    private boolean containsColumnReference(Expr expr) {
-        return expr instanceof Expr.ColumnRef
+    private boolean containsLocalColumn(Expr expr) {
+        return expr instanceof Expr.ColumnRef column && column.scopeDepth() == 0
                 || expr instanceof Expr.Binary binary
-                        && (containsColumnReference(binary.left())
-                                || containsColumnReference(binary.right()));
+                        && (containsLocalColumn(binary.left())
+                                || containsLocalColumn(binary.right()))
+                || expr instanceof Expr.Not not && containsLocalColumn(not.child());
     }
 
     /** Normalization preserves output layout, so ancestor offsets stay valid. */
-    private PlanNode rewriteSelectionsIntoJoins(PlanNode current, StorageManager storage) {
+    private PlanNode rewriteSelectionsIntoJoins(PlanNode current, StorageMetadata storage) {
         if (current instanceof SelectionPlanNode selection) {
             PlanNode child = rewriteSelectionsIntoJoins(selection.child(), storage);
             return rewriteSelectionOverJoin(
@@ -246,15 +252,21 @@ public final class JoinOptimizer {
     }
 
     /** Merges filters without treating unresolved natural joins as Cartesian products. */
-    private PlanNode rewriteSelectionOverJoin(SelectionPlanNode selection, StorageManager storage) {
-        if (selection.child() instanceof JoinPlanNode join && join.condition() != null) {
+    private PlanNode rewriteSelectionOverJoin(
+            SelectionPlanNode selection, StorageMetadata storage) {
+        PlanNode child = selection.child();
+        if (!(child instanceof JoinPlanNode || child instanceof CartesianPlanNode))
+            return selection;
+        if (!ColumnLayouts.canMovePredicate(selection.condition())
+                || PlanTrees.containsFixedPredicate(child)) return selection;
+        if (child instanceof JoinPlanNode join && join.condition() != null) {
             return new JoinPlanNode(
                     join.algorithm(),
                     PlanTrees.and(selection.condition(), join.condition()),
                     join.left(),
                     join.right());
         }
-        if (!(selection.child() instanceof CartesianPlanNode cartesian)) {
+        if (!(child instanceof CartesianPlanNode cartesian)) {
             return selection;
         }
 
@@ -303,13 +315,14 @@ public final class JoinOptimizer {
         return referencesLeft && referencesRight;
     }
 
-    /** A null qualifier marks an unqualified column. */
     private void collectReferencedQualifiers(Expr expr, Set<String> references) {
-        if (expr instanceof Expr.ColumnRef column) {
+        if (expr instanceof Expr.ColumnRef column && column.scopeDepth() == 0) {
             references.add(column.table());
         } else if (expr instanceof Expr.Binary binary) {
             collectReferencedQualifiers(binary.left(), references);
             collectReferencedQualifiers(binary.right(), references);
+        } else if (expr instanceof Expr.Not not) {
+            collectReferencedQualifiers(not.child(), references);
         }
     }
 

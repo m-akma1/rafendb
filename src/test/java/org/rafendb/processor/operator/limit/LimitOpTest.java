@@ -111,7 +111,7 @@ class LimitOpTest {
         limit.open();
         child.failNextOpen();
         RuntimeException openError = assertThrows(RuntimeException.class, limit::open);
-        assertEquals("Child open failed", openError.getMessage());
+        assertEquals("child open failed", openError.getMessage());
 
         IllegalStateException nextError = assertThrows(IllegalStateException.class, limit::next);
         assertEquals("LimitOp is not open", nextError.getMessage());

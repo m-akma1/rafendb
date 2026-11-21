@@ -6,7 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.plan.QueryPlan;
@@ -23,7 +23,7 @@ public final class JoinAccessPathOptimizer {
     private static final int MAX_CANDIDATES = 128;
 
     private final JoinOptimizer joins = new JoinOptimizer();
-    private final StorageManager storage;
+    private final StorageMetadata storage;
     private final AccessPathOptimizer access;
     private final CostModel costs;
     private final PlanValidator validator;
@@ -39,7 +39,7 @@ public final class JoinAccessPathOptimizer {
     }
 
     /** Normalizes joins using catalog information, without estimating costs. */
-    public JoinAccessPathOptimizer(StorageManager storage) {
+    public JoinAccessPathOptimizer(StorageMetadata storage) {
         this.storage = Objects.requireNonNull(storage, "storage");
         access = null;
         costs = null;
@@ -48,12 +48,12 @@ public final class JoinAccessPathOptimizer {
     }
 
     /** Creates a beam-search optimizer using the supplied catalog and cost model. */
-    public JoinAccessPathOptimizer(StorageManager storage, CostModel costs) {
+    public JoinAccessPathOptimizer(StorageMetadata storage, CostModel costs) {
         this(storage, costs, SearchConfig.defaults());
     }
 
     /** Uses the requested search mode and settings. */
-    public JoinAccessPathOptimizer(StorageManager storage, CostModel costs, SearchConfig config) {
+    public JoinAccessPathOptimizer(StorageMetadata storage, CostModel costs, SearchConfig config) {
         this.storage = Objects.requireNonNull(storage, "storage");
         access = new AccessPathOptimizer(storage);
         this.costs = Objects.requireNonNull(costs, "costs");
@@ -65,6 +65,7 @@ public final class JoinAccessPathOptimizer {
      * Normalizes joins, then compares complete join and access plans, including plans without joins.
      * Beam search explores bounded swaps and regroupings. GA explores left-deep permutations
      * and also compares the normalized original plan. Each arrangement has a bounded access search.
+     * Regions with subquery predicates that GA would move use beam search.
      * Neither search guarantees a global optimum. Ties keep discovery order. GA wins its final tie.
      * Without a cost model, only normalization runs and the supplied cost is preserved.
      *
@@ -84,9 +85,10 @@ public final class JoinAccessPathOptimizer {
         AccessPathSearch accessSearch =
                 new AccessPathSearch(access, validator, costs, config.accessPathBudget());
         AccessPathSearch.Result best =
-                config.mode() == SearchMode.HEURISTIC
-                        ? selectHeuristicPlan(normalized, accessSearch)
-                        : selectGeneticPlan(normalized, accessSearch);
+                config.mode() == SearchMode.GENETIC
+                                && !JoinOrderDecoder.hasFixedPredicateInJoinRegion(normalized)
+                        ? selectGeneticPlan(normalized, accessSearch)
+                        : selectHeuristicPlan(normalized, accessSearch);
         return best.root() == plan.root() && best.cost() == plan.totalCost()
                 ? plan
                 : new QueryPlan(best.root(), best.cost());
