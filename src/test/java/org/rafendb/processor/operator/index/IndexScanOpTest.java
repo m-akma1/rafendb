@@ -101,20 +101,19 @@ class IndexScanOpTest {
     @Test
     void testEqualityLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275)) {
 
-        scan.open();
+            scan.open();
 
-        ResultRow result = scan.next();
+            ResultRow result = scan.next();
 
-        assertNotNull(result);
-        assertEquals(13524275, result.get(0).asInt());
-        assertEquals("John Doe", result.get(1).asText());
-        assertNotNull(result.rid());
+            assertNotNull(result);
+            assertEquals(13524275, result.get(0).asInt());
+            assertEquals("John Doe", result.get(1).asText());
+            assertNotNull(result.rid());
 
-        assertNull(scan.next());
-
-        scan.close();
+            assertNull(scan.next());
+        }
     }
 
     /**
@@ -123,15 +122,14 @@ class IndexScanOpTest {
     @Test
     void testGreaterThanLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.GT, 13524276);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.GT, 13524276)) {
 
-        scan.open();
+            scan.open();
 
-        List<Integer> result = collectNim(scan);
+            List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(18224278, 18224280), result);
-
-        scan.close();
+            assertEquals(List.of(18224278, 18224280), result);
+        }
     }
 
     /**
@@ -140,15 +138,14 @@ class IndexScanOpTest {
     @Test
     void testGreaterThanOrEqualLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.GE, 13524276);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.GE, 13524276)) {
 
-        scan.open();
+            scan.open();
 
-        List<Integer> result = collectNim(scan);
+            List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13524276, 18224278, 18224280), result);
-
-        scan.close();
+            assertEquals(List.of(13524276, 18224278, 18224280), result);
+        }
     }
 
     /**
@@ -157,15 +154,14 @@ class IndexScanOpTest {
     @Test
     void testLessThanLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.LT, 13524276);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.LT, 13524276)) {
 
-        scan.open();
+            scan.open();
 
-        List<Integer> result = collectNim(scan);
+            List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13224279, 13524275), result);
-
-        scan.close();
+            assertEquals(List.of(13224279, 13524275), result);
+        }
     }
 
     /**
@@ -174,15 +170,14 @@ class IndexScanOpTest {
     @Test
     void testLessThanOrEqualLookup() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.LE, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.LE, 13524275)) {
 
-        scan.open();
+            scan.open();
 
-        List<Integer> result = collectNim(scan);
+            List<Integer> result = collectNim(scan);
 
-        assertEquals(List.of(13224279, 13524275), result);
-
-        scan.close();
+            assertEquals(List.of(13224279, 13524275), result);
+        }
     }
 
     /**
@@ -201,19 +196,18 @@ class IndexScanOpTest {
                 new org.rafendb.common.plan.IndexScanDescriptor(
                         "prodi_kode_idx", "kode", condition);
 
-        IndexScanOp scan = new IndexScanOp(context, "prodi", "p", descriptor);
+        try (IndexScanOp scan = new IndexScanOp(context, "prodi", "p", descriptor)) {
 
-        scan.open();
+            scan.open();
 
-        ResultRow result = scan.next();
+            ResultRow result = scan.next();
 
-        assertNotNull(result);
-        assertEquals("IF", result.get(0).asText());
-        assertEquals("Teknik Informatika", result.get(1).asText());
+            assertNotNull(result);
+            assertEquals("IF", result.get(0).asText());
+            assertEquals("Teknik Informatika", result.get(1).asText());
 
-        assertNull(scan.next());
-
-        scan.close();
+            assertNull(scan.next());
+        }
     }
 
     /**
@@ -222,13 +216,14 @@ class IndexScanOpTest {
     @Test
     void testSchemaUsesTableAlias() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275)) {
 
-        assertEquals("m", scan.schema().get(0).reference().table());
+            assertEquals("m", scan.schema().get(0).reference().table());
 
-        assertEquals("nim", scan.schema().get(0).reference().column());
+            assertEquals("nim", scan.schema().get(0).reference().column());
 
-        assertEquals(DataType.INTEGER, scan.schema().get(0).type());
+            assertEquals(DataType.INTEGER, scan.schema().get(0).type());
+        }
     }
 
     /**
@@ -237,9 +232,10 @@ class IndexScanOpTest {
     @Test
     void testNextBeforeOpenThrowsException() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275)) {
 
-        assertThrows(IllegalStateException.class, scan::next);
+            assertThrows(IllegalStateException.class, scan::next);
+        }
     }
 
     /**
@@ -248,14 +244,15 @@ class IndexScanOpTest {
     @Test
     void testCloseResetsOperatorState() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275)) {
 
-        scan.open();
-        scan.close();
+            scan.open();
+            scan.close();
 
-        assertThrows(IllegalStateException.class, scan::next);
+            assertThrows(IllegalStateException.class, scan::next);
 
-        scan.close();
+            scan.close();
+        }
     }
 
     /**
@@ -264,25 +261,24 @@ class IndexScanOpTest {
     @Test
     void testOpenResetsScanPosition() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.EQ, 13524275)) {
 
-        scan.open();
+            scan.open();
 
-        ResultRow firstResult = scan.next();
+            ResultRow firstResult = scan.next();
 
-        assertNotNull(firstResult);
+            assertNotNull(firstResult);
 
-        scan.open();
+            scan.open();
 
-        ResultRow repeatedResult = scan.next();
+            ResultRow repeatedResult = scan.next();
 
-        assertNotNull(repeatedResult);
+            assertNotNull(repeatedResult);
 
-        assertEquals(firstResult.get(0), repeatedResult.get(0));
+            assertEquals(firstResult.get(0), repeatedResult.get(0));
 
-        assertEquals(firstResult.rid(), repeatedResult.rid());
-
-        scan.close();
+            assertEquals(firstResult.rid(), repeatedResult.rid());
+        }
     }
 
     /**
@@ -291,10 +287,9 @@ class IndexScanOpTest {
     @Test
     void testUnsupportedComparisonOperator() {
 
-        IndexScanOp scan = createMahasiswaScan(Expr.Op.NE, 13524275);
+        try (IndexScanOp scan = createMahasiswaScan(Expr.Op.NE, 13524275)) {
 
-        assertThrows(IllegalArgumentException.class, scan::open);
-
-        scan.close();
+            assertThrows(IllegalArgumentException.class, scan::open);
+        }
     }
 }

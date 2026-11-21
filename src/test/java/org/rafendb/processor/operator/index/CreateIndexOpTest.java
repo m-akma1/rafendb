@@ -6,9 +6,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -27,7 +28,7 @@ import org.rafendb.processor.txn.TransactionCoordinator;
 
 class CreateIndexOpTest {
     private MockStorageManager delegate;
-    private StorageManager storage;
+    private StorageQuery storage;
     private MockConcurrencyControl ccm;
     private TransactionCoordinator coordinator;
     private ExecutionContext context;
@@ -44,10 +45,10 @@ class CreateIndexOpTest {
         injectedFailure = null;
 
         storage =
-                (StorageManager)
+                (StorageQuery)
                         Proxy.newProxyInstance(
-                                StorageManager.class.getClassLoader(),
-                                new Class<?>[] {StorageManager.class},
+                                StorageQuery.class.getClassLoader(),
+                                new Class<?>[] {StorageQuery.class},
                                 (proxy, method, args) -> {
                                     if (method.getName().equals("createIndex")) {
 
@@ -82,6 +83,11 @@ class CreateIndexOpTest {
         context = coordinator.getExecutionContext();
     }
 
+    @AfterEach
+    void closeStorage() throws StorageInternalException {
+        delegate.close();
+    }
+
     private CreateIndexPlanNode createNode(
             String indexName, String columnName, CreateIndexPlanNode.IndexKind kind) {
         return new CreateIndexPlanNode(
@@ -96,7 +102,6 @@ class CreateIndexOpTest {
 
         CreateIndexOp operation = new CreateIndexOp(context, node);
 
-        // Act
         // Act
         ExecutionPlan.CommandResult result;
 

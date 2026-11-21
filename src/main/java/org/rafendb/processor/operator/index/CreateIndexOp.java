@@ -1,7 +1,7 @@
 package org.rafendb.processor.operator.index;
 
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
@@ -23,7 +23,7 @@ public final class CreateIndexOp implements ExecutionPlan.CommandAction {
 
     private final ExecutionContext context;
     private final CreateIndexPlanNode node;
-    private final StorageManager storage;
+    private final StorageQuery storage;
 
     private boolean executed;
 
