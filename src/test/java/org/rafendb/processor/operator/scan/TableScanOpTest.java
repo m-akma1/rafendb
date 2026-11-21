@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
@@ -48,7 +48,7 @@ class TableScanOpTest {
         session.setCurrentTxId(new TxId(1));
     }
 
-    private ExecutionContext contextWith(StorageManager storage) {
+    private ExecutionContext contextWith(StorageQuery storage) {
         return new ExecutionContext(session, ccm, storage, null);
     }
 

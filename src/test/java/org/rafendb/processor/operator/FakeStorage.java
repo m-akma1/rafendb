@@ -2,26 +2,23 @@ package org.rafendb.processor.operator;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.function.ToLongFunction;
 import org.rafendb.api.storage.RecordCursor;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.schema.IndexInfo;
-import org.rafendb.common.schema.ReferencingForeignKey;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
-import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.type.Value;
 
 /**
- * StorageManager palsu buat test: isinya satu tabel di memori, nyatet cursor yang dibuka sama
+ * StorageQuery palsu buat test: isinya satu tabel di memori, nyatet cursor yang dibuka sama
  * ditutup, dan bisa disuruh lempar StorageInternalException. Method lain ga dipakai.
  */
-public final class FakeStorage implements StorageManager {
+public final class FakeStorage implements StorageQuery {
     private final TableSchema schema;
     private final List<StoredRow> rows;
     private final List<FakeCursor> cursors = new ArrayList<>();
@@ -109,21 +106,6 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public List<ReferencingForeignKey> listReferencingForeignKeys(String table) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void createTable(TableSchema schema) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void dropTable(String table, boolean cascade) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public TableStats getStats(String table) {
         throw new UnsupportedOperationException();
     }
@@ -178,11 +160,6 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public long clearTable(String table, ToLongFunction<StoredRow> logDelete) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public void createIndex(IndexInfo index) {
         throw new UnsupportedOperationException();
     }
@@ -199,31 +176,6 @@ public final class FakeStorage implements StorageManager {
     }
 
     @Override
-    public void flush() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void applyRecovery(String table, Rid rid, Optional<Row> image, long lsn) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void reloadAfterRestore() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void loadSampleDatabase() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public UUID getTableGeneration(String table) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public byte[] encodeRow(String table, Row row) {
         getSchema(table);
 
@@ -233,7 +185,7 @@ public final class FakeStorage implements StorageManager {
         return imageId.getBytes(StandardCharsets.UTF_8);
     }
 
-    @Override
+    /** Balikin baris dari image buatan {@link #encodeRow}, buat ngecek isi log di test. */
     public Row decodeRow(String table, byte[] image) throws StorageInternalException {
         getSchema(table);
 
@@ -245,16 +197,6 @@ public final class FakeStorage implements StorageManager {
         }
 
         return row;
-    }
-
-    @Override
-    public void loadSampleDatabase(ToLongFunction<ChangeRecord> logInsert) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void close() {
-        throw new UnsupportedOperationException();
     }
 
     /** Cursor palsu: ngeluarin baris dari list, bisa gagal pas dibaca. */

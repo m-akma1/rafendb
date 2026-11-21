@@ -21,7 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
@@ -86,16 +87,20 @@ class UpdateOpBehaviorTest {
     private final Ccm ccm = new Ccm(events);
     private final Storage storage = new Storage(events);
     private final SessionContext session = new SessionContext(1);
-    private StorageManager sm;
+
+    /** What FRM would use to read logged images back; QP itself only gets StorageQuery. */
+    private StorageRecovery recovery;
+
     private ExecutionContext ctx;
 
     @BeforeEach
     void setUp() {
         session.setCurrentTxId(TX);
-        sm = (StorageManager) proxy(storage, StorageManager.class);
+        Object sm = proxy(storage, StorageQuery.class, StorageRecovery.class);
+        recovery = (StorageRecovery) sm;
         ConcurrencyControl cc =
                 (ConcurrencyControl) proxy(ccm, ConcurrencyControl.class, ConcurrencyLogging.class);
-        ctx = new ExecutionContext(session, cc, sm, null);
+        ctx = new ExecutionContext(session, cc, (StorageQuery) sm, null);
     }
 
     // in place
@@ -505,7 +510,7 @@ class UpdateOpBehaviorTest {
     /** Reads a logged image back through the same SM the operator used. */
     private Row decode(Optional<byte[]> image) {
         try {
-            return sm.decodeRow(TABLE, image.orElseThrow());
+            return recovery.decodeRow(TABLE, image.orElseThrow());
         } catch (StorageInternalException e) {
             throw new AssertionError("logged image cannot be decoded", e);
         }
