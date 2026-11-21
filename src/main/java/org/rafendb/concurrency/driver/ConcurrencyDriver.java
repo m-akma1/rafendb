@@ -152,9 +152,9 @@ public final class ConcurrencyDriver extends Driver {
                 (args, rest) -> verify(args));
 
         out().println(
-                mockScenario
-                        ? "FRM and storage: in-memory mocks"
-                        : "FRM and storage: real (temporary database and WAL)");
+                        mockScenario
+                                ? "FRM and storage: in-memory mocks"
+                                : "FRM and storage: real (temporary database and WAL)");
         out().println("Protocol: " + ProtocolConfig.describe(protocol));
     }
 
