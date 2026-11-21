@@ -11,6 +11,7 @@ import org.rafendb.common.txn.TxStatus;
 /** Table-level strict timestamp ordering (CC-08), without Thomas' Write Rule. */
 public final class StrictTimestampProtocol implements TimestampProtocol {
 
+    /** Records the read and write timestamps and current writer of one table. */
     private static final class TableEntry {
         /** Largest timestamp that read the table, or 0 if it was never read. */
         private long readTs;

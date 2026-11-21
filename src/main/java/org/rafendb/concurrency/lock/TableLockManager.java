@@ -12,16 +12,20 @@ import org.rafendb.common.txn.AccessType;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 
+/** Implements table-level shared and exclusive locks with a FIFO queue per table. */
 public final class TableLockManager implements LockManager {
+    /** Holds the grants and wait queue for one table. */
     private static final class LockState {
         private final Map<TxId, AccessType> holders = new HashMap<>();
         private final Deque<Request> queue = new ArrayDeque<>();
     }
 
+    /** Identifies one requested lock so retries reuse the same queue entry. */
     private record Request(TxId tx, AccessType type) {}
 
     private final Map<ResourceId, LockState> tables = new HashMap<>();
 
+    /** Returns whether the transaction already holds an exclusive lock on the table. */
     public synchronized boolean holdsWrite(TxId tx, ResourceId resource) {
         Objects.requireNonNull(tx, "tx");
         Objects.requireNonNull(resource, "resource");
@@ -29,6 +33,7 @@ public final class TableLockManager implements LockManager {
         return state != null && state.holders.get(tx) == AccessType.WRITE;
     }
 
+    /** Compares the request against locks held by other transactions. */
     private static boolean compatible(LockState state, Request request) {
         for (Map.Entry<TxId, AccessType> holder : state.holders.entrySet()) {
             if (holder.getKey().equals(request.tx())) {
@@ -44,12 +49,10 @@ public final class TableLockManager implements LockManager {
     /** {@inheritDoc} */
     @Override
     public synchronized boolean tryAcquire(TxId tx, AccessType type, ResourceId resource) {
-        // just check for null if null throw NullPointerException
         Objects.requireNonNull(tx, "tx");
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(resource, "resouce");
 
-        // The agreement is using table-level, Resource can still allow row-level
         if (!resource.isTable()) {
             throw new IllegalArgumentException("Resource must be table-level");
         }

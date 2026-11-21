@@ -51,8 +51,6 @@ final class StrictTimestampProtocolTest {
         protocol.complete(tx(id), TxStatus.ABORTED);
     }
 
-    // ---- basic timestamp rules -------------------------------------------------------------
-
     @Test
     void firstReadAndFirstWriteAreAllowed() {
         assertEquals(ALLOWED, read(1, ACCOUNTS));
@@ -112,8 +110,6 @@ final class StrictTimestampProtocolTest {
         assertEquals(WAITING, read(3, ORDERS));
     }
 
-    // ---- strictness: no dirty read, no dirty write ------------------------------------------
-
     @Test
     void dirtyReadIsPreventedUntilTheWriterCommits() {
         assertEquals(ALLOWED, write(1, ACCOUNTS));
@@ -156,8 +152,6 @@ final class StrictTimestampProtocolTest {
         assertEquals(ALLOWED, read(7, ACCOUNTS));
     }
 
-    // ---- idempotency -----------------------------------------------------------------------
-
     @Test
     void repeatedWriteByTheOwnerStaysAllowed() {
         assertEquals(ALLOWED, write(1, ACCOUNTS));
@@ -194,8 +188,6 @@ final class StrictTimestampProtocolTest {
         assertEquals(ALLOWED, read(2, ACCOUNTS));
         assertEquals(ALLOWED, read(2, ACCOUNTS));
     }
-
-    // ---- complete --------------------------------------------------------------------------
 
     @Test
     void completeIsIdempotentAndIgnoresUnknownTransactions() {
@@ -234,8 +226,6 @@ final class StrictTimestampProtocolTest {
         assertEquals(WAITING, read(2, ACCOUNTS));
     }
 
-    // ---- argument validation ---------------------------------------------------------------
-
     @Test
     void requestAccessRejectsNullArguments() {
         assertThrows(
@@ -271,8 +261,6 @@ final class StrictTimestampProtocolTest {
         assertThrows(NullPointerException.class, () -> protocol.complete(null, TxStatus.COMMITTED));
         assertThrows(NullPointerException.class, () -> protocol.complete(tx(1), null));
     }
-
-    // ---- thread-safety ---------------------------------------------------------------------
 
     @Test
     void concurrentWritersNeverOverlapAndAlwaysFinish() throws Exception {

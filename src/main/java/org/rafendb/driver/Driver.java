@@ -116,6 +116,18 @@ public abstract class Driver {
     protected void close() throws Exception {}
 
     /**
+     * Checks component-specific file results before the summary is printed.
+     *
+     * @throws Exception if file completion fails, counted in the file's result
+     */
+    protected void finishFile() throws Exception {}
+
+    /** Returns whether the current command belongs to a scenario file. */
+    protected final boolean isRunningFile() {
+        return inFile;
+    }
+
+    /**
      * Handles a line whose first word is no command, such as an SQL statement. The default throws
      * {@link DriverException} "unknown command".
      *
@@ -466,7 +478,13 @@ public abstract class Driver {
         }
     }
 
-    private void dispatch(String text) throws Exception {
+    /**
+     * Dispatches a nonblank command from a component command such as a conditional step.
+     *
+     * @param text the command line to dispatch
+     * @throws Exception any failure, handled by the outer command
+     */
+    protected final void dispatch(String text) throws Exception {
         List<String> words = split(text);
         String name = words.getFirst().toLowerCase(Locale.ROOT);
         List<String> args = List.copyOf(words.subList(1, words.size()));
@@ -513,6 +531,11 @@ public abstract class Driver {
                 }
                 out.println("> " + text);
                 execute(text);
+            }
+            try {
+                finishFile();
+            } catch (Exception e) {
+                report(e);
             }
         } finally {
             inFile = false;

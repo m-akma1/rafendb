@@ -1,0 +1,13 @@
+# Run with LOCK_BASED. Two readers try to upgrade to WRITE.
+reset
+begin T1
+begin T2
+parallel "read T1 a ALLOWED" "read T2 a ALLOWED"
+write T1 a 1 WAITING
+write T2 a 2 ABORTED
+retry T1 ALLOWED
+read T1 a ALLOWED
+write T1 a 3 ALLOWED
+commit T1
+assert value a 3
+verify serializable

@@ -20,6 +20,7 @@ public final class TimestampBasedProtocol implements Protocol {
     private final Map<TxId, Set<ResourceId>> readBy = new HashMap<>();
     private final Map<TxId, Set<ResourceId>> writtenBy = new HashMap<>();
 
+    /** Creates a protocol with empty timestamp history and access protection. */
     public TimestampBasedProtocol() {}
 
     /** {@inheritDoc} */

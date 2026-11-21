@@ -10,10 +10,12 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.lock.TableLockManager;
 import org.rafendb.concurrency.lock.WaitForDeadlockDetector;
 
+/** Connects table locks and wait-for cycle detection to the CCM facade. */
 public final class LockBasedProtocol implements Protocol {
     private final WaitForDeadlockDetector detector = new WaitForDeadlockDetector();
     private volatile TableLockManager locks = new TableLockManager();
 
+    /** Creates a protocol with no held locks or waiting requests. */
     public LockBasedProtocol() {}
 
     /** {@inheritDoc} */

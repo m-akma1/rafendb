@@ -1,0 +1,13 @@
+# Run with LOCK_BASED or TIMESTAMP_BASED.
+reset
+begin T1
+begin T2
+parallel "read T1 b ALLOWED" "read T2 b ALLOWED"
+write T1 a 1 ALLOWED
+write T2 a 2 WAITING
+commit T1
+retry T2 ALLOWED
+write T2 c 0 ALLOWED
+abort T2
+assert value a 1
+verify serializable
