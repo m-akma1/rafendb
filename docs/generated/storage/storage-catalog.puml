@@ -1,0 +1,37 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.storage.catalog.CatalogManager {
+	{method} +dropTable ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +getIndex ( name : String ) : IndexInfo <<synchronized>> 
+	{method} +getSchema ( table : String ) : TableSchema <<synchronized>> 
+	{method} +getTableGeneration ( table : String ) : UUID <<synchronized>> 
+	{method} +indexFile ( name : String ) : String <<synchronized>> 
+	{method} +listIndexes ( table : String ) : List <<synchronized>> 
+	{method} +listReferencingForeignKeys ( table : String ) : List <<synchronized>> 
+	{method} +listTables () : List <<synchronized>> 
+	{method} +load () : void <<synchronized>> 
+	{method} +nextSlot ( table : String , block : long ) : int <<synchronized>> 
+	{method} +persistAllocation ( table : String , rid : Rid ) : void <<synchronized>> 
+	{method} +recordChanged ( table : String , rowDelta : long , blockCount : long ) : void <<synchronized>> 
+	{method} +refreshStats ( table : String , rows : RecordCursor , blockCount : long ) : void
+	{method} +registerIndex ( index : IndexInfo ) : void <<synchronized>> 
+	{method} +registerTable ( schema : TableSchema ) : void <<synchronized>> 
+	{method} +save () : void <<synchronized>> 
+	{method} +tableFile ( table : String ) : String <<synchronized>> 
+	{method} +unregisterIndex ( name : String ) : void <<synchronized>> 
+	{method} +validateDrop ( table : String , cascade : boolean ) : void <<synchronized>> 
+	{method} +validateRow ( table : String , row : Row ) : void <<synchronized>> 
+	{method} +validateTable ( schema : TableSchema ) : void <<synchronized>> 
+}
+
+
+
+
+
+
+@enduml
