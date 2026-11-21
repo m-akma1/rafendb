@@ -76,29 +76,46 @@ interface org.rafendb.api.storage.RecordCursor {
 
 
 interface org.rafendb.api.storage.StorageManager {
-	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
-	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
 	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
 	{method}  {abstract} +close () : void
-	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
 	{method}  {abstract} +createTable ( schema : TableSchema ) : void
-	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
 	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
-	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
-	{method}  {abstract} +flush () : void
+	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
+	{method}  {abstract} +loadSampleDatabase () : void
+	{method}  {abstract} +loadSampleDatabase ( logInsert : ToLongFunction ) : void
+	{method}  {abstract} +reloadAfterRestore () : void
+}
+
+
+interface org.rafendb.api.storage.StorageMetadata {
 	{method}  {abstract} +getSchema ( table : String ) : TableSchema
 	{method}  {abstract} +getStats ( table : String ) : TableStats
-	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
 	{method}  {abstract} +listIndexes ( table : String ) : List
-	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
 	{method}  {abstract} +listTables () : List
-	{method}  {abstract} +loadSampleDatabase () : void
+}
+
+
+interface org.rafendb.api.storage.StorageQuery {
+	{method}  {abstract} +cancelReservation ( table : String , rid : Rid ) : void
+	{method}  {abstract} +createIndex ( index : IndexInfo ) : void
+	{method}  {abstract} +delete ( table : String , rid : Rid , lsn : long ) : boolean
+	{method}  {abstract} +encodeRow ( table : String , row : Row ) : byte[]
+	{method}  {abstract} +fetch ( table : String , rid : Rid ) : Optional
+	{method}  {abstract} +insert ( table : String , rid : Rid , row : Row , lsn : long ) : Rid
 	{method}  {abstract} +lookupIndex ( index : String , key : Value ) : List
 	{method}  {abstract} +rangeIndex ( index : String , lower : Value , includeLower : boolean , upper : Value , includeUpper : boolean ) : List
-	{method}  {abstract} +reloadAfterRestore () : void
 	{method}  {abstract} +reserveRid ( table : String , row : Row ) : Rid
 	{method}  {abstract} +scan ( table : String ) : RecordCursor
 	{method}  {abstract} +update ( table : String , rid : Rid , row : Row , lsn : long ) : void
+}
+
+
+interface org.rafendb.api.storage.StorageRecovery {
+	{method}  {abstract} +applyRecovery ( table : String , rid : Rid , image : Optional , lsn : long ) : void
+	{method}  {abstract} +decodeRow ( table : String , image : byte[] ) : Row
+	{method}  {abstract} +flush () : void
+	{method}  {abstract} +getTableGeneration ( table : String ) : UUID
+	{method}  {abstract} +listTables () : List
 }
 
 
@@ -666,6 +683,9 @@ class org.rafendb.common.type.Value {
 
 
 org.rafendb.api.recovery.RecoveryManager ..|>  org.rafendb.api.storage.WalSync
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageQuery
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageRecovery
+org.rafendb.api.storage.StorageQuery ..|>  org.rafendb.api.storage.StorageMetadata
 org.rafendb.common.error.ConcurrencyInternalException --|>  org.rafendb.common.error.RafenDBInternalException
 org.rafendb.common.error.GeneralRuntimeException --|>  org.rafendb.common.error.RafenDBRuntimeException
 org.rafendb.common.error.OptimizerInternalException *--  org.rafendb.common.error.ErrorCode : code

@@ -2,7 +2,7 @@ package org.rafendb.processor.txn;
 
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
@@ -20,7 +20,7 @@ import org.rafendb.processor.error.TransactionAbortedException;
  * </p>
  *
  * <p>
- * It uses the ConcurrencyControl, StorageManager, and RecoveryManager
+ * It uses the ConcurrencyControl, StorageQuery, and RecoveryManager
  * components to support transaction processing.
  * </p>
  */
@@ -37,10 +37,7 @@ public class TransactionCoordinator {
      * @param frm      the recovery manager component
      */
     public TransactionCoordinator(
-            SessionContext sContext,
-            ConcurrencyControl ccm,
-            StorageManager sm,
-            RecoveryManager frm) {
+            SessionContext sContext, ConcurrencyControl ccm, StorageQuery sm, RecoveryManager frm) {
         this.execContext = new ExecutionContext(sContext, ccm, sm, frm);
     }
 

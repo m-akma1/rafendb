@@ -11,6 +11,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -30,6 +31,8 @@ import org.rafendb.recovery.rollback.RollbackLog;
  * <p>Thread-safe.
  */
 public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable {
+
+    private static final int MAX_RECORD_BYTES = 16 * 1024 * 1024;
 
     private final List<WALRecord> records = Collections.synchronizedList(new ArrayList<>());
     private final AtomicLong currentLSN = new AtomicLong(0);
@@ -83,6 +86,9 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             return;
         }
 
+        long validOffset = 0;
+        long fileLength = file.length();
+        boolean tornTailDetected = false;
         try (DataInputStream in =
                 new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
             long maxLsn = 0;
@@ -92,19 +98,25 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                 try {
                     length = in.readInt();
                 } catch (EOFException e) {
+                    if (validOffset < fileLength) {
+                        tornTailDetected = true;
+                    }
                     break;
                 }
-                if (length <= 0) {
+                if (length <= 0 || length > MAX_RECORD_BYTES) {
+                    tornTailDetected = true;
                     break;
                 }
                 byte[] buffer = in.readNBytes(length);
                 if (buffer.length < length) {
                     // Torn record pada akhir file akibat crash sistem mendadak
+                    tornTailDetected = true;
                     break;
                 }
                 try {
                     WALRecord record = WALRecord.deserialize(buffer);
                     records.add(record);
+                    validOffset += Integer.BYTES + (long) length;
                     if (record.getLSN() > maxLsn) {
                         maxLsn = record.getLSN();
                     }
@@ -112,7 +124,17 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                         lastCommit = record.getLSN();
                     }
                 } catch (IllegalArgumentException e) {
-                    // Record terdistorsi di batas akhir log
+                    long recordEndOffset = validOffset + Integer.BYTES + (long) length;
+                    if (recordEndOffset < fileLength) {
+                        throw new LoggerErrorException(
+                                "Corrupt WAL record detected in middle of log at offset "
+                                        + validOffset
+                                        + " in: "
+                                        + logFilePath,
+                                e);
+                    }
+                    // Record terdistorsi/checksum mismatch di batas akhir log
+                    tornTailDetected = true;
                     break;
                 }
             }
@@ -121,6 +143,21 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         } catch (IOException e) {
             throw new LoggerErrorException(
                     "Failed to load existing WAL records from: " + logFilePath, e);
+        }
+
+        if (tornTailDetected) {
+            truncateCorruptTail(file.toPath(), validOffset);
+        }
+    }
+
+    /** Memotong byte korup/terpotong di akhir file WAL setelah crash. */
+    private void truncateCorruptTail(Path path, long validOffset) throws LoggerErrorException {
+        try (FileChannel ch = FileChannel.open(path, StandardOpenOption.WRITE)) {
+            ch.truncate(validOffset);
+            ch.force(true);
+        } catch (IOException e) {
+            throw new LoggerErrorException(
+                    "Failed to truncate corrupt WAL tail at offset " + validOffset, e);
         }
     }
 
@@ -274,6 +311,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         if (record == null) {
             return -1L;
         }
+        writeRecordToDisk(record);
         records.add(record);
         if (record.getLsn() > currentLSN.get()) {
             currentLSN.set(record.getLsn());
@@ -281,7 +319,6 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
         if (record.getLogType() == LogType.COMMIT) {
             lastCommittedLSN = record.getLsn();
         }
-        writeRecordToDisk(record);
         return record.getLsn();
     }
 
@@ -295,14 +332,39 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
     @Override
     public synchronized void logTransactionEvent(int idTransaction, LogType logType)
             throws LoggerErrorException {
+        logTransactionEvent(idTransaction, logType, System.currentTimeMillis());
+    }
+
+    /**
+     * Mencatat peristiwa transaksi (BEGIN, COMMIT, ABORT, atau checkpoint) dengan timestamp
+     * tertentu secara atomik dan mengembalikan LSN yang dialokasikan.
+     *
+     * @param idTransaction id transaksi
+     * @param logType jenis record peristiwa
+     * @param timestamp waktu record ditulis dalam milidetik epoch
+     * @return nomor LSN yang dialokasikan untuk record tersebut
+     * @throws LoggerErrorException jika record gagal ditulis atau di-flush saat COMMIT
+     */
+    public synchronized long logTransactionEvent(int idTransaction, LogType logType, long timestamp)
+            throws LoggerErrorException {
+        long prevLsn = currentLSN.get();
         long lsn = currentLSN.incrementAndGet();
-        long now = System.currentTimeMillis();
-        WALRecord record = new WALRecord(lsn, idTransaction, logType, now, null, -1, null, null);
+        WALRecord record =
+                new WALRecord(lsn, idTransaction, logType, timestamp, null, -1, null, null);
+        try {
+            writeRecordToDisk(record);
+            if (logType == LogType.COMMIT) {
+                flushAll();
+            }
+        } catch (LoggerErrorException | RuntimeException e) {
+            currentLSN.set(prevLsn);
+            throw e;
+        }
         records.add(record);
         if (logType == LogType.COMMIT) {
             lastCommittedLSN = lsn;
         }
-        writeRecordToDisk(record);
+        return lsn;
     }
 
     /**
@@ -327,6 +389,35 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             String beforeVal,
             String afterVal)
             throws LoggerErrorException {
+        return logDataChange(
+                idTransaction, logType, timestamp, tableName, 0L, rid, beforeVal, afterVal);
+    }
+
+    /**
+     * Mencatat perubahan data menggunakan {@link Rid} dan generasi tabel persisten.
+     *
+     * @param idTransaction id transaksi
+     * @param logType tipe operasi
+     * @param timestamp waktu pencatatan
+     * @param tableName nama tabel
+     * @param tableGeneration generasi tabel saat perubahan dicatat
+     * @param rid alamat baris pada tabel
+     * @param beforeVal nilai sebelum
+     * @param afterVal nilai sesudah
+     * @return nomor LSN yang dialokasikan
+     * @throws LoggerErrorException jika record gagal ditulis ke disk
+     */
+    public synchronized long logDataChange(
+            int idTransaction,
+            LogType logType,
+            long timestamp,
+            String tableName,
+            long tableGeneration,
+            Rid rid,
+            String beforeVal,
+            String afterVal)
+            throws LoggerErrorException {
+        long prevLsn = currentLSN.get();
         long lsn = currentLSN.incrementAndGet();
         WALRecord record =
                 new WALRecord(
@@ -335,11 +426,17 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                         logType,
                         timestamp,
                         tableName,
+                        tableGeneration,
                         rid,
                         beforeVal,
                         afterVal);
+        try {
+            writeRecordToDisk(record);
+        } catch (LoggerErrorException | RuntimeException e) {
+            currentLSN.set(prevLsn);
+            throw e;
+        }
         records.add(record);
-        writeRecordToDisk(record);
         return lsn;
     }
 
@@ -353,6 +450,7 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
             String beforeVal,
             String afterVal)
             throws LoggerErrorException {
+        long prevLsn = currentLSN.get();
         long lsn = currentLSN.incrementAndGet();
         WALRecord record =
                 new WALRecord(
@@ -364,8 +462,13 @@ public class Logger implements ILogFlusher, WalSync, RollbackLog, AutoCloseable 
                         idRecord,
                         beforeVal,
                         afterVal);
+        try {
+            writeRecordToDisk(record);
+        } catch (LoggerErrorException | RuntimeException e) {
+            currentLSN.set(prevLsn);
+            throw e;
+        }
         records.add(record);
-        writeRecordToDisk(record);
         return lsn;
     }
 

@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.txn.TxId;
@@ -58,7 +59,7 @@ public class MockRecoveryManager implements RecoveryManager {
     }
 
     @Override
-    public boolean createCheckpoint() {
+    public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
         this.checkpointCreated = true;
         return true;
     }
