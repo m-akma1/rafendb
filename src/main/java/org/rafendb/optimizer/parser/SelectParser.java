@@ -13,17 +13,29 @@ import org.rafendb.common.token.Token;
 final class SelectParser {
     private SelectParser() {}
 
+    /**
+     * Parses a SELECT statement.
+     *
+     * @param sql the SQL string
+     * @param tokens the list of tokens
+     * @return the parsed query
+     */
     static ParsedQuery parse(String sql, List<Token> tokens) {
         TokenCursor in = new TokenCursor(tokens);
-        // Clause order is fixed: SELECT list -> FROM -> [WHERE] -> [ORDER BY].
+        SelectQuery query = parseBody(sql, in);
+        in.expectEnd();
+        return query;
+    }
+
+    static SelectQuery parseBody(String sql, TokenCursor in) {
         in.expectKeyword("SELECT");
         List<Expr> projection = selectList(in);
         in.expectKeyword("FROM");
         FromItem tables = new FromParser(in).parse();
-        Expr where = optionalWhere(in);
+        Expr where = optionalWhere(sql, in);
         List<OrderByItem> orderBy = optionalOrderBy(in);
-        in.expectEnd();
-        return new SelectQuery(sql, projection, tables, where, orderBy);
+        Integer limit = in.acceptWord("LIMIT") ? in.expectUnsignedInteger("LIMIT count") : null;
+        return new SelectQuery(sql, projection, tables, where, orderBy, limit);
     }
 
     private static List<Expr> selectList(TokenCursor in) {
@@ -42,9 +54,9 @@ final class SelectParser {
         return columns;
     }
 
-    private static Expr optionalWhere(TokenCursor in) {
+    private static Expr optionalWhere(String sql, TokenCursor in) {
         if (in.acceptKeyword("WHERE")) {
-            return new ExpressionParser(in).parseCondition();
+            return new ExpressionParser(sql, in, true).parseCondition();
         }
         return null;
     }

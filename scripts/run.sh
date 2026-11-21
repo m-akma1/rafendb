@@ -19,7 +19,7 @@ cmd="$1"; shift
 
 if [[ "$cmd" == "reset-data" ]]; then
   rm -rf "$ROOT/data"
-  echo "Removed $ROOT/data, next run will recreates it from the seed."
+  echo "Removed $ROOT/data. Start the server with --seed to load the sample database."
   exit 0
 fi
 
@@ -48,4 +48,5 @@ fi
 
 # Run from the repo root so relative paths (data/, test-scenarios/...) mean the same thing for everyone.
 cd "$ROOT"
-exec java -cp "$JAR" "$main" "$@"
+# target/lib holds the runtime libraries (JLine). Native access lets JLine's FFM terminal run quietly.
+exec java --enable-native-access=ALL-UNNAMED -cp "$JAR:$ROOT/target/lib/*" "$main" "$@"

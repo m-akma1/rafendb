@@ -1,6 +1,7 @@
 package org.rafendb.concurrency.bridge;
 
 import java.util.List;
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.log.LogPayload;
@@ -72,8 +73,8 @@ final class RecordingRecoveryManager implements RecoveryManager {
     }
 
     @Override
-    public boolean createCheckpoint() {
-        return mock.createCheckpoint();
+    public boolean createCheckpoint(ConcurrencyControl concurrencyControl) {
+        return mock.createCheckpoint(concurrencyControl);
     }
 
     @Override

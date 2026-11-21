@@ -1,5 +1,6 @@
 package org.rafendb.api.recovery;
 
+import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.storage.WalSync;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.log.LogPayload;
@@ -68,9 +69,12 @@ public interface RecoveryManager extends WalSync, AutoCloseable {
     /**
      * Creates a quiescent checkpoint.
      *
+     * @param concurrencyControl the concurrency control manager used to pause new transactions
+     *     and wait for active transactions to finish, or {@code null} to checkpoint without CCM
+     *     admission coordination
      * @return {@code true} if the checkpoint was created, {@code false} otherwise
      */
-    boolean createCheckpoint();
+    boolean createCheckpoint(ConcurrencyControl concurrencyControl);
 
     /**
      * Restores the database to its state at a point in time.

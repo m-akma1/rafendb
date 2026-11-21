@@ -9,6 +9,7 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.expr.Expr.Binary;
 import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.expr.Expr.Op;
+import org.rafendb.common.query.FromItem.TableRef;
 import org.rafendb.common.schema.Column;
 
 /**
@@ -35,17 +36,17 @@ final class NaturalJoinResolver {
      * @throws ValidationException if a shared column is ambiguous on the left or its types are
      *     incompatible
      */
-    static Result resolve(Scope scope, List<String> leftTables, List<String> rightTables) {
+    static Result resolve(Scope scope, List<TableRef> leftTables, List<TableRef> rightTables) {
         List<Expr> terms = new ArrayList<>();
         Set<String> merged = new HashSet<>();
-        for (String rightName : rightTables) {
-            Scope.Table right = scope.table(rightName);
+        for (TableRef rightRef : rightTables) {
+            Scope.Table right = scope.table(rightRef.qualifier());
             for (Column rc : right.schema().columns()) {
                 if (scope.isHidden(right, rc)) continue;
                 Scope.Table matchTable = null;
                 Column match = null;
-                for (String leftName : leftTables) {
-                    Scope.Table left = scope.table(leftName);
+                for (TableRef leftRef : leftTables) {
+                    Scope.Table left = scope.table(leftRef.qualifier());
                     for (Column lc : left.schema().columns()) {
                         if (scope.isHidden(left, lc) || !Scope.eq(lc.name(), rc.name())) continue;
                         if (match != null)
@@ -53,9 +54,9 @@ final class NaturalJoinResolver {
                                     "Ambiguous column '"
                                             + rc.name()
                                             + "' in NATURAL JOIN: found in both '"
-                                            + matchTable.name()
+                                            + matchTable.qualifier()
                                             + "' and '"
-                                            + left.name()
+                                            + left.qualifier()
                                             + "'");
                         matchTable = left;
                         match = lc;
@@ -66,11 +67,11 @@ final class NaturalJoinResolver {
                         || match.type().isText() != rc.type().isText())
                     throw new ValidationException(
                             "NATURAL JOIN column '"
-                                    + matchTable.name()
+                                    + matchTable.qualifier()
                                     + "."
                                     + match.name()
                                     + "' and '"
-                                    + right.name()
+                                    + right.qualifier()
                                     + "."
                                     + rc.name()
                                     + "' have incompatible types "
@@ -80,9 +81,9 @@ final class NaturalJoinResolver {
                 terms.add(
                         new Binary(
                                 Op.EQ,
-                                new ColumnRef(matchTable.name(), match.name()),
-                                new ColumnRef(right.name(), rc.name())));
-                merged.add(Scope.key(right.name(), rc.name()));
+                                new ColumnRef(matchTable.qualifier(), match.name()),
+                                new ColumnRef(right.qualifier(), rc.name())));
+                merged.add(Scope.key(right.qualifier(), rc.name()));
             }
         }
         Expr result = null;

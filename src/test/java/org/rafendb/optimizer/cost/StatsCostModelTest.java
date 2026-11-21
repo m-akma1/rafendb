@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.CartesianPlanNode;
@@ -48,13 +48,55 @@ class StatsCostModelTest {
                         Expr.Op.GT,
                         new Expr.ColumnRef("mahasiswa", "nim"),
                         new Expr.Literal(Value.ofInt(50)));
-        assertEquals(34, model.estimateRows(new SelectionPlanNode(range, scan)));
+        assertEquals(50, model.estimateRows(new SelectionPlanNode(range, scan)));
         Expr ne =
                 new Expr.Binary(
                         Expr.Op.NE,
                         new Expr.ColumnRef("mahasiswa", "nim"),
                         new Expr.Literal(Value.ofInt(7)));
         assertEquals(99, model.estimateRows(new SelectionPlanNode(ne, scan)));
+    }
+
+    @Test
+    void estimatesTautologiesContradictionsAndLiteralComparisons() throws Exception {
+        StatsCostModel model = new StatsCostModel(MockCatalog.defaults());
+        TableScanNode scan = new TableScanNode(null, "mahasiswa");
+        Expr.ColumnRef nim = new Expr.ColumnRef("mahasiswa", "nim");
+
+        Expr sameColumn = new Expr.Binary(Expr.Op.EQ, nim, nim);
+        assertEquals(100, model.estimateRows(new SelectionPlanNode(sameColumn, scan)));
+
+        Expr differentColumn = new Expr.Binary(Expr.Op.NE, nim, nim);
+        assertEquals(0, model.estimateRows(new SelectionPlanNode(differentColumn, scan)));
+
+        Expr nullComparison = new Expr.Binary(Expr.Op.GT, nim, new Expr.Null());
+        assertEquals(0, model.estimateRows(new SelectionPlanNode(nullComparison, scan)));
+
+        Expr trueComparison =
+                new Expr.Binary(
+                        Expr.Op.EQ,
+                        new Expr.Literal(Value.ofInt(1)),
+                        new Expr.Literal(Value.ofInt(1)));
+        assertEquals(100, model.estimateRows(new SelectionPlanNode(trueComparison, scan)));
+
+        Expr falseComparison =
+                new Expr.Binary(
+                        Expr.Op.EQ,
+                        new Expr.Literal(Value.ofInt(1)),
+                        new Expr.Literal(Value.ofInt(2)));
+        assertEquals(0, model.estimateRows(new SelectionPlanNode(falseComparison, scan)));
+        assertEquals(
+                0,
+                model.estimateRows(
+                        new JoinPlanNode(
+                                JoinAlgorithm.BLOCK_NESTED_LOOP, falseComparison, scan, scan)));
+
+        Expr trueRange =
+                new Expr.Binary(
+                        Expr.Op.GT,
+                        new Expr.Literal(Value.ofInt(4)),
+                        new Expr.Literal(Value.ofInt(2)));
+        assertEquals(100, model.estimateRows(new SelectionPlanNode(trueRange, scan)));
     }
 
     @Test
@@ -273,11 +315,11 @@ class StatsCostModelTest {
     @Test
     void storageManagerCatalogForwardsPublicMetadataCalls() throws Exception {
         MockCatalog fixture = MockCatalog.defaults();
-        StorageManager storage =
-                (StorageManager)
+        StorageMetadata storage =
+                (StorageMetadata)
                         java.lang.reflect.Proxy.newProxyInstance(
-                                StorageManager.class.getClassLoader(),
-                                new Class<?>[] {StorageManager.class},
+                                StorageMetadata.class.getClassLoader(),
+                                new Class<?>[] {StorageMetadata.class},
                                 (proxy, method, args) ->
                                         switch (method.getName()) {
                                             case "listTables" -> fixture.listTables();

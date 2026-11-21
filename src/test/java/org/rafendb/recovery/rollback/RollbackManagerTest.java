@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.WALRecord;
 
@@ -54,6 +55,21 @@ class RollbackManagerTest {
         }
 
         @Override
+        public synchronized long logDataChange(
+                int tx,
+                LogType type,
+                long ts,
+                String table,
+                long generation,
+                Rid rid,
+                String before,
+                String after) {
+            long lsn = records.size() + 1L;
+            records.add(new WALRecord(lsn, tx, type, ts, table, generation, rid, before, after));
+            return lsn;
+        }
+
+        @Override
         public synchronized void flushAll() {
             flushes++;
         }
@@ -72,19 +88,32 @@ class RollbackManagerTest {
     static final class FakeStorage implements UndoStorage {
         final Map<String, String> rows = new HashMap<>();
         final List<Long> appliedLsns = new ArrayList<>();
+        final List<Long> generations = new ArrayList<>();
         int failOnCall = -1;
         int calls;
 
-        synchronized void put(String table, int id, String image) {
+        static String key(String table, Rid rid) {
+            return table + "#" + rid.block() + ":" + rid.slot();
+        }
+
+        synchronized void put(String table, Rid rid, String image) {
             if (image == null) {
-                rows.remove(table + "#" + id);
+                rows.remove(key(table, rid));
             } else {
-                rows.put(table + "#" + id, image);
+                rows.put(key(table, rid), image);
             }
         }
 
+        synchronized void put(String table, int id, String image) {
+            put(table, rid(id), image);
+        }
+
+        synchronized String get(String table, Rid rid) {
+            return rows.get(key(table, rid));
+        }
+
         synchronized String get(String table, int id) {
-            return rows.get(table + "#" + id);
+            return get(table, rid(id));
         }
 
         synchronized Map<String, String> snapshot() {
@@ -92,12 +121,19 @@ class RollbackManagerTest {
         }
 
         @Override
-        public synchronized void applyUndo(String table, int id, String image, long lsn) {
+        public void applyUndo(String table, int id, String image, long lsn) {
+            throw new AssertionError("RollbackManager must use the Rid-based applyUndo");
+        }
+
+        @Override
+        public synchronized void applyUndo(
+                String table, long generation, Rid rid, String image, long lsn) {
             if (++calls == failOnCall) {
                 throw new IllegalStateException("disk full");
             }
             appliedLsns.add(lsn);
-            put(table, id, image);
+            generations.add(generation);
+            put(table, rid, image);
         }
     }
 
@@ -127,6 +163,18 @@ class RollbackManagerTest {
         now++;
         log.logDataChange(tx, type, now, table, id, db.get(table, id), after);
         db.put(table, id, after);
+    }
+
+    /** Alamat baris untuk id lama {@code block * 1000 + slot}. */
+    static Rid rid(int id) {
+        return new Rid(id / 1000, id % 1000);
+    }
+
+    /** Seperti {@link #write}, tetapi dengan Rid penuh dan generasi tabel. */
+    void write(int tx, LogType type, String table, long generation, Rid rid, String after) {
+        now++;
+        log.logDataChange(tx, type, now, table, generation, rid, db.get(table, rid), after);
+        db.put(table, rid, after);
     }
 
     // --------------------------------------------------------------------------------------
@@ -264,7 +312,7 @@ class RollbackManagerTest {
         List<WALRecord> t1 = log.getLogsByTransaction(1);
         for (WALRecord r : t1.reversed()) {
             if (r.getLogType().isDataChange()) {
-                db.put(r.getTableName(), r.getIdRecord(), r.getBeforeValue());
+                db.put(r.getTableName(), r.getRid(), r.getBeforeValue());
             }
         }
         assertEquals("{a}", db.get("item", 1));
@@ -461,7 +509,7 @@ class RollbackManagerTest {
         restarted.rows.putAll(initial);
         for (WALRecord r : all) {
             if (r.getLogType().isDataChange() && committed.contains(r.getIdTransaction())) {
-                restarted.put(r.getTableName(), r.getIdRecord(), r.getAfterValue());
+                restarted.put(r.getTableName(), r.getRid(), r.getAfterValue());
             }
         }
         assertEquals(afterRecovery, restarted.snapshot());
@@ -510,10 +558,179 @@ class RollbackManagerTest {
     }
 
     @Test
-    void walRecordSerializesRoundTrip() throws Exception {
+    void rollbackCompensatesWithFullRidAndTableGeneration() throws Exception {
+        Rid wide = new Rid(5_000_000L, 1234);
+        Rid neighbour = new Rid(5_000_001L, 234); // sama dengan wide pada encoding lama
+        db.put("item", neighbour, "{other}");
+        begin(1);
+        write(1, LogType.INSERT, "item", 7L, wide, "{a}");
+        write(1, LogType.UPDATE, "item", 7L, wide, "{b}");
+
+        assertEquals(RollbackStatus.ROLLED_BACK, frm.rollback(1));
+
+        assertNull(db.get("item", wide));
+        assertEquals("{other}", db.get("item", neighbour));
+        assertEquals(List.of(7L, 7L), db.generations);
+        for (WALRecord r : log.getLogsByTransaction(1)) {
+            if (r.getLogType().isDataChange()) {
+                assertEquals(wide, r.getRid());
+                assertEquals(7L, r.getTableGeneration());
+            }
+        }
+    }
+
+    @Test
+    void recoverToTransactionKeepsRowsWithFullRid() throws Exception {
+        Rid wide = new Rid(5_000_000L, 1234);
+        Rid neighbour = new Rid(5_000_001L, 234);
+        begin(1);
+        write(1, LogType.INSERT, "item", 3L, wide, "{keep}");
+        commit(1);
+        begin(2);
+        write(2, LogType.INSERT, "item", 3L, neighbour, "{drop}");
+        commit(2);
+
+        assertEquals(1, frm.recoverToTransaction(1));
+
+        assertEquals("{keep}", db.get("item", wide));
+        assertNull(db.get("item", neighbour));
+        WALRecord compensation = log.getLogsByTransaction(3).get(1);
+        assertEquals(neighbour, compensation.getRid());
+        assertEquals(3L, compensation.getTableGeneration());
+    }
+
+    @Test
+    void walRecordSerializesRoundTrip() {
         WALRecord r = new WALRecord(3, 1, LogType.UPDATE, 99L, "account", 5, "{a}", null);
         WALRecord back = WALRecord.deserialize(r.serialize());
         assertEquals(r.toString(), back.toString());
         assertEquals(99L, back.getTimestamp());
+    }
+
+    // --------------------------------------------------------------------------------------
+    // Pengerasan: pending stale, id transaksi sistem, pemulihan berulang
+    // --------------------------------------------------------------------------------------
+
+    @Test
+    void stalePendingIsDroppedWhenCrashRecoveryAlreadyAborted() throws Exception {
+        db.put("item", 1, "{a}");
+        begin(1);
+        write(1, LogType.UPDATE, "item", 1, "{b}");
+        write(1, LogType.INSERT, "item", 2, "{c}");
+        db.failOnCall = 1;
+        assertThrows(IllegalStateException.class, () -> frm.rollback(1));
+
+        // crash recovery di proses yang sama membatalkan T1 dan menulis ABORT
+        log.logDataChange(1, LogType.DELETE, now, "item", 2, "{c}", null);
+        db.put("item", 2, null);
+        log.logDataChange(1, LogType.UPDATE, now, "item", 1, "{b}", "{a}");
+        db.put("item", 1, "{a}");
+        log.logTransactionEvent(1, LogType.ABORT);
+        // transaksi lain lalu menulis baris yang sama
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{new}");
+        commit(2);
+        int size = log.size();
+        int calls = db.calls;
+
+        assertEquals(RollbackStatus.ALREADY_ABORTED, frm.rollback(1));
+
+        assertEquals("{new}", db.get("item", 1));
+        assertEquals(size, log.size());
+        assertEquals(calls, db.calls);
+    }
+
+    @Test
+    void recoveryUsesSystemTransactionIdFromGivenSource() throws Exception {
+        frm = new RollbackManager(log, db, () -> now, () -> 500);
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{a}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.INSERT, "item", 2, "{b}");
+        commit(2);
+
+        assertEquals(1, frm.recoverToPointInTime(target));
+
+        List<WALRecord> system = log.getLogsByTransaction(500);
+        assertEquals(LogType.BEGIN, system.getFirst().getLogType());
+        assertEquals(LogType.COMMIT, system.getLast().getLogType());
+        assertNull(db.get("item", 2));
+    }
+
+    @Test
+    void invalidOrUsedSystemTransactionIdIsRejectedBeforeAnythingChanges() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{a}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.INSERT, "item", 2, "{b}");
+        commit(2);
+        Map<String, String> data = db.snapshot();
+        int size = log.size();
+
+        for (int id : new int[] {0, -3, 2}) {
+            RollbackManager bad = new RollbackManager(log, db, () -> now, () -> id);
+            assertThrows(IllegalStateException.class, () -> bad.recoverToPointInTime(target));
+            assertEquals(data, db.snapshot());
+            assertEquals(size, log.size());
+        }
+    }
+
+    @Test
+    void repeatingRecoveryToSameTargetChangesNothing() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{v1}");
+        commit(1);
+        long target = now;
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{v2}");
+        write(2, LogType.INSERT, "item", 2, "{x}");
+        commit(2);
+        begin(3);
+        write(3, LogType.DELETE, "item", 1, null);
+        commit(3);
+        now += 10;
+
+        assertEquals(3, frm.recoverToPointInTime(target));
+        assertEquals("{v1}", db.get("item", 1));
+        assertNull(db.get("item", 2));
+        int size = log.size();
+        int calls = db.calls;
+
+        now += 10;
+        assertEquals(0, frm.recoverToPointInTime(target));
+        assertEquals(0, frm.recoverToTransaction(1));
+
+        assertEquals(size, log.size());
+        assertEquals(calls, db.calls);
+        assertEquals("{v1}", db.get("item", 1));
+        assertNull(db.get("item", 2));
+    }
+
+    @Test
+    void recoveryAfterRepeatedRecoveryStillReachesNewTarget() throws Exception {
+        begin(1);
+        write(1, LogType.INSERT, "item", 1, "{v1}");
+        commit(1);
+        long t1 = now;
+        begin(2);
+        write(2, LogType.UPDATE, "item", 1, "{v2}");
+        commit(2);
+        long t2 = now;
+        begin(3);
+        write(3, LogType.UPDATE, "item", 1, "{v3}");
+        commit(3);
+        now += 10;
+
+        frm.recoverToPointInTime(t2);
+        assertEquals("{v2}", db.get("item", 1));
+        now += 10;
+        frm.recoverToPointInTime(t2);
+        now += 10;
+        frm.recoverToPointInTime(t1);
+        assertEquals("{v1}", db.get("item", 1));
     }
 }

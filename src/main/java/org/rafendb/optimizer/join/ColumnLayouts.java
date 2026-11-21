@@ -2,9 +2,11 @@ package org.rafendb.optimizer.join;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.rafendb.api.storage.StorageManager;
+import java.util.function.Predicate;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.schema.Column;
 
 /**
@@ -15,7 +17,7 @@ final class ColumnLayouts {
     private ColumnLayouts() {}
 
     /** Returns columns in output order, or null when the layout is unknown. */
-    static List<Expr.ColumnRef> outputColumns(PlanNode node, StorageManager storage) {
+    static List<Expr.ColumnRef> outputColumns(PlanNode node, StorageMetadata storage) {
         String table;
         String qualifier;
         if (node instanceof TableScanNode scan) {
@@ -33,7 +35,7 @@ final class ColumnLayouts {
             if (input == null) return null;
             List<Expr.ColumnRef> result = new ArrayList<>();
             for (Expr expr : projection.columns()) {
-                if (!(expr instanceof Expr.ColumnRef column) || !matchesLayout(column, input))
+                if (!(expr instanceof Expr.ColumnRef column) || !matchesColumn(column, input))
                     return null;
                 // ProjectOp keeps the written qualifier, including null, in output headers.
                 result.add(new Expr.ColumnRef(column.table(), column.column()));
@@ -54,7 +56,7 @@ final class ColumnLayouts {
     }
 
     private static List<Expr.ColumnRef> concatenatedColumns(
-            PlanNode left, PlanNode right, StorageManager storage) {
+            PlanNode left, PlanNode right, StorageMetadata storage) {
         List<Expr.ColumnRef> leftColumns = outputColumns(left, storage);
         List<Expr.ColumnRef> rightColumns = outputColumns(right, storage);
         if (leftColumns == null || rightColumns == null) return null;
@@ -63,9 +65,10 @@ final class ColumnLayouts {
         return result;
     }
 
-    /** Rebinds validated offsets, using sourceToTargetOffsets[source] as the new local position. */
+    /** Rebinds local offsets in movable predicates. Enclosing-scope bindings stay intact. */
     static Expr remapColumnOffsets(Expr expr, int[] sourceToTargetOffsets) {
         if (expr instanceof Expr.ColumnRef column) {
+            if (column.scopeDepth() != 0) return column;
             return new Expr.ColumnRef(
                     column.table(), column.column(), sourceToTargetOffsets[column.offset()]);
         }
@@ -74,20 +77,54 @@ final class ColumnLayouts {
             Expr right = remapColumnOffsets(binary.right(), sourceToTargetOffsets);
             return new Expr.Binary(binary.op(), left, right);
         }
+        if (expr instanceof Expr.Not not) {
+            return new Expr.Not(remapColumnOffsets(not.child(), sourceToTargetOffsets));
+        }
         return expr;
     }
 
-    /** Checks that each bound column matches the name and qualifier at its offset. */
+    /** Checks bindings in this plan. The embedded SELECT is checked as its own plan. */
     static boolean matchesLayout(Expr expr, List<Expr.ColumnRef> columns) {
-        if (expr instanceof Expr.ColumnRef column) {
-            if (column.offset() < 0 || column.offset() >= columns.size()) return false;
-            Expr.ColumnRef expected = columns.get(column.offset());
-            return column.column().equals(expected.column())
-                    && (column.table() == null || column.table().equals(expected.table()));
-        }
-        if (expr instanceof Expr.Binary binary) {
-            return matchesLayout(binary.left(), columns) && matchesLayout(binary.right(), columns);
-        }
-        return true;
+        return checkExpression(expr, column -> matchesColumn(column, columns), true);
+    }
+
+    /** Subqueries stay at their original evaluation sites during join and access search. */
+    static boolean canMovePredicate(Expr expr) {
+        return checkExpression(expr, column -> true, false);
+    }
+
+    private static boolean matchesColumn(Expr.ColumnRef column, List<Expr.ColumnRef> columns) {
+        if (column.offset() < 0 || column.scopeDepth() < 0) return false;
+        if (column.scopeDepth() > 0) return true;
+        if (column.offset() >= columns.size()) return false;
+        Expr.ColumnRef expected = columns.get(column.offset());
+        return column.column().equals(expected.column())
+                && (column.table() == null || column.table().equals(expected.table()));
+    }
+
+    private static boolean checkExpression(
+            Expr expr, Predicate<Expr.ColumnRef> matchesColumn, boolean allowSubqueries) {
+        return switch (expr) {
+            case Expr.ColumnRef column -> matchesColumn.test(column);
+            case Expr.Binary binary ->
+                    checkExpression(binary.left(), matchesColumn, allowSubqueries)
+                            && checkExpression(binary.right(), matchesColumn, allowSubqueries);
+            case Expr.Not not -> checkExpression(not.child(), matchesColumn, allowSubqueries);
+            case Expr.ScalarSubquery sub -> allowSubqueries && hasSingleColumn(sub.query());
+            case Expr.ExistsSubquery sub -> allowSubqueries && sub.query() != null;
+            case Expr.InSubquery sub ->
+                    allowSubqueries
+                            && hasSingleColumn(sub.query())
+                            // The binder leaves a bare SQL NULL probe untyped.
+                            && (sub.value() instanceof Expr.Null
+                                    || checkExpression(sub.value(), matchesColumn, true));
+            case Expr.Literal _ -> true;
+            case Expr.Null _ -> false;
+            case null -> false;
+        };
+    }
+
+    private static boolean hasSingleColumn(SelectQuery query) {
+        return query != null && query.projection().size() == 1;
     }
 }

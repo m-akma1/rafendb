@@ -4,19 +4,133 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.error.OptimizerRuntimeException.ValidationException;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.query.CreateTableQuery;
+import org.rafendb.common.query.DropTableQuery;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.InsertQuery;
+import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.query.UpdateQuery;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.optimizer.catalog.MockCatalog;
+import org.rafendb.optimizer.parser.QueryParser;
 
 class QueryBinderTest {
     private final QueryBinder binder = new QueryBinder(MockCatalog.defaults());
+    private final QueryParser parser = new QueryParser();
+
+    private ParsedQuery bindSql(String sql) {
+        return binder.bind(parser.parse(sql));
+    }
+
+    private Expr where(String sql) {
+        return ((SelectQuery) bindSql(sql)).whereCondition();
+    }
+
+    private static Expr.Op op(Expr expr) {
+        return ((Expr.Binary) expr).op();
+    }
+
+    @Test
+    void bindsOrAndNotWithAndBindingTighterThanOr() {
+        Expr or = where("SELECT nim FROM mahasiswa WHERE nim = 1 OR nim = 2 AND ipk > 3.0");
+        assertEquals(Expr.Op.OR, op(or));
+        assertEquals(Expr.Op.EQ, op(((Expr.Binary) or).left()));
+        assertEquals(Expr.Op.AND, op(((Expr.Binary) or).right()));
+
+        Expr not = where("SELECT nim FROM mahasiswa WHERE NOT (nim = 1 OR ipk > 3.0)");
+        assertEquals(Expr.Op.OR, op(assertInstanceOf(Expr.Not.class, not).child()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "SELECT nim FROM mahasiswa WHERE NOT nim",
+                "SELECT nim FROM mahasiswa WHERE nim OR nim = 1",
+                "SELECT nim FROM mahasiswa WHERE kode_prodi IN (SELECT absent FROM prodi)",
+                "SELECT nim FROM mahasiswa WHERE ipk > (SELECT nama FROM prodi)",
+                "CREATE TABLE mahasiswa (nim INTEGER)",
+                "DROP TABLE missing"
+            })
+    void rejectsInvalidStatements(String sql) {
+        assertThrows(ValidationException.class, () -> bindSql(sql));
+    }
+
+    @Test
+    void bindsScalarInExistsAndCorrelatedSubqueries() {
+        assertInstanceOf(
+                Expr.ScalarSubquery.class,
+                ((Expr.Binary)
+                                where(
+                                        "SELECT nim FROM mahasiswa WHERE ipk > (SELECT ipk FROM mahasiswa)"))
+                        .right());
+        assertInstanceOf(
+                Expr.InSubquery.class,
+                where("SELECT nim FROM mahasiswa WHERE kode_prodi IN (SELECT kode FROM prodi)"));
+        Expr.ExistsSubquery exists =
+                assertInstanceOf(
+                        Expr.ExistsSubquery.class,
+                        where(
+                                "SELECT nim FROM mahasiswa WHERE EXISTS (SELECT kode FROM prodi"
+                                        + " WHERE prodi.kode = mahasiswa.kode_prodi)"));
+        Expr.Binary inner = (Expr.Binary) exists.query().whereCondition();
+        assertEquals(0, ((Expr.ColumnRef) inner.left()).scopeDepth());
+        assertEquals(1, ((Expr.ColumnRef) inner.right()).scopeDepth()); // the outer row's column
+    }
+
+    @Test
+    void aliasesTellTheTwoSidesOfASelfJoinApart() {
+        SelectQuery bound =
+                (SelectQuery)
+                        bindSql(
+                                "SELECT a.nim, b.nim FROM mahasiswa AS a, mahasiswa AS b"
+                                        + " WHERE a.nim < b.nim");
+        assertEquals(
+                List.of(new Expr.ColumnRef("a", "nim", 0), new Expr.ColumnRef("b", "nim", 4)),
+                bound.projection());
+    }
+
+    @Test
+    void limitIsKeptThroughBinding() {
+        assertEquals(5, ((SelectQuery) bindSql("SELECT nim FROM mahasiswa LIMIT 5")).limit());
+        assertNull(((SelectQuery) bindSql("SELECT nim FROM mahasiswa")).limit());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "SELECT nim FROM mahasiswa LIMIT -1",
+                "SELECT nim FROM mahasiswa LIMIT x",
+                "SELECT nim FROM mahasiswa LIMIT"
+            })
+    void rejectsMalformedLimit(String sql) {
+        assertThrows(SyntaxException.class, () -> parser.parse(sql));
+    }
+
+    @Test
+    void bindsCreateAndDropTable() {
+        CreateTableQuery create =
+                (CreateTableQuery)
+                        bindSql("CREATE TABLE t (id INTEGER PRIMARY KEY, name VARCHAR(10))");
+        assertEquals("t", create.table());
+        assertEquals(2, create.columns().size());
+
+        // orders references customers, so only CASCADE may drop it.
+        QueryBinder samples = new QueryBinder(MockCatalog.samples());
+        assertThrows(
+                ValidationException.class,
+                () -> samples.bind(parser.parse("DROP TABLE customers")));
+        DropTableQuery drop =
+                (DropTableQuery) samples.bind(parser.parse("DROP TABLE customers CASCADE"));
+        assertTrue(drop.cascade());
+    }
 
     private static SelectQuery select(List<Expr> projection, FromItem from, Expr where) {
         return new SelectQuery("", projection, from, where, List.of());

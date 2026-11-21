@@ -103,6 +103,25 @@ final class TokenCursor {
         return t.text();
     }
 
+    /** A table, alias, or declared column must be a single unqualified name. */
+    String expectSimpleName(String what) {
+        Token token = peek();
+        String name = expectIdentifier(what);
+        if (name.contains(".")) throw error(token, "unqualified " + what);
+        return name;
+    }
+
+    int expectUnsignedInteger(String what) {
+        Token token = peek();
+        if (token.type() != TokenType.INTEGER_LITERAL) throw error(token, what);
+        next();
+        try {
+            return Integer.parseInt(token.text());
+        } catch (NumberFormatException e) {
+            throw syntaxError("Out-of-range " + what + ": " + token.text(), token);
+        }
+    }
+
     /** Accepts an optional trailing ';' then requires end of input, else throws. */
     void expectEnd() {
         acceptPunct(";");

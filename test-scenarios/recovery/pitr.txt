@@ -1,0 +1,31 @@
+# FR-05 & FR-08 Scenario 3: Point-In-Time Recovery (PITR) di Antara Dua Commit
+#
+# Urutan Eksekusi:
+#   1. T1 BEGIN -> INSERT key=100 val="Version1" -> COMMIT
+#   2. T2 BEGIN -> UPDATE key=100 val="Version1" -> "Version2" -> COMMIT
+#   3. T3 BEGIN -> UPDATE key=100 val="Version2" -> "Version3" -> ROLLBACK (prasyarat PITR: semua transaksi selesai)
+#   4. Jalankan recoverToTransaction(target = 1) via pitr-tx 1
+#
+# Hasil yang Diharapkan:
+#   - key=100 bernilai "Version1" (perubahan T1 bertahan, T2 & T3 tidak disertakan).
+#
+# Cara Verifikasi Otomatis:
+#   Jalankan RecoveryDriver#testPointInTime, PitrManagerTest,
+#   atau scripts\run.cmd driver recovery --run=test-scenarios\recovery\pitr.txt
+
+begin 1
+insert 1 docs 100 Version1
+commit 1
+begin 2
+update 2 docs 100 Version2
+commit 2
+begin 3
+update 3 docs 100 Version3
+rollback 3
+assert val docs 100 Version2
+pitr-tx 1
+assert exists docs 100 true
+assert val docs 100 Version1
+assert status 1 COMMITTED
+assert status 2 COMMITTED
+assert status 3 ABORTED

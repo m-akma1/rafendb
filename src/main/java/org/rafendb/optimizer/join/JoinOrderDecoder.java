@@ -2,7 +2,7 @@ package org.rafendb.optimizer.join;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
@@ -16,22 +16,34 @@ import org.rafendb.common.plan.*;
 final class JoinOrderDecoder {
     private final PlanNode original;
     private final PlanNode region;
-    private final StorageManager storage;
+    private final StorageMetadata storage;
     private final List<Expr.ColumnRef> originalColumns;
     private final List<Input> inputs = new ArrayList<>();
     private final List<Expr> predicates = new ArrayList<>();
 
     /** Finds the join region below outer selections, projections and sorts. */
-    JoinOrderDecoder(PlanNode original, StorageManager storage) throws CostEstimationException {
+    JoinOrderDecoder(PlanNode original, StorageMetadata storage) throws CostEstimationException {
         this.original = original;
         this.storage = storage;
-        PlanNode current = original;
+        region = joinRegion(original);
+        if (PlanTrees.containsFixedPredicate(region)) {
+            throw new CostEstimationException("GENETIC cannot flatten a subquery predicate");
+        }
+        originalColumns = knownColumns(region);
+        collectInputsAndPredicates(region, 0);
+    }
+
+    /** Predicates in outer wrappers still see the restored output of the decoded region. */
+    static boolean hasFixedPredicateInJoinRegion(PlanNode root) {
+        return PlanTrees.containsFixedPredicate(joinRegion(root));
+    }
+
+    private static PlanNode joinRegion(PlanNode root) {
+        PlanNode current = root;
         while (current instanceof SelectionPlanNode
                 || current instanceof ProjectionPlanNode
                 || current instanceof SortPlanNode) current = current.children().getFirst();
-        region = current;
-        originalColumns = knownColumns(region);
-        collectInputsAndPredicates(region, 0);
+        return current;
     }
 
     /** Returns left-to-right occurrence IDs. Decoding them still produces a left-deep tree. */
@@ -150,12 +162,17 @@ final class JoinOrderDecoder {
     /** Constant predicates can be placed at the first input, including FALSE and SQL NULL. */
     private boolean referencesAvailableInputs(
             Expr expression, int[] originalToDecodedOffsets, int joinedWidth) {
-        if (expression instanceof Expr.ColumnRef column)
-            return originalToDecodedOffsets[column.offset()] < joinedWidth;
+        if (expression instanceof Expr.ColumnRef column) {
+            return column.scopeDepth() > 0
+                    || originalToDecodedOffsets[column.offset()] < joinedWidth;
+        }
         if (expression instanceof Expr.Binary binary) {
             return referencesAvailableInputs(binary.left(), originalToDecodedOffsets, joinedWidth)
                     && referencesAvailableInputs(
                             binary.right(), originalToDecodedOffsets, joinedWidth);
+        }
+        if (expression instanceof Expr.Not not) {
+            return referencesAvailableInputs(not.child(), originalToDecodedOffsets, joinedWidth);
         }
         return true;
     }

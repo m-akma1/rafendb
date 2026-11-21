@@ -4,7 +4,7 @@ rem   scripts\run.cmd server [args]
 rem   scripts\run.cmd client [args]
 rem   scripts\run.cmd driver processor^|optimizer^|storage^|concurrency^|recovery [args]
 rem   scripts\run.cmd reset-data
-rem cmd.exe splits arguments on "=" and ",", so quote flags: "--mock=storage,recovery"
+rem cmd.exe splits arguments on "=" and ",", so quote flags: "--mock=sm,ccm"
 setlocal
 set "ROOT=%~dp0.."
 set "JAR=%ROOT%\target\rafendb.jar"
@@ -32,12 +32,13 @@ if not exist "%JAR%" (
   exit /b 1
 )
 cd /d "%ROOT%"
-java -cp "%JAR%" %MAIN% %1 %2 %3 %4 %5 %6 %7 %8 %9
+rem target\lib holds the runtime libraries (JLine). Native access lets JLine's FFM terminal run quietly.
+java --enable-native-access=ALL-UNNAMED -cp "%JAR%;%ROOT%\target\lib\*" %MAIN% %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :reset
 if exist "%ROOT%\data" rmdir /s /q "%ROOT%\data"
-echo Removed data, next run will recreates it from the seed.
+echo Removed data. Start the server with --seed to load the sample database.
 exit /b 0
 
 :usage

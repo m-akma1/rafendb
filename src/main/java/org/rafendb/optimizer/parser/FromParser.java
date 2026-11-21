@@ -3,7 +3,6 @@ package org.rafendb.optimizer.parser;
 import org.rafendb.common.error.OptimizerRuntimeException.SyntaxException;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.FromItem.TableRef;
-import org.rafendb.common.token.Token;
 
 final class FromParser {
     private final TokenCursor in;
@@ -44,11 +43,8 @@ final class FromParser {
     }
 
     private TableRef table() {
-        Token t = in.peek();
-        String name = in.expectIdentifier("table name");
-        if (name.indexOf('.') >= 0) {
-            throw TokenCursor.syntaxError("Table name cannot contain '.': '" + name + "'", t);
-        }
-        return new TableRef(name);
+        String name = in.expectSimpleName("table name");
+        String alias = in.acceptKeyword("AS") ? in.expectSimpleName("table alias") : null;
+        return new TableRef(name, alias);
     }
 }
