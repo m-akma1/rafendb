@@ -18,6 +18,8 @@ import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.log.LogPayload;
 import org.rafendb.common.log.LogType;
 import org.rafendb.common.schema.Column;
+import org.rafendb.common.schema.IndexInfo;
+import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
@@ -97,6 +99,18 @@ public final class StorageDriver extends Driver {
                     out().println("inserted at " + lastRid.block() + ":" + lastRid.slot());
                 });
         command(
+                "update TABLE RID v1 v2 ...",
+                (args, rest) -> {
+                    if (args.size() < 3)
+                        throw new DriverException("usage: update TABLE RID v1 v2 ...");
+                    write(
+                            () -> {
+                                update(args.get(0), rid(args.get(1)), args.subList(2, args.size()));
+                                return null;
+                            });
+                    out().println("updated");
+                });
+        command(
                 "delete TABLE RID",
                 (args, rest) -> out().println(write(() -> delete(args.get(0), rid(args.get(1))))));
         command(
@@ -127,13 +141,17 @@ public final class StorageDriver extends Driver {
                                     return null;
                                 }));
         command("flush", (args, rest) -> storage.flush());
+        command("createindex INDEX TABLE COLUMN btree|hash", (args, rest) -> createIndex(args));
         command(
                 "lookup INDEX TYPE VALUE",
                 (args, rest) ->
                         out().println(
                                         storage.lookupIndex(
                                                 args.get(0), value(args.get(1), args.get(2)))));
-        command("assert count|fetch|lookup|fail ...", this::check);
+        command(
+                "range INDEX TYPE LOWER INCLUDE_LOWER UPPER INCLUDE_UPPER",
+                (args, rest) -> out().println(range(args)));
+        command("assert count|fetch|row|lookup|range|fail ...", this::check);
     }
 
     /** Retains actions locally for assert-fail; the shared Driver owns normal dispatch. */
@@ -150,8 +168,15 @@ public final class StorageDriver extends Driver {
                         "  --dir=PATH     database directory (default data/ in the working directory)");
         out().println("  --frames=N     buffer frames (default 64)");
         out().println("RID: block:slot or $last; values: NULL or quoted text with spaces.");
+        out().println(
+                        "update replaces the full row at the same RID; a larger row may be rejected.");
+        out().println("createindex INDEX TABLE COLUMN btree|hash is unlogged DDL.");
+        out().println("range INDEX TYPE LOWER INCLUDE_LOWER UPPER INCLUDE_UPPER");
+        out().println("Range bounds: * is unbounded; inclusion flags must be true or false.");
         out().println("assert count T N | assert fetch T RID present|absent");
-        out().println("assert lookup INDEX TYPE VALUE N | assert fail COMMAND...");
+        out().println("assert row TABLE RID v1 v2 ... | assert lookup INDEX TYPE VALUE N");
+        out().println("assert range INDEX TYPE LOWER INCLUDE_LOWER UPPER INCLUDE_UPPER N");
+        out().println("assert fail COMMAND...");
     }
 
     @Override
@@ -192,16 +217,7 @@ public final class StorageDriver extends Driver {
 
     /** Reserves a RID, logs the image, then inserts; a failed reservation is cancelled. */
     private Rid insert(String table, List<String> tokens) throws Exception {
-        List<Column> columns = storage.getSchema(table).columns();
-        if (tokens.size() != columns.size()) {
-            throw new IllegalArgumentException(
-                    "expected " + columns.size() + " values, got " + tokens.size());
-        }
-        List<Value> values = new ArrayList<>();
-        for (int i = 0; i < columns.size(); i++) {
-            values.add(value(columns.get(i).type(), tokens.get(i)));
-        }
-        Row row = new Row(values);
+        Row row = row(table, tokens);
         Rid rid = storage.reserveRid(table, row);
         try {
             long lsn =
@@ -221,6 +237,70 @@ public final class StorageDriver extends Driver {
             throw e;
         }
         return rid;
+    }
+
+    private Row row(String table, List<String> tokens) {
+        List<Column> columns = storage.getSchema(table).columns();
+        if (tokens.size() != columns.size()) {
+            throw new IllegalArgumentException(
+                    "expected " + columns.size() + " values, got " + tokens.size());
+        }
+        List<Value> values = new ArrayList<>();
+        for (int i = 0; i < columns.size(); i++) {
+            values.add(value(columns.get(i).type(), tokens.get(i)));
+        }
+        return new Row(values);
+    }
+
+    /** Logs both images before replacing a row; write() rolls back a rejected update. */
+    private void update(String table, Rid rid, List<String> tokens) throws Exception {
+        StoredRow before =
+                storage.fetch(table, rid)
+                        .orElseThrow(() -> new DriverException("no live record at " + rid));
+        Row after = row(table, tokens);
+        long lsn =
+                log(
+                        LogType.UPDATE,
+                        new ChangeRecord(
+                                ResourceId.ofRow(table, rid),
+                                Optional.of(storage.encodeRow(table, before.row())),
+                                Optional.of(storage.encodeRow(table, after))));
+        storage.update(table, rid, after, lsn);
+    }
+
+    private void createIndex(List<String> args) throws StorageInternalException {
+        if (args.size() != 4)
+            throw new DriverException("usage: createindex INDEX TABLE COLUMN btree|hash");
+        if (rollbackFailed) throw new StorageInternalException("restart after failed rollback");
+        IndexType type =
+                switch (args.get(3).toLowerCase(Locale.ROOT)) {
+                    case "btree" -> IndexType.B_PLUS_TREE;
+                    case "hash" -> IndexType.HASH;
+                    default -> throw new DriverException("index type must be btree or hash");
+                };
+        storage.createIndex(new IndexInfo(args.get(0), args.get(1), args.get(2), type));
+        out().println("index created: " + args.get(0));
+    }
+
+    private List<Rid> range(List<String> args) throws StorageInternalException {
+        if (args.size() != 6)
+            throw new DriverException(
+                    "usage: range INDEX TYPE LOWER INCLUDE_LOWER UPPER INCLUDE_UPPER");
+        String type = args.get(1);
+        return storage.rangeIndex(
+                args.get(0),
+                args.get(2).equals("*") ? null : value(type, args.get(2)),
+                inclusive(args.get(3)),
+                args.get(4).equals("*") ? null : value(type, args.get(4)),
+                inclusive(args.get(5)));
+    }
+
+    private boolean inclusive(String text) {
+        return switch (text.toLowerCase(Locale.ROOT)) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new DriverException("range inclusion must be true or false");
+        };
     }
 
     /** Logs the before-image before deleting an existing row. */
@@ -286,15 +366,32 @@ public final class StorageDriver extends Driver {
                 boolean present = storage.fetch(t.get(1), rid(t.get(2))).isPresent();
                 check("fetch " + t.get(2), t.get(3).equals("present"), present);
             }
+            case "row" -> {
+                if (t.size() < 4)
+                    throw new DriverException("usage: assert row TABLE RID v1 v2 ...");
+                check(
+                        "row " + t.get(1) + " " + t.get(2),
+                        Optional.of(row(t.get(1), t.subList(3, t.size()))),
+                        storage.fetch(t.get(1), rid(t.get(2))).map(StoredRow::row));
+            }
             case "lookup" -> {
                 int size = storage.lookupIndex(t.get(1), value(t.get(2), t.get(3))).size();
                 check("lookup " + t.get(1), Integer.parseInt(t.get(4)), size);
             }
+            case "range" -> {
+                if (t.size() != 8)
+                    throw new DriverException(
+                            "usage: assert range INDEX TYPE LOWER INCLUDE_LOWER UPPER INCLUDE_UPPER N");
+                check(
+                        "range " + t.get(1),
+                        Integer.parseInt(t.get(7)),
+                        range(t.subList(1, 7)).size());
+            }
             case "fail" -> {
                 if (t.size() < 2) throw new DriverException("usage: assert fail COMMAND...");
+                Command action = actions.get(t.get(1).toLowerCase(Locale.ROOT));
+                if (action == null) throw new DriverException("unknown command: " + t.get(1));
                 try {
-                    Command action = actions.get(t.get(1).toLowerCase(Locale.ROOT));
-                    if (action == null) throw new DriverException("unknown command: " + t.get(1));
                     String[] parts = rest.split("\\s+", 3);
                     action.execute(t.subList(2, t.size()), parts.length == 3 ? parts[2] : "");
                     check("expected failure: " + String.join(" ", t.subList(1, t.size())), false);

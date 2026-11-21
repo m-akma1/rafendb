@@ -1,0 +1,77 @@
+# Run against a fresh directory; restart.txt checks the same directory afterwards.
+sample
+assert count customers 60
+assert count orders 60
+assert count order_items 60
+tables
+schema customers
+stats customers
+scan customers 2
+
+# Build both index types over existing rows, including range boundary checks.
+createindex idx_customers_id customers customer_id btree
+createindex idx_customers_credit customers credit btree
+createindex idx_customers_status customers status hash
+indexes customers
+lookup idx_customers_status char A
+assert lookup idx_customers_status char A 30
+assert range idx_customers_credit float 51.5 true 53.0 true 2
+assert range idx_customers_credit float 51.5 false 53.0 true 1
+assert range idx_customers_credit float 51.5 false 53.0 false 0
+assert range idx_customers_id int * true 2 true 2
+assert range idx_customers_id int 59 true * true 2
+assert range idx_customers_id int NULL true * true 0
+range idx_customers_id int 1 true 3 false
+
+# INSERT and UPDATE must maintain the row, its RID, and all affected indexes.
+insert customers 9999 "Driver Initial" 10.5 A
+assert count customers 61
+fetch customers $last
+assert row customers $last 9999 "Driver Initial" 10.5 A
+assert lookup idx_customers_name varchar "Driver Initial" 1
+assert range idx_customers_credit float * true 20.0 true 1
+update customers $last 9999 "Driver Updated" NULL I
+assert row customers $last 9999 "Driver Updated" NULL I
+assert lookup idx_customers_name varchar "Driver Initial" 0
+assert lookup idx_customers_name varchar "Driver Updated" 1
+assert lookup idx_customers_status char I 31
+assert lookup idx_customers_credit float NULL 0
+update customers $last 9999 "Driver Updated" 75.0 I
+assert row customers $last 9999 "Driver Updated" 75.0 I
+assert range idx_customers_credit float * true 20.0 true 0
+assert lookup idx_customers_credit float 75.0 1
+
+# Growing a row is allowed when its page has enough room; the RID stays the same.
+update customers $last 9999 "This name is longer than the original record" 99.0 A
+assert row customers $last 9999 "This name is longer than the original record" 99.0 A
+update customers $last 9999 "Driver Updated" 75.0 I
+# Invalid row values are rejected without changing existing data or indexes.
+assert fail update customers $last wrong "Bad Type" 1.0 A
+assert row customers $last 9999 "Driver Updated" 75.0 I
+assert lookup idx_customers_credit float 75.0 1
+assert lookup idx_customers_status char A 30
+
+# Invalid requests must leave previously stored rows and indexes intact.
+assert fail createindex idx_customers_id customers customer_id btree
+assert fail createindex bad_column customers missing btree
+assert fail createindex bad_type customers credit invalid
+assert fail range idx_customers_status char A true I true
+assert fail range idx_customers_id int 1 maybe 2 true
+assert fail scan missing_table
+assert fail insert customers 1
+
+# DELETE, clear, and DROP exercise index cleanup and catalog persistence.
+insert customers 9998 "To Delete" NULL A
+assert fetch customers $last present
+delete customers $last
+assert fetch customers $last absent
+assert lookup idx_customers_id int 9998 0
+assert lookup idx_customers_name varchar "To Delete" 0
+assert count customers 61
+clear order_items
+assert count order_items 0
+assert lookup idx_order_items_order_id int 1 0
+drop order_items
+assert fail schema order_items
+assert fail drop customers
+flush
