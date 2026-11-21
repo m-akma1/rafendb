@@ -1,0 +1,15 @@
+# Run after operations.txt, with the same --dir. Safe to run repeatedly.
+sample
+assert count customers 61
+assert count orders 60
+assert fail schema order_items
+assert lookup idx_customers_id int 9999 1
+assert lookup idx_customers_id int 9998 0
+assert lookup idx_customers_name varchar "Driver Initial" 0
+assert lookup idx_customers_name varchar "Driver Updated" 1
+assert lookup idx_customers_name varchar "To Delete" 0
+assert lookup idx_customers_credit float 75.0 1
+assert lookup idx_customers_status char I 31
+assert lookup idx_customers_status char A 30
+assert range idx_customers_id int 9999 true * true 1
+assert range idx_customers_credit float * true * true 61
