@@ -47,17 +47,20 @@ public final class ConcurrencyDriver extends Driver {
     private static final String READ_USAGE = "read <tx> <table> [status]";
     private static final String WRITE_USAGE = "write <tx> <table> <value> [status]";
 
+    /** Tracks a transaction, its worker, and the access to retry after WAITING. */
     private static final class Session {
         private final TxId id;
         private final ExecutorService worker;
         private AccessCommand pending;
 
+        /** Associates an admitted transaction with its worker. */
         private Session(TxId id, ExecutorService worker) {
             this.id = id;
             this.worker = worker;
         }
     }
 
+    /** Holds a parsed access and its expected status, including the arguments for a retry. */
     private record AccessCommand(
             Session session,
             String alias,
@@ -66,6 +69,7 @@ public final class ConcurrencyDriver extends Driver {
             int value,
             Status expected) {}
 
+    /** Outcome of one access attempt, with a value when the access executed. */
     private record Attempt(Status status, int value) {}
 
     private final Map<String, Session> sessions = new LinkedHashMap<>();
@@ -76,11 +80,16 @@ public final class ConcurrencyDriver extends Driver {
     private boolean batch;
     private boolean needsVerification;
 
+    /** Creates the standalone CCM driver. */
     ConcurrencyDriver() {
         super(Component.CCM);
     }
 
-    /** Launches the driver on standard input and output. */
+    /**
+     * Launches the driver on standard input and output.
+     *
+     * @param args command-line options
+     */
     public static void main(String[] args) {
         new ConcurrencyDriver().launch(args);
     }
@@ -180,6 +189,7 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Stops the transaction workers and clears their aliases. */
     private void closeSessions() {
         for (Session session : sessions.values()) {
             session.worker.close();
@@ -187,6 +197,7 @@ public final class ConcurrencyDriver extends Driver {
         sessions.clear();
     }
 
+    /** Replaces the current scenario with an empty backend and CCM. */
     private void resetScenario() throws Exception {
         Scenario next = mockScenario ? new MockScenarioStorage() : ScenarioStorage.open();
         checkBatchCompletion();
@@ -206,12 +217,14 @@ public final class ConcurrencyDriver extends Driver {
         out().println("Protocol: " + ccm.activeProtocol());
     }
 
+    /** Counts an unfinished batch scenario as a failed check. */
     private void checkBatchCompletion() {
         if (batch && needsVerification) {
             check("finish all transactions and run verify before ending the scenario", false);
         }
     }
 
+    /** Begins a transaction on its own worker, opening the backend on first use. */
     private void begin(List<String> args) throws Exception {
         requireArity(args, 1, 1, "begin <tx>");
         String alias = args.getFirst();
@@ -236,6 +249,7 @@ public final class ConcurrencyDriver extends Driver {
         out().println("BEGIN " + alias + " (" + id + ")");
     }
 
+    /** Looks up an existing transaction alias or reports invalid input. */
     private Session session(String alias) {
         Session session = sessions.get(alias);
         if (session == null) {
@@ -244,6 +258,7 @@ public final class ConcurrencyDriver extends Driver {
         return session;
     }
 
+    /** Validates an access command before submitting it to the transaction worker. */
     private AccessCommand parseAccess(AccessType type, List<String> args) {
         boolean writing = type == AccessType.WRITE;
         int required = writing ? 3 : 2;
@@ -262,10 +277,12 @@ public final class ConcurrencyDriver extends Driver {
                 expected(args, required, ALLOWED));
     }
 
+    /** Runs one access on its transaction worker and reports the result. */
     private void execute(AccessCommand access) throws Exception {
         show(access, await(access.session().worker.submit(() -> attempt(access))));
     }
 
+    /** Applies an access only after CCM grants it and attempts abort on write failure. */
     private Attempt attempt(AccessCommand access)
             throws ConcurrencyInternalException, StorageInternalException {
         TxId id = access.session().id;
@@ -293,6 +310,7 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Queues an access on its worker behind the shared start signal. */
     private Future<Attempt> submitAtStart(AccessCommand access, CountDownLatch start) {
         return access.session()
                 .worker
@@ -303,6 +321,7 @@ public final class ConcurrencyDriver extends Driver {
                         });
     }
 
+    /** Reports the outcome and saves the command if it needs a retry. */
     private void show(AccessCommand access, Attempt attempt) {
         access.session().pending = attempt.status() == WAITING ? access : null;
         String label = access.alias() + " " + access.type() + " " + access.resource().table();
@@ -312,12 +331,14 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Parses a quoted read or write command within a parallel step. */
     private AccessCommand parseParallelAccess(String input) {
         List<String> words = List.of(input.strip().split("\\s+"));
         AccessType type = parseEnum(AccessType.class, words.getFirst());
         return parseAccess(type, words.subList(1, words.size()));
     }
 
+    /** Releases two access attempts together and checks both results. */
     private void parallel(List<String> args) throws Exception {
         requireArity(args, 2, 2, "parallel \"<access>\" \"<access>\"");
         AccessCommand first = parseParallelAccess(args.getFirst());
@@ -340,6 +361,7 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Retries the saved access with the same operation arguments. */
     private void retry(List<String> args) throws Exception {
         requireArity(args, 1, 2, "retry <tx> [status]");
         Session session = session(args.getFirst());
@@ -357,6 +379,7 @@ public final class ConcurrencyDriver extends Driver {
                         expected(args, 1, ALLOWED)));
     }
 
+    /** Commits or aborts on the transaction worker and checks the resulting status. */
     private void finish(List<String> args, TxStatus terminal) throws Exception {
         boolean committing = terminal == COMMITTED;
         String name = committing ? "commit" : "abort";
@@ -381,6 +404,7 @@ public final class ConcurrencyDriver extends Driver {
         check(name + " " + alias, expected, actual);
     }
 
+    /** Compares a stored test value with the expected value, treating an absent row as zero. */
     private void assertValue(List<String> args) throws StorageInternalException {
         requireArity(args, 3, 3, "assert value <table> <number>");
         if (!args.getFirst().equalsIgnoreCase("value")) {
@@ -393,6 +417,7 @@ public final class ConcurrencyDriver extends Driver {
                 scenario == null ? 0 : scenario.storedValue(row.table()).orElse(0));
     }
 
+    /** Verifies a handwritten schedule or a completed live scenario. */
     private void verify(List<String> args) throws IOException, StorageInternalException {
         requireArity(args, 1, 2, "verify <serializable|cyclic> [file]");
         boolean expected =
@@ -428,6 +453,7 @@ public final class ConcurrencyDriver extends Driver {
         needsVerification = false;
     }
 
+    /** Builds a precedence graph from accesses and commits listed in a file. */
     private void verifyManual(Path file, boolean expected) throws IOException {
         Map<String, TxId> ids = new HashMap<>();
         List<Access> schedule = new ArrayList<>();
@@ -461,6 +487,7 @@ public final class ConcurrencyDriver extends Driver {
         showVerification(schedule, committed, expected);
     }
 
+    /** Prints the schedule, graph, and serial order before checking serializability. */
     private Result showVerification(List<Access> schedule, Set<TxId> committed, boolean expected) {
         Result result = new PrecedenceGraphVerifier().verify(schedule, committed);
         out().println("Executed schedule: " + schedule);
@@ -470,6 +497,7 @@ public final class ConcurrencyDriver extends Driver {
         return result;
     }
 
+    /** Compares actual reads and final rows with replay in the committed serial order. */
     private void verifyReplay(List<ExecutedAccess> executed, List<TxId> serialOrder)
             throws StorageInternalException {
         Map<ResourceId, Integer> replay = new HashMap<>();
@@ -505,6 +533,7 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Normalizes a nonblank table name to the scenario resource key. */
     private static ResourceId resource(String table) {
         if (table.isBlank()) {
             throw new DriverException("table name is required");
@@ -512,6 +541,7 @@ public final class ConcurrencyDriver extends Driver {
         return ResourceId.ofTable(table.strip().toLowerCase(Locale.ROOT));
     }
 
+    /** Parses a signed 32-bit test value or reports invalid input. */
     private static int parseInt(String value) {
         try {
             return Integer.parseInt(value);
@@ -520,12 +550,14 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Reads an optional expected status, using the command default when omitted. */
     private static <E extends Enum<E>> E expected(List<String> args, int index, E fallback) {
         return args.size() == index
                 ? fallback
                 : parseEnum(fallback.getDeclaringClass(), args.get(index));
     }
 
+    /** Parses an enum name without regard to case. */
     private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {
         try {
             return Enum.valueOf(type, value.toUpperCase(Locale.ROOT));
@@ -534,12 +566,14 @@ public final class ConcurrencyDriver extends Driver {
         }
     }
 
+    /** Reports command usage when the argument count is outside the accepted range. */
     private static void requireArity(List<String> args, int min, int max, String usage) {
         if (args.size() < min || args.size() > max) {
             throw new DriverException("usage: " + usage);
         }
     }
 
+    /** Waits for a worker result and propagates its original exception. */
     private static <T> T await(Future<T> task) throws Exception {
         try {
             return task.get();

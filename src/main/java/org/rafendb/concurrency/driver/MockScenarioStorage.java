@@ -49,6 +49,7 @@ final class MockScenarioStorage extends Scenario implements RecoveryManager {
         values.put(table, value);
     }
 
+    /** Encodes a test integer as a row image for in-memory rollback. */
     private static byte[] encode(int value) {
         return ByteBuffer.allocate(Integer.BYTES).putInt(value).array();
     }

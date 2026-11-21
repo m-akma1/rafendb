@@ -20,6 +20,7 @@ import org.rafendb.common.txn.TxStatus;
 import org.rafendb.concurrency.protocol.Protocol;
 import org.rafendb.concurrency.txn.TransactionManager;
 
+/** Coordinates FRM logging and rollback with CCM transaction state and protection. */
 public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenance {
     private final RecoveryManager frm;
     private final TransactionManager txns;
@@ -27,6 +28,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
     private final ConcurrentHashMap<TxId, Object> rollbackLocks = new ConcurrentHashMap<>();
     private boolean initialized;
 
+    /** Connects recovery operations to the facade's transaction manager and protocol. */
     public FrmBridge(RecoveryManager frm, TransactionManager txns, Protocol protocol) {
         this.frm = Objects.requireNonNull(frm, "frm");
         this.txns = Objects.requireNonNull(txns, "txns");
@@ -48,6 +50,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         initialized = true;
     }
 
+    /** Registers an admitted transaction with FRM or terminates it if BEGIN logging fails. */
     public void logBegin(TxId tx) {
         Objects.requireNonNull(tx, "tx");
         boolean logged = false;
@@ -91,6 +94,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         }
     }
 
+    /** Validates a row change and infers its log type from the available images. */
     private static LogType typeOf(ChangeRecord change) {
         Objects.requireNonNull(change, "change");
         Objects.requireNonNull(change.resource(), "resource");
@@ -109,6 +113,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         return after.isEmpty() ? LogType.DELETE : LogType.UPDATE;
     }
 
+    /** Confirms commit with FRM before releasing the transaction's protection. */
     public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
         synchronized (txns) {
@@ -143,6 +148,7 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
         return new TxResult(TxStatus.COMMITTED, "");
     }
 
+    /** Serializes rollback per transaction and releases protection after successful undo. */
     public TxResult abort(TxId tx) throws ConcurrencyInternalException {
         Objects.requireNonNull(tx, "tx");
         Object rollbackLock = rollbackLocks.computeIfAbsent(tx, ignored -> new Object());

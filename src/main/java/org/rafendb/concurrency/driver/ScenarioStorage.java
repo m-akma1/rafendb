@@ -29,12 +29,14 @@ final class ScenarioStorage extends Scenario {
     private final Engine.DriverStorage resources;
     private final StorageManager storage;
 
+    /** Takes ownership of the temporary directory and the resources opened in it. */
     private ScenarioStorage(Path directory, Engine.DriverStorage resources) {
         this.directory = directory;
         this.resources = resources;
         this.storage = resources.storage();
     }
 
+    /** Opens a fresh temporary database and WAL through the engine. */
     static ScenarioStorage open() throws Exception {
         Path directory = Files.createTempDirectory("rafendb-ccm-");
         try {
@@ -71,12 +73,14 @@ final class ScenarioStorage extends Scenario {
         writeRow(logging, access, before, new Row(List.of(Value.ofInt(value))));
     }
 
+    /** Returns the first row of an existing test table, or null if empty. */
     private StoredRow findRow(String table) throws StorageInternalException {
         try (var cursor = storage.scan(table)) {
             return cursor.next();
         }
     }
 
+    /** Logs the row images before passing the returned LSN to the storage write. */
     private void writeRow(ConcurrencyLogging logging, Access access, StoredRow before, Row after)
             throws ConcurrencyInternalException, StorageInternalException {
         String table = access.resource().table();
@@ -120,6 +124,7 @@ final class ScenarioStorage extends Scenario {
         deleteDirectory(directory);
     }
 
+    /** Preserves a cleanup error as suppressed on the original failure. */
     private static void deleteAfterFailure(Path directory, Exception failure) {
         try {
             deleteDirectory(directory);
@@ -128,6 +133,7 @@ final class ScenarioStorage extends Scenario {
         }
     }
 
+    /** Deletes the temporary directory after its contents have been deleted. */
     private static void deleteDirectory(Path directory) throws IOException {
         List<Path> paths;
         try (var tree = Files.walk(directory)) {

@@ -111,6 +111,7 @@ public final class TransactionManager {
         }
     }
 
+    /** Checks whether the transaction state machine allows the transition. */
     private static boolean allowed(TxStatus from, TxStatus to) {
         return switch (from) {
             case ACTIVE -> to == TxStatus.PARTIALLY_COMMITTED || to == TxStatus.FAILED;

@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.rafendb.common.txn.TxId;
 
+/** Finds the largest transaction ID involved in a wait-for cycle. */
 public class WaitForDeadlockDetector implements DeadlockDetector {
 
     /** {@inheritDoc} */
@@ -36,6 +37,7 @@ public class WaitForDeadlockDetector implements DeadlockDetector {
         return Optional.ofNullable(victim);
     }
 
+    /** Checks whether following wait-for edges can lead back to the starting transaction. */
     private static boolean isInCycle(TxId start, Map<TxId, Set<TxId>> waitFor) {
         Set<TxId> visited = new HashSet<>();
         Deque<TxId> pending = new ArrayDeque<>();

@@ -21,6 +21,7 @@ import org.rafendb.concurrency.bridge.FrmBridge;
 import org.rafendb.concurrency.protocol.Protocol;
 import org.rafendb.concurrency.txn.TransactionManager;
 
+/** Coordinates transaction state, access protection, and failure recovery. */
 public final class ConcurrencyControlManager
         implements ConcurrencyControl, ConcurrencyLogging, ConcurrencyMaintenance {
     private static final System.Logger LOGGER =
@@ -29,6 +30,7 @@ public final class ConcurrencyControlManager
     private final Protocol protocol;
     private final FrmBridge bridge;
 
+    /** Assembles the facade with its transaction manager, protocol, and recovery manager. */
     public ConcurrencyControlManager(
             TransactionManager txns, Protocol protocol, RecoveryManager frm) {
         this.txns = Objects.requireNonNull(txns, "txns");
@@ -43,7 +45,11 @@ public final class ConcurrencyControlManager
         return tx;
     }
 
-    /** Detects cycles when a request waits; rollback duration depends on FRM. */
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Checks for deadlocks on WAITING. FRM determines how long victim rollback takes.
+     */
     @Override
     public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
         Objects.requireNonNull(type, "type");
@@ -87,6 +93,7 @@ public final class ConcurrencyControlManager
         };
     }
 
+    /** Attempts rollback after a protocol violation and reports any recovery error. */
     private void abortAfterViolation(TxId tx) {
         try {
             bridge.abort(tx);
@@ -95,6 +102,7 @@ public final class ConcurrencyControlManager
         }
     }
 
+    /** Reports separately whether a rejected transaction still needs rollback. */
     private static String rejectedMessage(TxId tx, TxStatus status) {
         return status == TxStatus.FAILED
                 ? tx + " cannot continue; rollback is incomplete, retry abort"

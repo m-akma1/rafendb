@@ -23,7 +23,6 @@ import org.rafendb.common.txn.TxStatus;
 
 class TransactionManagerTest {
 
-    // For each status, the statuses it is allowed to move to. COMMITTED and ABORTED are final.
     private static final Map<TxStatus, Set<TxStatus>> ALLOWED =
             Map.of(
                     TxStatus.ACTIVE, Set.of(TxStatus.PARTIALLY_COMMITTED, TxStatus.FAILED),
@@ -34,13 +33,11 @@ class TransactionManagerTest {
 
     private final TransactionManager manager = new TransactionManager();
 
-    // Opens the manager (starting ids from 0) and returns it, so tests can call begin().
     private TransactionManager opened() {
         manager.open(0);
         return manager;
     }
 
-    // Moves a new ACTIVE transaction to the given status using only legal steps.
     private void driveTo(TxId tx, TxStatus target) {
         switch (target) {
             case ACTIVE -> {}
@@ -57,15 +54,11 @@ class TransactionManagerTest {
         }
     }
 
-    // ---- starting transactions and ids ----
-
-    // begin() must fail until open() is called (CC-05: no transactions before recovery).
     @Test
     void beginIsRefusedUntilOpened() {
         assertThrows(IllegalStateException.class, manager::begin);
     }
 
-    // open() rejects a negative start value and cannot be called twice.
     @Test
     void openRejectsNegativeHighWaterAndSecondOpen() {
         assertThrows(IllegalArgumentException.class, () -> manager.open(-1));
@@ -73,7 +66,6 @@ class TransactionManagerTest {
         assertThrows(IllegalStateException.class, () -> manager.open(0));
     }
 
-    // After recovery with highest id 41, new ids are 42, 43, ...
     @Test
     void idsStartAboveTheRecoveredHighWaterAndGrowByOne() {
         manager.open(41);
@@ -81,21 +73,18 @@ class TransactionManagerTest {
         assertEquals(new TxId(43), manager.begin());
     }
 
-    // A new transaction starts as ACTIVE.
     @Test
     void newTransactionStartsActive() {
         TxId tx = opened().begin();
         assertEquals(TxStatus.ACTIVE, manager.status(tx));
     }
 
-    // When ids reach Long.MAX_VALUE, begin() fails instead of wrapping around.
     @Test
     void idsAreExhaustedAtTheMaximum() {
         manager.open(Long.MAX_VALUE);
         assertThrows(IllegalStateException.class, manager::begin);
     }
 
-    // A transaction that begins later gets a larger timestamp.
     @Test
     void timestampFollowsBeginOrder() {
         opened();
@@ -105,7 +94,6 @@ class TransactionManagerTest {
         assertTrue(manager.timestamp(first) < manager.timestamp(second));
     }
 
-    // An unknown transaction gives IllegalArgumentException; null gives NullPointerException.
     @Test
     void unknownAndNullTransactionsAreRejected() {
         opened();
@@ -118,7 +106,6 @@ class TransactionManagerTest {
         assertThrows(NullPointerException.class, () -> manager.timestamp(null));
     }
 
-    // 16 threads call begin() at the same time: no duplicate ids, and each thread's ids increase.
     @Test
     void concurrentBeginsGiveUniqueIncreasingIds() throws Exception {
         opened();
@@ -156,9 +143,6 @@ class TransactionManagerTest {
         }
     }
 
-    // ---- status changes ----
-
-    // Tries every status pair: legal moves work, illegal ones throw and leave the status as it was.
     @Test
     void transitionsFollowTheStateMachine() {
         opened();
@@ -179,14 +163,12 @@ class TransactionManagerTest {
         }
     }
 
-    // Moving to a null status is a programming error.
     @Test
     void transitionRejectsNullTarget() {
         TxId tx = opened().begin();
         assertThrows(NullPointerException.class, () -> manager.transition(tx, null));
     }
 
-    // Once COMMITTED or ABORTED, no further move is allowed.
     @Test
     void committedAndAbortedAreFinalForEveryTarget() {
         opened();
@@ -203,9 +185,6 @@ class TransactionManagerTest {
         }
     }
 
-    // ---- holding new transactions (for checkpoints) ----
-
-    // While paused, begin() waits; it continues after resume() (used for checkpoints).
     @Test
     void pauseHoldsBeginUntilResume() throws Exception {
         opened();
@@ -219,7 +198,6 @@ class TransactionManagerTest {
         }
     }
 
-    // Pausing only blocks new transactions; running ones can still commit.
     @Test
     void pausingDoesNotStopRunningTransactionsFromFinishing() {
         TxId tx = opened().begin();
@@ -229,7 +207,6 @@ class TransactionManagerTest {
         manager.resume();
     }
 
-    // Calling pause() or resume() more than once is safe.
     @Test
     void pauseAndResumeAreHarmlessWhenRepeated() {
         opened();
@@ -240,8 +217,6 @@ class TransactionManagerTest {
         assertEquals(new TxId(1), manager.begin());
     }
 
-    // If a waiting begin() is interrupted, it throws IllegalStateException and keeps the interrupt
-    // flag on.
     @Test
     void interruptWhileHeldGivesIllegalStateAndKeepsTheInterruptFlag() throws Exception {
         opened();
@@ -268,10 +243,6 @@ class TransactionManagerTest {
         manager.resume();
     }
 
-    // ---- waiting until no transaction is running ----
-
-    // With no running transaction, awaitNoActive() returns true right away (even for a huge
-    // timeout).
     @Test
     void awaitNoActiveReturnsAtOnceWhenNothingRuns() throws Exception {
         opened();
@@ -279,7 +250,6 @@ class TransactionManagerTest {
         assertTrue(manager.awaitNoActive(Duration.ofSeconds(Long.MAX_VALUE)));
     }
 
-    // With a running transaction, awaitNoActive() returns false when the time runs out.
     @Test
     void awaitNoActiveTimesOutWhileATransactionRuns() throws Exception {
         opened().begin();
@@ -287,7 +257,6 @@ class TransactionManagerTest {
         assertFalse(manager.awaitNoActive(Duration.ofMillis(50)));
     }
 
-    // A FAILED transaction still counts as running until it becomes ABORTED (rollback done).
     @Test
     void failedTransactionStillCountsUntilItIsAborted() throws Exception {
         TxId tx = opened().begin();
@@ -297,7 +266,6 @@ class TransactionManagerTest {
         assertTrue(manager.awaitNoActive(Duration.ofMillis(50)));
     }
 
-    // awaitNoActive() wakes up and returns true as soon as the last transaction finishes.
     @Test
     void awaitNoActiveWakesWhenTheLastTransactionFinishes() throws Exception {
         opened();
@@ -318,7 +286,6 @@ class TransactionManagerTest {
         }
     }
 
-    // A null timeout gives NullPointerException; a negative one gives IllegalArgumentException.
     @Test
     void awaitNoActiveRejectsBadTimeouts() {
         opened();

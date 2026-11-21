@@ -15,6 +15,7 @@ public final class ProtocolConfig {
     /** Protocol used when no setting is given. */
     public static final ProtocolType DEFAULT = ProtocolType.LOCK_BASED;
 
+    /** Prevents instantiation of the configuration utility. */
     private ProtocolConfig() {}
 
     /**
@@ -75,6 +76,7 @@ public final class ProtocolConfig {
         return name(type) + " (" + detail + ")" + (type == DEFAULT ? " [default]" : "");
     }
 
+    /** Returns the protocol name used in startup descriptions and diagnostics. */
     private static String name(ProtocolType type) {
         return type.name();
     }
