@@ -39,11 +39,11 @@ import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.mock.processor.MockOperator;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.operator.FakeChildOp;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -526,7 +526,7 @@ class UpdateOpBehaviorTest {
         for (int i = 0; i < rowsAndRids.length; i += 2) {
             rows.add(new ResultRow(((Row) rowsAndRids[i]).values(), (Rid) rowsAndRids[i + 1]));
         }
-        return new TrackedOperator(new MockOperator(OP_SCHEMA, rows));
+        return new TrackedOperator(new FakeChildOp(OP_SCHEMA, rows));
     }
 
     private UpdateOp setName(Expr value, Operator child) {
@@ -558,11 +558,11 @@ class UpdateOpBehaviorTest {
 
     /** Counts open and close so tests can prove the child is always closed. */
     private static final class TrackedOperator implements Operator {
-        private final MockOperator delegate;
+        private final FakeChildOp delegate;
         int opens;
         int closes;
 
-        TrackedOperator(MockOperator delegate) {
+        TrackedOperator(FakeChildOp delegate) {
             this.delegate = delegate;
         }
 
