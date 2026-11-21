@@ -68,7 +68,7 @@ class org.rafendb.engine.Engine$DriverStorage {
 	{method} +maxTransactionId () : long
 	{method} +recovery () : RecoveryManager
 	{method} +storage () : StorageManager
-	{method} +wal () : AutoCloseable
+	{method} +wal () : Logger
 }
 
 
