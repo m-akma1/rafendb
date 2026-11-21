@@ -46,6 +46,8 @@ import org.rafendb.driver.DriverException;
 public final class ConcurrencyDriver extends Driver {
     private static final String READ_USAGE = "read <tx> <table> [status]";
     private static final String WRITE_USAGE = "write <tx> <table> <value> [status]";
+    private static final String PARALLEL_USAGE = "parallel \"<access>\" \"<access>\" [...]";
+    private static final String PROTOCOL_STEP_USAGE = "on-protocol <protocol> \"<command>\"";
 
     /** Tracks a transaction, its worker, and the access to retry after WAITING. */
     private static final class Session {
@@ -77,7 +79,6 @@ public final class ConcurrencyDriver extends Driver {
     private ConcurrencyControlManager ccm;
     private Scenario scenario;
     private boolean mockScenario;
-    private boolean batch;
     private boolean needsVerification;
 
     /** Creates the standalone CCM driver. */
@@ -100,12 +101,7 @@ public final class ConcurrencyDriver extends Driver {
         if (mockScenario != mocked(Component.SM)) {
             throw new DriverException("mock both with --mock=sm,frm, or use both real components");
         }
-        batch = option("run") != null;
-        try {
-            protocol = ProtocolConfig.parse(option("protocol"));
-        } catch (IllegalArgumentException e) {
-            throw new DriverException(e.getMessage());
-        }
+        protocol = parseProtocol(option("protocol"));
         command(
                 "reset",
                 "reset",
@@ -131,9 +127,14 @@ public final class ConcurrencyDriver extends Driver {
                 (args, rest) -> execute(parseAccess(AccessType.WRITE, args)));
         command(
                 "parallel",
-                "parallel \"<access>\" \"<access>\"",
-                "submit two read or write commands on different transactions",
+                PARALLEL_USAGE,
+                "submit reads or writes together on different transactions",
                 (args, rest) -> parallel(args));
+        command(
+                "on-protocol",
+                PROTOCOL_STEP_USAGE,
+                "run a step only for the selected protocol",
+                (args, rest) -> onProtocol(args));
         command(
                 "retry",
                 "retry <tx> [status]",
@@ -178,7 +179,6 @@ public final class ConcurrencyDriver extends Driver {
 
     @Override
     protected void close() throws Exception {
-        checkBatchCompletion();
         closeSessions();
         Scenario previous = scenario;
         scenario = null;
@@ -199,8 +199,10 @@ public final class ConcurrencyDriver extends Driver {
 
     /** Replaces the current scenario with an empty backend and CCM. */
     private void resetScenario() throws Exception {
+        if (isRunningFile()) {
+            finishFile();
+        }
         Scenario next = mockScenario ? new MockScenarioStorage() : ScenarioStorage.open();
-        checkBatchCompletion();
         closeSessions();
         Scenario previous = scenario;
         scenario = next;
@@ -217,10 +219,32 @@ public final class ConcurrencyDriver extends Driver {
         out().println("Protocol: " + ccm.activeProtocol());
     }
 
-    /** Counts an unfinished batch scenario as a failed check. */
-    private void checkBatchCompletion() {
-        if (batch && needsVerification) {
+    /** Counts an unfinished file scenario before its result is printed or reset. */
+    @Override
+    protected void finishFile() {
+        if (needsVerification) {
             check("finish all transactions and run verify before ending the scenario", false);
+            needsVerification = false;
+        }
+    }
+
+    /** Uses the same protocol names for startup and conditional scenario steps. */
+    private static ProtocolType parseProtocol(String value) {
+        try {
+            return ProtocolConfig.parse(value);
+        } catch (IllegalArgumentException e) {
+            throw new DriverException(e.getMessage());
+        }
+    }
+
+    /** Executes a command only if its protocol matches the current run. */
+    private void onProtocol(List<String> args) throws Exception {
+        requireArity(args, 2, 2, PROTOCOL_STEP_USAGE);
+        if (args.get(1).isBlank()) {
+            throw new DriverException("usage: " + PROTOCOL_STEP_USAGE);
+        }
+        if (parseProtocol(args.getFirst()) == protocol) {
+            dispatch(args.get(1));
         }
     }
 
@@ -324,6 +348,7 @@ public final class ConcurrencyDriver extends Driver {
     /** Reports the outcome and saves the command if it needs a retry. */
     private void show(AccessCommand access, Attempt attempt) {
         access.session().pending = attempt.status() == WAITING ? access : null;
+        needsVerification = true;
         String label = access.alias() + " " + access.type() + " " + access.resource().table();
         check(label, access.expected(), attempt.status());
         if (attempt.status() == ALLOWED && access.type() == AccessType.READ) {
@@ -338,26 +363,34 @@ public final class ConcurrencyDriver extends Driver {
         return parseAccess(type, words.subList(1, words.size()));
     }
 
-    /** Releases two access attempts together and checks both results. */
+    /** Releases a group of access attempts together before waiting for their results. */
     private void parallel(List<String> args) throws Exception {
-        requireArity(args, 2, 2, "parallel \"<access>\" \"<access>\"");
-        AccessCommand first = parseParallelAccess(args.getFirst());
-        AccessCommand second = parseParallelAccess(args.get(1));
-        if (first.session() == second.session()) {
-            throw new DriverException("parallel requires two different transactions");
+        requireArity(args, 2, Integer.MAX_VALUE, PARALLEL_USAGE);
+        List<AccessCommand> accesses = args.stream().map(this::parseParallelAccess).toList();
+        if (accesses.stream().map(AccessCommand::session).distinct().count() != accesses.size()) {
+            throw new DriverException("parallel requires a different transaction for each access");
         }
         CountDownLatch start = new CountDownLatch(1);
-        Future<Attempt> firstResult = submitAtStart(first, start);
-        Future<Attempt> secondResult;
+        List<Future<Attempt>> results;
         try {
-            secondResult = submitAtStart(second, start);
+            results = accesses.stream().map(access -> submitAtStart(access, start)).toList();
         } finally {
             start.countDown();
         }
-        try {
-            show(first, await(firstResult));
-        } finally {
-            show(second, await(secondResult));
+        Exception failure = null;
+        for (int i = 0; i < accesses.size(); i++) {
+            try {
+                show(accesses.get(i), await(results.get(i)));
+            } catch (Exception e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -401,6 +434,7 @@ public final class ConcurrencyDriver extends Driver {
                                                         : ccm.abort(session.id))
                                                 .status()));
         session.pending = null;
+        needsVerification = true;
         check(name + " " + alias, expected, actual);
     }
 

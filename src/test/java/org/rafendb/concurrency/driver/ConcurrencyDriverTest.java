@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,19 +25,26 @@ class ConcurrencyDriverTest {
                 "begin T1\ncommit T1\n",
                 "begin T1\ncommit T1\nreset\nverify serializable\n"
             })
-    void batchFailsWhenAScenarioEndsWithoutVerification(String input) throws Exception {
-        var result = runBatch(input);
+    void bothFileModesCountAnUnverifiedScenarioBeforeTheSummary(String input) throws Exception {
+        final String message = "FAIL finish all transactions and run verify";
+        for (boolean interactive : List.of(false, true)) {
+            var result = runFile(input, interactive);
+            String output = result.output();
 
-        assertEquals(1, result.exitCode(), result.output());
-        assertTrue(
-                result.output().contains("FAIL finish all transactions and run verify"),
-                result.output());
+            assertEquals(1, result.exitCode(), output);
+            int failure = output.indexOf(message);
+            assertTrue(failure >= 0 && failure < output.indexOf("RESULT:"), output);
+            assertTrue(
+                    output.lines()
+                            .anyMatch(line -> line.matches("RESULT: [0-9]+ passed, 1 failed")),
+                    output);
+        }
     }
 
     @Test
     void mockedBatchRestoresAnUpdateAndRemovesAnAbortedZeroInsert() throws Exception {
         var result =
-                runBatch(
+                runFile(
                         """
                         begin T1
                         write T1 a 17
@@ -47,23 +55,26 @@ class ConcurrencyDriverTest {
                         abort T2
                         assert value a 17
                         verify serializable
-                        """);
+                        """,
+                        false);
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("actual Optional[17]"), result.output());
         assertTrue(result.output().contains("actual Optional.empty"), result.output());
     }
 
-    private RunResult runBatch(String input) throws Exception {
+    private RunResult runFile(String input, boolean interactive) throws Exception {
         Path script = Files.writeString(directory.resolve("scenario.txt"), input);
+        String[] args =
+                interactive
+                        ? new String[] {"--mock=sm,frm"}
+                        : new String[] {"--mock=sm,frm", "--run=" + script};
+        String commands = interactive ? "run \"" + script + "\"\nquit\n" : "";
         var bytes = new ByteArrayOutputStream();
         try (var out = new PrintStream(bytes, true, UTF_8)) {
             int exitCode =
                     new ConcurrencyDriver()
-                            .run(
-                                    new String[] {"--mock=sm,frm", "--run=" + script},
-                                    new ByteArrayInputStream(new byte[0]),
-                                    out);
+                            .run(args, new ByteArrayInputStream(commands.getBytes(UTF_8)), out);
             return new RunResult(exitCode, bytes.toString(UTF_8));
         }
     }

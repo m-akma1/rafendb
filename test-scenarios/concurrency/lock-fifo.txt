@@ -1,4 +1,4 @@
-# Run with LOCK_BASED. The queued reader goes before the later writer.
+# Lock-based serves the queued reader first. Timestamp-based allows the newer writer.
 reset
 begin T1
 begin T2
@@ -7,11 +7,12 @@ write T1 a 1
 read T2 a WAITING
 write T3 a 3 WAITING
 commit T1
-retry T3 WAITING
-retry T2 ALLOWED
-retry T3 WAITING
-commit T2
+on-protocol lock "retry T3 WAITING"
+on-protocol lock "retry T2 ALLOWED"
+on-protocol lock "retry T3 WAITING"
+on-protocol lock "commit T2"
 retry T3 ALLOWED
 commit T3
+on-protocol timestamp "retry T2 ABORTED"
 assert value a 3
 verify serializable

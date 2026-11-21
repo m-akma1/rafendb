@@ -3,9 +3,7 @@ reset
 begin T1
 begin T2
 begin T3
-write T1 a 1 ALLOWED
-write T2 b 2 ALLOWED
-write T3 c 3 ALLOWED
+parallel "write T1 a 1 ALLOWED" "write T2 b 2 ALLOWED" "write T3 c 3 ALLOWED"
 write T1 b 4 WAITING
 write T2 c 5 WAITING
 write T3 a 6 ABORTED

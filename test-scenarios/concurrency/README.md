@@ -37,10 +37,9 @@ Isi satu perintah per baris. Baris kosong dan baris yang dimulai dengan
 spasi. File skenario bawaan diawali `reset` agar dapat dijalankan berulang
 dari prompt yang sama. Setelah file selesai, `RESULT` merangkum jumlah
 pemeriksaan yang lulus dan gagal.
-Untuk `--run=<file>`, selesaikan transaksi dan jalankan `verify` sebelum
-`reset` atau akhir file. Driver melaporkan `FAIL` dan keluar dengan kode 1
-jika skenario belum diverifikasi. Pemeriksaan di akhir file muncul
-setelah ringkasan perintah dari driver bersama.
+Untuk `run <file>` dan `--run=<file>`, selesaikan transaksi dan jalankan `verify`
+sebelum `reset` atau akhir file. Driver menghitung skenario yang belum
+diverifikasi sebagai kegagalan di `RESULT` dan mengembalikan kode keluar 1.
 
 | File | Protokol | Pemeriksaan |
 | --- | --- | --- |
@@ -50,8 +49,8 @@ setelah ringkasan perintah dari driver bersama.
 | [deadlock.txt](deadlock.txt) | `LOCK_BASED` | T2 menjadi korban, perubahannya dibatalkan, dan T1 bisa lanjut. |
 | [deadlock-three.txt](deadlock-three.txt) | `LOCK_BASED` | T3 menjadi korban siklus tiga transaksi, lalu T1 dan T2 commit. |
 | [deadlock-upgrade.txt](deadlock-upgrade.txt) | `LOCK_BASED` | Dua pembaca meminta upgrade. Survivor bisa menulis dan memakai lagi lock yang sudah dipegang. |
-| [lock-fifo.txt](lock-fifo.txt) | `LOCK_BASED` | Penulis yang datang belakangan menunggu pembaca di depan antrean. |
-| [timestamp-violation.txt](timestamp-violation.txt) | `TIMESTAMP_BASED` | Akses transaksi lama ditolak, rollback menghapus perubahannya, dan commit berikutnya ditolak. |
+| [lock-fifo.txt](lock-fifo.txt) | Keduanya | Lock-based mendahulukan pembaca dalam antrean. Timestamp-based mengizinkan penulis baru dan menolak retry pembaca lama. |
+| [timestamp-violation.txt](timestamp-violation.txt) | Keduanya | Timestamp-based menolak akses transaksi lama. Lock-based mengizinkan akses lalu skenario meminta abort. Keduanya memeriksa rollback dan penolakan commit berikutnya. |
 
 ## Perintah skenario
 
@@ -61,7 +60,8 @@ setelah ringkasan perintah dari driver bersama.
 | `begin <tx>` | Mulai transaksi dengan alias unik, misalnya `T1`. |
 | `read <tx> <table> [status]` | Baca nilai tabel dan tampilkan nilainya jika diizinkan. |
 | `write <tx> <table> <value> [status]` | Tulis nilai setelah akses diizinkan dan perubahan dicatat. |
-| `parallel "<access>" "<access>"` | Kirim dua perintah `read` atau `write` ke worker transaksi berbeda. |
+| `parallel "<access>" "<access>" [...]` | Kirim semua akses baca atau tulis dalam satu grup ke worker transaksi yang berbeda. |
+| `on-protocol <protocol> "<command>"` | Jalankan satu langkah hanya untuk protokol yang dipilih, misalnya `on-protocol lock "retry T3 WAITING"`. |
 | `retry <tx> [status]` | Ulangi operasi yang sedang menunggu dengan argumen semula. |
 | `commit <tx> [status]`, `abort <tx> [status]` | Selesaikan transaksi dan bandingkan statusnya. |
 | `assert value <table> <value>` | Periksa nilai langsung dari data uji, misalnya setelah rollback. |
@@ -73,10 +73,11 @@ Saat menerima `WAITING`, jalankan langkah transaksi lain, lalu gunakan
 `retry` untuk mengulang permintaan semula. `commit` dan `abort` masing-masing
 mengharapkan `COMMITTED` dan `ABORTED` secara default.
 
-Urutan eksekusi di dalam `parallel` bergantung pada penjadwalan thread.
-Gunakan perintah ini ketika kedua urutan memberi status yang sama,
-misalnya dua pembaca pada satu tabel. Untuk skenario konflik yang perlu
-diulang dengan hasil tetap, tulis langkah akses dan `retry` secara berurutan.
+Semua akses di dalam satu `parallel` dilepas bersama sebelum driver menunggu
+hasilnya. Gunakan grup ini ketika ekspektasi tetap sama untuk setiap urutan
+eksekusi, misalnya beberapa pembaca pada satu tabel atau konflik dengan lock
+yang sudah dipegang. Gunakan langkah terpisah untuk ketergantungan seperti
+memastikan operasi berstatus `WAITING` sebelum commit dan `retry`.
 
 `verify` menampilkan akses yang benar-benar dieksekusi, precedence graph
 transaksi yang commit, dan urutan serial jika grafnya asiklik. Untuk

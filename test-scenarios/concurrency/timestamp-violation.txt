@@ -1,11 +1,12 @@
-# Run with TIMESTAMP_BASED. The older transaction's read is rejected and T1 rolls back.
+# Timestamp-based rejects the older read. Lock-based permits it and tests explicit rollback.
 reset
 begin T1
 begin T2
-write T1 b -7 ALLOWED
-write T2 a 8 ALLOWED
+parallel "write T1 b -7 ALLOWED" "write T2 a 8 ALLOWED"
 commit T2
-read T1 a ABORTED
+on-protocol timestamp "read T1 a ABORTED"
+on-protocol lock "read T1 a ALLOWED"
+on-protocol lock "abort T1"
 read T1 b ABORTED
 commit T1 ABORTED
 begin T3
