@@ -14,7 +14,7 @@
   <description>mini Database Management System from scratch. Made for IF3140 Database Systems Sem 1 2026/2027</description>
 
   <properties>
-    <revision>3.1.0-dev-SNAPSHOT</revision>
+    <revision>4.1.0</revision>
 
     <!-- Language level. javac checks against the Java 25 API even on a newer JDK. -->
     <maven.compiler.release>25</maven.compiler.release>
@@ -56,6 +56,7 @@
     <diagrams.recoveryDirectory>${diagrams.outputDirectory}/recovery</diagrams.recoveryDirectory>
     <diagrams.optimizerDirectory>${diagrams.outputDirectory}/optimizer</diagrams.optimizerDirectory>
     <diagrams.processorDirectory>${diagrams.outputDirectory}/processor</diagrams.processorDirectory>
+    <diagrams.appDirectory>${diagrams.outputDirectory}/app</diagrams.appDirectory>
   </properties>
 
   <dependencyManagement>
@@ -289,10 +290,10 @@
 
   <profiles>
     <!--
-      Class diagrams of the module contracts (api.*), shared types (common) and each component's implementation.
+      Class diagrams of the module contracts (api.*), shared types (common) and each component's implementation and driver.
       Run: ./mvnw -Pdiagrams process-classes
       Writes .puml, .svg and .png per diagram to one folder per package group under docs/generated
-      (api, common, storage, concurrency, recovery, optimizer, processor), plus a generated index.md in each.
+      (api, common, storage, concurrency, recovery, optimizer, processor, app), plus a generated index.md in each.
       Rendering needs Graphviz (dot) on PATH.
     -->
     <profile>
@@ -521,6 +522,20 @@
                 </configuration>
               </execution>
               <execution>
+                <id>common-token</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.commonDirectory}</outputDirectory>
+                  <outputFilename>common-token.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.common.token</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
                 <id>common-tuple</id>
                 <phase>process-classes</phase>
                 <goals>
@@ -575,7 +590,6 @@
                   <scanPackages>
                     <scanPackage>org.rafendb.storage</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.storage\.(driver|seed)\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -591,7 +605,48 @@
                     <scanPackage>org.rafendb.storage</scanPackage>
                     <scanPackage>org.rafendb.api.storage</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.storage\.(driver|seed)\..*</blacklistRegexp>
+                </configuration>
+              </execution>
+              <execution>
+                <id>storage-buffer</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.storageDirectory}</outputDirectory>
+                  <outputFilename>storage-buffer.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.storage.buffer</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>storage-catalog</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.storageDirectory}</outputDirectory>
+                  <outputFilename>storage-catalog.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.storage.catalog</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>storage-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.storageDirectory}</outputDirectory>
+                  <outputFilename>storage-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.storage.driver</scanPackage>
+                  </scanPackages>
                 </configuration>
               </execution>
               <execution>
@@ -636,6 +691,20 @@
                   </scanPackages>
                 </configuration>
               </execution>
+              <execution>
+                <id>storage-seed</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.storageDirectory}</outputDirectory>
+                  <outputFilename>storage-seed.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.storage.seed</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
               <!-- concurrency: whole component, with its api.concurrency contract, then one per subpackage. -->
               <execution>
                 <id>concurrency</id>
@@ -649,7 +718,6 @@
                   <scanPackages>
                     <scanPackage>org.rafendb.concurrency</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.concurrency\.driver\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -665,7 +733,34 @@
                     <scanPackage>org.rafendb.concurrency</scanPackage>
                     <scanPackage>org.rafendb.api.concurrency</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.concurrency\.driver\..*</blacklistRegexp>
+                </configuration>
+              </execution>
+              <execution>
+                <id>concurrency-bridge</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.concurrencyDirectory}</outputDirectory>
+                  <outputFilename>concurrency-bridge.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.concurrency.bridge</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>concurrency-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.concurrencyDirectory}</outputDirectory>
+                  <outputFilename>concurrency-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.concurrency.driver</scanPackage>
+                  </scanPackages>
                 </configuration>
               </execution>
               <execution>
@@ -711,6 +806,20 @@
                 </configuration>
               </execution>
               <execution>
+                <id>concurrency-txn</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.concurrencyDirectory}</outputDirectory>
+                  <outputFilename>concurrency-txn.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.concurrency.txn</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
                 <id>concurrency-verify</id>
                 <phase>process-classes</phase>
                 <goals>
@@ -737,7 +846,6 @@
                   <scanPackages>
                     <scanPackage>org.rafendb.recovery</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.recovery\.driver\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -753,7 +861,34 @@
                     <scanPackage>org.rafendb.recovery</scanPackage>
                     <scanPackage>org.rafendb.api.recovery</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.recovery\.driver\..*</blacklistRegexp>
+                </configuration>
+              </execution>
+              <execution>
+                <id>recovery-checkpoint</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.recoveryDirectory}</outputDirectory>
+                  <outputFilename>recovery-checkpoint.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.recovery.checkpoint</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>recovery-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.recoveryDirectory}</outputDirectory>
+                  <outputFilename>recovery-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.recovery.driver</scanPackage>
+                  </scanPackages>
                 </configuration>
               </execution>
               <execution>
@@ -767,6 +902,34 @@
                   <outputFilename>recovery-log.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.recovery.log</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>recovery-pitr</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.recoveryDirectory}</outputDirectory>
+                  <outputFilename>recovery-pitr.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.recovery.pitr</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>recovery-restart</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.recoveryDirectory}</outputDirectory>
+                  <outputFilename>recovery-restart.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.recovery.restart</scanPackage>
                   </scanPackages>
                 </configuration>
               </execution>
@@ -797,7 +960,6 @@
                   <scanPackages>
                     <scanPackage>org.rafendb.optimizer</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.optimizer\.(driver|explain)\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -813,7 +975,6 @@
                     <scanPackage>org.rafendb.optimizer</scanPackage>
                     <scanPackage>org.rafendb.api.optimizer</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.optimizer\.(driver|explain)\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -855,6 +1016,34 @@
                   <outputFilename>optimizer-cost.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.optimizer.cost</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>optimizer-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.optimizerDirectory}</outputDirectory>
+                  <outputFilename>optimizer-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.optimizer.driver</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>optimizer-explain</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.optimizerDirectory}</outputDirectory>
+                  <outputFilename>optimizer-explain.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.optimizer.explain</scanPackage>
                   </scanPackages>
                 </configuration>
               </execution>
@@ -901,6 +1090,20 @@
                 </configuration>
               </execution>
               <execution>
+                <id>optimizer-plan</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.optimizerDirectory}</outputDirectory>
+                  <outputFilename>optimizer-plan.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.optimizer.plan</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
                 <id>optimizer-rewrite</id>
                 <phase>process-classes</phase>
                 <goals>
@@ -927,7 +1130,6 @@
                   <scanPackages>
                     <scanPackage>org.rafendb.processor</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.processor\.driver\..*</blacklistRegexp>
                 </configuration>
               </execution>
               <execution>
@@ -943,7 +1145,62 @@
                     <scanPackage>org.rafendb.processor</scanPackage>
                     <scanPackage>org.rafendb.api.processor</scanPackage>
                   </scanPackages>
-                  <blacklistRegexp>org\.rafendb\.processor\.driver\..*</blacklistRegexp>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-api</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-api.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.api</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.driver</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-error</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-error.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.error</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-execution</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-execution.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.execution</scanPackage>
+                  </scanPackages>
                 </configuration>
               </execution>
               <execution>
@@ -985,6 +1242,165 @@
                   <outputFilename>processor-plan.puml</outputFilename>
                   <scanPackages>
                     <scanPackage>org.rafendb.processor.plan</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-schema</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-schema.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.schema</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-session</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-session.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.session</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-subquery</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-subquery.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.subquery</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-tuple</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-tuple.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.tuple</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>processor-txn</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.processorDirectory}</outputDirectory>
+                  <outputFilename>processor-txn.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.processor.txn</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <!-- app: the runnable layer around the components (engine wiring, server, wire protocol, client, driver base). -->
+              <execution>
+                <id>app</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.engine</scanPackage>
+                    <scanPackage>org.rafendb.server</scanPackage>
+                    <scanPackage>org.rafendb.net</scanPackage>
+                    <scanPackage>org.rafendb.client</scanPackage>
+                    <scanPackage>org.rafendb.driver</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>app-client</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app-client.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.client</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>app-driver</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app-driver.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.driver</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>app-engine</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app-engine.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.engine</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>app-net</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app-net.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.net</scanPackage>
+                  </scanPackages>
+                </configuration>
+              </execution>
+              <execution>
+                <id>app-server</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <outputFilename>app-server.puml</outputFilename>
+                  <scanPackages>
+                    <scanPackage>org.rafendb.server</scanPackage>
                   </scanPackages>
                 </configuration>
               </execution>
@@ -1145,6 +1561,27 @@
                   <metadata>false</metadata>
                 </configuration>
               </execution>
+              <execution>
+                <id>render-app-diagrams</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <sources>
+                    <directory>${diagrams.appDirectory}</directory>
+                    <includes>
+                      <include>*.puml</include>
+                    </includes>
+                  </sources>
+                  <outputDirectory>${diagrams.appDirectory}</outputDirectory>
+                  <formats>
+                    <format>svg</format>
+                    <format>png</format>
+                  </formats>
+                  <metadata>false</metadata>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
           <!-- Writes index.md per folder (every diagram, sorted by name) and a root index.md linking the folders. -->
@@ -1183,6 +1620,7 @@
                     <diagram-index dir="${diagrams.recoveryDirectory}" />
                     <diagram-index dir="${diagrams.optimizerDirectory}" />
                     <diagram-index dir="${diagrams.processorDirectory}" />
+                    <diagram-index dir="${diagrams.appDirectory}" />
                     <pathconvert property="folders" pathsep="&#10;">
                       <sort>
                         <dirset dir="${diagrams.outputDirectory}" includes="*" />
