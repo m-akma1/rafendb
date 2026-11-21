@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.rafendb.common.error.ProcessorRuntimeException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.OrderByItem;
@@ -178,9 +179,7 @@ class SubqueryEvaluatorTest {
         assertEquals(TruthValue.UNKNOWN, truth(condition, ROW, new FakeRunner(DataType.INTEGER)));
 
         FakeRunner many = new FakeRunner(DataType.INTEGER, TWO, THREE);
-        IllegalStateException error =
-                assertThrows(IllegalStateException.class, () -> truth(condition, ROW, many));
-        assertEquals("Scalar subquery returned more than one row", error.getMessage());
+        assertThrows(ProcessorRuntimeException.class, () -> truth(condition, ROW, many));
         assertEquals(1, many.result.getCloseCount());
 
         // m.ipk > (SELECT n.nim FROM nilai n) * 2

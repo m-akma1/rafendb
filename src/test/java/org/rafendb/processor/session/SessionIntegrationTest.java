@@ -206,6 +206,66 @@ class SessionIntegrationTest {
     }
 
     @Test
+    void subqueriesInWhereRunInsideTheStatement() throws Exception {
+        stack = new Stack(dir, true);
+        Session session = stack.processor.openSession();
+        String ids = "SELECT customer_id FROM customers WHERE ";
+
+        assertEquals(
+                15,
+                rows(
+                                session,
+                                ids
+                                        + "customer_id IN (SELECT customer_id FROM orders WHERE amount > 55)")
+                        .rows()
+                        .size());
+        assertEquals(
+                0,
+                rows(
+                                session,
+                                ids
+                                        + "NOT customer_id IN"
+                                        + " (SELECT customer_id FROM orders WHERE amount > 5)")
+                        .rows()
+                        .size());
+        assertEquals(
+                20,
+                rows(
+                                session,
+                                "SELECT o.order_id FROM orders AS o WHERE EXISTS (SELECT * FROM"
+                                        + " order_items AS i WHERE i.order_id = o.order_id AND"
+                                        + " i.gift = 'Y')")
+                        .rows()
+                        .size());
+        assertEquals(
+                List.of(Value.ofInt(3)),
+                rows(
+                                session,
+                                "SELECT order_id FROM orders WHERE amount ="
+                                        + " (SELECT amount FROM orders WHERE order_id = 3)")
+                        .rows()
+                        .getFirst()
+                        .values());
+
+        session.execute("BEGIN");
+        assertEquals(
+                11,
+                affected(
+                        session,
+                        "DELETE FROM order_items WHERE order_id IN"
+                                + " (SELECT order_id FROM orders WHERE amount > 59)"));
+        assertThrows(
+                ProcessorRuntimeException.class,
+                () ->
+                        session.execute(
+                                "SELECT order_id FROM orders WHERE amount ="
+                                        + " (SELECT amount FROM orders WHERE order_id > 3)"));
+        assertEquals(TxState.FAILED, session.transactionState());
+        session.execute("ABORT");
+        assertEquals(60, rows(session, "SELECT * FROM order_items").rows().size());
+    }
+
+    @Test
     void committedWritesSurviveARestartAndAnOpenTransactionDoesNot() throws Exception {
         stack = new Stack(dir, true);
         Session session = stack.processor.openSession();

@@ -36,6 +36,7 @@ import org.rafendb.processor.operator.write.UpdateOp;
 import org.rafendb.processor.plan.DefaultOperatorFactory;
 import org.rafendb.processor.plan.DefaultPlanTranslator;
 import org.rafendb.processor.plan.PlanTranslator;
+import org.rafendb.processor.subquery.PlanSubqueryRunner;
 
 /**
  * One client's session. It is the only writer of its transaction state; operators read it through
@@ -81,18 +82,21 @@ final class SessionImpl implements Session, SessionView {
         this.storageDDL = Objects.requireNonNull(storageDDL, "storageDDL");
         this.optimizer = Objects.requireNonNull(optimizer, "optimizer");
         // Operators read this session's transaction through SessionView when they run.
-        this.translator =
-                new DefaultPlanTranslator(
-                        new DefaultOperatorFactory(
-                                DefaultOperatorFactory.bindScan(this, TableScanOp::new),
-                                DefaultOperatorFactory.bindIndexScan(this, IndexScanOp::new),
-                                DefaultOperatorFactory.bindInsert(this, InsertOp::new),
-                                DefaultOperatorFactory.bindUpdate(
-                                        this, new DefaultExpressionEvaluator(), UpdateOp::new),
-                                DefaultOperatorFactory.bindDelete(this, DeleteOp::new),
-                                DefaultOperatorFactory.bindCreateIndex(this, CreateIndexOp::new),
-                                DefaultOperatorFactory.bindCreateTable(this, CreateTableOp::new),
-                                DefaultOperatorFactory.bindDropTable(this, DropTableOp::new)));
+        DefaultOperatorFactory factory =
+                new DefaultOperatorFactory(
+                        DefaultOperatorFactory.bindScan(this, TableScanOp::new),
+                        DefaultOperatorFactory.bindIndexScan(this, IndexScanOp::new),
+                        DefaultOperatorFactory.bindInsert(this, InsertOp::new),
+                        DefaultOperatorFactory.bindUpdate(
+                                this, new DefaultExpressionEvaluator(), UpdateOp::new),
+                        DefaultOperatorFactory.bindDelete(this, DeleteOp::new),
+                        DefaultOperatorFactory.bindCreateIndex(this, CreateIndexOp::new),
+                        DefaultOperatorFactory.bindCreateTable(this, CreateTableOp::new),
+                        DefaultOperatorFactory.bindDropTable(this, DropTableOp::new));
+        this.translator = new DefaultPlanTranslator(factory);
+        // A subquery is planned by this session's optimizer and translated by its translator, so
+        // the inner query runs in the same transaction; the cycle is why this is a setter.
+        factory.setSubqueryRunner(new PlanSubqueryRunner(optimizer, translator));
     }
 
     @Override

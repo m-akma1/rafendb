@@ -54,14 +54,35 @@ class QueryBinderTest {
             strings = {
                 "SELECT nim FROM mahasiswa WHERE NOT nim",
                 "SELECT nim FROM mahasiswa WHERE nim OR nim = 1",
-                "SELECT nim FROM mahasiswa WHERE ipk > (SELECT ipk FROM mahasiswa)",
-                "SELECT nim FROM mahasiswa WHERE kode_prodi IN (SELECT kode FROM prodi)",
-                "SELECT nim FROM mahasiswa WHERE EXISTS (SELECT kode FROM prodi)",
+                "SELECT nim FROM mahasiswa WHERE kode_prodi IN (SELECT absent FROM prodi)",
+                "SELECT nim FROM mahasiswa WHERE ipk > (SELECT nama FROM prodi)",
                 "CREATE TABLE mahasiswa (nim INTEGER)",
                 "DROP TABLE missing"
             })
-    void rejectsInvalidStatementsAndSubqueries(String sql) {
+    void rejectsInvalidStatements(String sql) {
         assertThrows(ValidationException.class, () -> bindSql(sql));
+    }
+
+    @Test
+    void bindsScalarInExistsAndCorrelatedSubqueries() {
+        assertInstanceOf(
+                Expr.ScalarSubquery.class,
+                ((Expr.Binary)
+                                where(
+                                        "SELECT nim FROM mahasiswa WHERE ipk > (SELECT ipk FROM mahasiswa)"))
+                        .right());
+        assertInstanceOf(
+                Expr.InSubquery.class,
+                where("SELECT nim FROM mahasiswa WHERE kode_prodi IN (SELECT kode FROM prodi)"));
+        Expr.ExistsSubquery exists =
+                assertInstanceOf(
+                        Expr.ExistsSubquery.class,
+                        where(
+                                "SELECT nim FROM mahasiswa WHERE EXISTS (SELECT kode FROM prodi"
+                                        + " WHERE prodi.kode = mahasiswa.kode_prodi)"));
+        Expr.Binary inner = (Expr.Binary) exists.query().whereCondition();
+        assertEquals(0, ((Expr.ColumnRef) inner.left()).scopeDepth());
+        assertEquals(1, ((Expr.ColumnRef) inner.right()).scopeDepth()); // the outer row's column
     }
 
     @Test

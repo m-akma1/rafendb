@@ -3,6 +3,7 @@ package org.rafendb.processor.subquery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.rafendb.common.error.ProcessorRuntimeException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.query.FromItem;
 import org.rafendb.common.query.OrderByItem;
@@ -228,7 +229,8 @@ public final class SubqueryEvaluator implements ExpressionEvaluator {
                 return Value.nullOf(rows.columns().get(0).type());
             }
             if (operator.next() != null) {
-                throw new IllegalStateException("Scalar subquery returned more than one row");
+                // The query's fault, not QP's, so the client sees it as a user error.
+                throw new ProcessorRuntimeException("Scalar subquery returned more than one row");
             }
             return first.get(0);
         } finally {
