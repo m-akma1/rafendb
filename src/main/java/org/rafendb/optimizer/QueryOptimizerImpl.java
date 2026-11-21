@@ -2,8 +2,8 @@ package org.rafendb.optimizer;
 
 import org.rafendb.api.optimizer.QueryOptimizer;
 import org.rafendb.common.error.OptimizerInternalException;
-import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.plan.PlanNode;
+import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.SelectQuery;
 import org.rafendb.optimizer.binder.QueryBinder;

@@ -56,7 +56,7 @@ final class SelectParser {
 
     private static Expr optionalWhere(String sql, TokenCursor in) {
         if (in.acceptKeyword("WHERE")) {
-            return new ExpressionParser(sql, in).parseCondition();
+            return new ExpressionParser(sql, in, true).parseCondition();
         }
         return null;
     }

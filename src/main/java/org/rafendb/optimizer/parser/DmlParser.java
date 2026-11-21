@@ -45,7 +45,7 @@ final class DmlParser {
         String column = in.expectIdentifier("column name");
         in.expectComparison("=");
         Expr value = new ExpressionParser(in).parseValue();
-        return new UpdateQuery(sql, table, column, value, optionalWhere(in));
+        return new UpdateQuery(sql, table, column, value, optionalWhere(sql, in));
     }
 
     private static ParsedQuery insert(String sql, TokenCursor in) {
@@ -65,10 +65,12 @@ final class DmlParser {
     private static ParsedQuery delete(String sql, TokenCursor in) {
         in.expectKeyword("FROM");
         String table = in.expectIdentifier("table name");
-        return new DeleteQuery(sql, table, optionalWhere(in));
+        return new DeleteQuery(sql, table, optionalWhere(sql, in));
     }
 
-    private static Expr optionalWhere(TokenCursor in) {
-        return in.acceptKeyword("WHERE") ? new ExpressionParser(in).parseCondition() : null;
+    private static Expr optionalWhere(String sql, TokenCursor in) {
+        return in.acceptKeyword("WHERE")
+                ? new ExpressionParser(sql, in, true).parseCondition()
+                : null;
     }
 }

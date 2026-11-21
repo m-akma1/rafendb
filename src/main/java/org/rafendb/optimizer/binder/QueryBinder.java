@@ -62,7 +62,7 @@ public final class QueryBinder implements Binder {
     @Override
     public ParsedQuery bind(ParsedQuery parsed) {
         Objects.requireNonNull(parsed, "parsed");
-        if(catalog instanceof StatementScopedCatalog scoped) {
+        if (catalog instanceof StatementScopedCatalog scoped) {
             scoped.beginStatement();
         }
         if (parsed instanceof SelectQuery select) return bind(select);
