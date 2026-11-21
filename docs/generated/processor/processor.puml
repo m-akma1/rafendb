@@ -420,6 +420,7 @@ org.rafendb.processor.operator.scan.TableScanOp ..|>  org.rafendb.processor.oper
 org.rafendb.processor.operator.sort.SortOp "1" o-- "0..*"  org.rafendb.processor.tuple.ResultRow : sorted
 org.rafendb.processor.operator.sort.SortOp *--  org.rafendb.processor.operator.Operator : child
 org.rafendb.processor.operator.sort.SortOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.write.DeleteOp *--  org.rafendb.processor.api.SessionView : context
 org.rafendb.processor.operator.write.DeleteOp *--  org.rafendb.processor.operator.Operator : child
 org.rafendb.processor.operator.write.DeleteOp ..|>  org.rafendb.processor.operator.write.DMLOperator
 org.rafendb.processor.operator.write.InsertOp *--  org.rafendb.processor.api.SessionView : ctx
