@@ -14,6 +14,7 @@ import org.rafendb.common.expr.Expr.ColumnRef;
 import org.rafendb.common.expr.Expr.Literal;
 import org.rafendb.common.expr.Expr.Null;
 import org.rafendb.common.expr.Expr.Op;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.token.Token;
 import org.rafendb.common.token.Token.TokenType;
 import org.rafendb.common.type.DataType;
@@ -37,14 +38,28 @@ final class ExpressionParser {
                     "=", Op.EQ, "<>", Op.NE, "!=", Op.NE, ">", Op.GT, ">=", Op.GE, "<", Op.LT, "<=",
                     Op.LE);
 
+    private final String sql;
     private final TokenCursor in;
 
     /**
      * Creates a parser that reads from, and advances, the given cursor.
      *
+     * @param sql the SQL string
      * @param in the shared token cursor
      */
     ExpressionParser(TokenCursor in) {
+        this.sql = "";
+        this.in = in;
+    }
+
+    /**
+     * Creates a parser that reads from, and advances, the given cursor.
+     *
+     * @param sql the SQL string
+     * @param in the shared token cursor
+     */
+    ExpressionParser(String sql, TokenCursor in) {
+        this.sql = sql;
         this.in = in;
     }
 
@@ -73,13 +88,26 @@ final class ExpressionParser {
     }
 
     private Expr parseComparison() {
-        Expr left = parseAdditive();
-        Op op = opAt(COMPARISON_OPERATOR, CMP);
-        if (op == null) {
-            return left;
+        if(in.acceptKeyword("EXISTS")){
+            in.expectPunct("(");
+            SelectQuery query = SelectParser.parseBody(sql, in);
+            in.expectPunct(")");
+            return new Expr.ExistsSubquery(query);
         }
-        in.next();
-        return new Binary(op, left, parseAdditive());
+        Expr left = parseAdditive();
+        if(!in.acceptKeyword("IN")){
+            Op op = opAt(COMPARISON_OPERATOR, CMP);
+            if (op == null) {
+                return left;
+            }
+            in.next();
+            return new Binary(op, left, parseAdditive());
+        }
+        // IN subquery
+        in.expectPunct("(");
+        SelectQuery query = SelectParser.parseBody(sql, in);
+        in.expectPunct(")");
+        return new Expr.InSubquery(left, query);
     }
 
     private Expr parseAdditive() {
@@ -137,6 +165,11 @@ final class ExpressionParser {
             case PUNCTUATION -> {
                 if (!t.isPunctuation("(")) {
                     throw in.error(t, "an operand");
+                }
+                if(in.peek().isKeyword("SELECT")){
+                    SelectQuery query = SelectParser.parseBody(sql, in);
+                    in.expectPunct(")");
+                    yield new Expr.ScalarSubquery(query);
                 }
                 Expr inner = parseCondition();
                 in.expectPunct(")");

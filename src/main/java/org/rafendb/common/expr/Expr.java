@@ -1,6 +1,7 @@
 package org.rafendb.common.expr;
 
 import org.rafendb.common.type.Value;
+import org.rafendb.common.query.SelectQuery;
 
 /**
  * Expression tree produced by the query parser for WHERE conditions, JOIN ... ON conditions, and
@@ -50,6 +51,12 @@ public sealed interface Expr {
      * @param right the right operand
      */
     record Binary(Op op, Expr left, Expr right) implements Expr {}
+
+    record ScalarSubquery(SelectQuery query) implements Expr {}
+
+    record InSubquery(Expr value, SelectQuery query) implements Expr {}
+
+    record ExistsSubquery(SelectQuery query) implements Expr {}
 
     /** Operators: arithmetic, comparison, and logical AND. */
     enum Op {

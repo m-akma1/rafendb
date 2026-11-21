@@ -67,6 +67,8 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
                         scalar(binary.left(), row, schema),
                         scalar(binary.right(), row, schema));
             }
+            // TODO: implement subquery expression 
+            case null, default -> throw new IllegalArgumentException("Unsupported expression type: " + expression);
         };
     }
 
