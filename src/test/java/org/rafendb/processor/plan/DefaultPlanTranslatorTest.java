@@ -480,6 +480,7 @@ class DefaultPlanTranslatorTest {
         private final Map<String, List<ColumnSchema>> schemas =
                 Map.of("employees", EMPLOYEE_SCHEMA, "departments", DEPARTMENT_SCHEMA);
         private List<ColumnSchema> projectionSchema = List.of();
+        private String nullKind;
         private String failureKind;
         private RuntimeException failure;
         private final List<CommandRequest> commands = new ArrayList<>();
@@ -489,6 +490,7 @@ class DefaultPlanTranslatorTest {
                 new ExecutionPlan.CommandResult(3, "DML completed");
 
         private ExecutionPlan.CommandAction command(String kind, PlanNode node, Operator child) {
+            if (kind.equals(nullKind)) return null;
             commands.add(new CommandRequest(kind, node, child));
             return () -> {
                 executions++;
