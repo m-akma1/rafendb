@@ -9,7 +9,7 @@ interface org.rafendb.api.recovery.RecoveryManager {
 	{method}  {abstract} +beginTransaction ( tx : TxId ) : boolean
 	{method} +close () : void
 	{method}  {abstract} +commitTransaction ( tx : TxId ) : boolean
-	{method}  {abstract} +createCheckpoint () : boolean
+	{method}  {abstract} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
 	{method}  {abstract} +forceThrough ( lsn : long ) : void
 	{method}  {abstract} +getTransactionStatus ( tx : TxId ) : TxStatus
 	{method}  {abstract} +recoverFromCrash () : boolean

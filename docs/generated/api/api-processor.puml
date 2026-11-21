@@ -13,6 +13,14 @@ interface org.rafendb.api.processor.QueryProcessor {
 interface org.rafendb.api.processor.Session {
 	{method}  {abstract} +close () : void
 	{method}  {abstract} +execute ( sql : String ) : QueryResult
+	{method}  {abstract} +transactionState () : TxState
+}
+
+
+enum org.rafendb.api.processor.Session$TxState {
+	{field} +ACTIVE
+	{field} +FAILED
+	{field} +IDLE
 }
 
 

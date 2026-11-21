@@ -11,11 +11,15 @@ interface org.rafendb.api.storage.RecordCursor {
 }
 
 
+interface org.rafendb.api.storage.StorageDefinition {
+	{method}  {abstract} +createTable ( schema : TableSchema ) : void
+	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
+}
+
+
 interface org.rafendb.api.storage.StorageManager {
 	{method}  {abstract} +clearTable ( table : String , logDelete : ToLongFunction ) : long
 	{method}  {abstract} +close () : void
-	{method}  {abstract} +createTable ( schema : TableSchema ) : void
-	{method}  {abstract} +dropTable ( table : String , cascade : boolean ) : void
 	{method}  {abstract} +listReferencingForeignKeys ( table : String ) : List
 	{method}  {abstract} +loadSampleDatabase () : void
 	{method}  {abstract} +loadSampleDatabase ( logInsert : ToLongFunction ) : void
@@ -62,6 +66,7 @@ interface org.rafendb.api.storage.WalSync {
 
 
 
+org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageDefinition
 org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageQuery
 org.rafendb.api.storage.StorageManager ..|>  org.rafendb.api.storage.StorageRecovery
 org.rafendb.api.storage.StorageQuery ..|>  org.rafendb.api.storage.StorageMetadata
