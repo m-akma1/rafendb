@@ -252,7 +252,8 @@ public final class JoinOptimizer {
     }
 
     /** Merges filters without treating unresolved natural joins as Cartesian products. */
-    private PlanNode rewriteSelectionOverJoin(SelectionPlanNode selection, StorageMetadata storage) {
+    private PlanNode rewriteSelectionOverJoin(
+            SelectionPlanNode selection, StorageMetadata storage) {
         PlanNode child = selection.child();
         if (!(child instanceof JoinPlanNode || child instanceof CartesianPlanNode))
             return selection;

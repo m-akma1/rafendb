@@ -111,7 +111,6 @@ final class ExpressionParser {
         return parseComparison();
     }
 
-
     /**
      * Parses a SET value: arithmetic over columns and literals, no comparison or AND.
      *

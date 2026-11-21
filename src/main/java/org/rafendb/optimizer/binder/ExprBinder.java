@@ -53,6 +53,13 @@ final class ExprBinder {
                             : Kind.TEXT;
             return new Typed(expr, kind, type, "literal " + literal.value());
         }
+        // D-SUBQ: QP cannot execute subqueries yet, so reject them here, before any transaction
+        // starts. The binding below is kept for when QP supports them; remove this check then.
+        if (expr instanceof Expr.ScalarSubquery
+                || expr instanceof Expr.ExistsSubquery
+                || expr instanceof Expr.InSubquery) {
+            throw new ValidationException("Subqueries are not supported yet");
+        }
         if (expr instanceof Expr.ScalarSubquery subquery) {
             QueryBinder.SubqueryBinding output =
                     queryBinder.bindSubquery(subquery.query(), true, scope);
@@ -91,16 +98,10 @@ final class ExprBinder {
 
             if (child.kind() != Kind.BOOLEAN && child.kind() != Kind.NULL) {
                 throw new ValidationException(
-                    "NOT requires a boolean operand, got " + child.kind()
-                );
+                        "NOT requires a boolean operand, got " + child.kind());
             }
 
-            return new Typed(
-                new Expr.Not(child.expr()),
-                Kind.BOOLEAN,
-                null,
-                "NOT expression"
-            );
+            return new Typed(new Expr.Not(child.expr()), Kind.BOOLEAN, null, "NOT expression");
         }
         if (!(expr instanceof Binary binary))
             throw new ValidationException("Unsupported expression: " + expr);
@@ -110,19 +111,13 @@ final class ExprBinder {
         Expr rewritten = new Binary(op, left.expr(), right.expr());
         if (op == Op.AND || op == Op.OR) {
             require(
-                (left.kind() == Kind.BOOLEAN || left.kind() == Kind.NULL)
-                && (right.kind() == Kind.BOOLEAN || right.kind() == Kind.NULL),
-                op + " requires boolean operands",
-                left,
-                right
-            );
+                    (left.kind() == Kind.BOOLEAN || left.kind() == Kind.NULL)
+                            && (right.kind() == Kind.BOOLEAN || right.kind() == Kind.NULL),
+                    op + " requires boolean operands",
+                    left,
+                    right);
 
-            return new Typed(
-                rewritten,
-                Kind.BOOLEAN,
-                null,
-                "boolean expression"
-            );
+            return new Typed(rewritten, Kind.BOOLEAN, null, "boolean expression");
         }
         if (op == Op.ADD || op == Op.SUB || op == Op.MUL || op == Op.DIV || op == Op.MOD) {
             require(
