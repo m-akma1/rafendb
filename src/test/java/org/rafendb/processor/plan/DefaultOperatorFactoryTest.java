@@ -13,6 +13,8 @@ import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.plan.IndexScanNode;
 import org.rafendb.common.plan.QueryPlan;
 import org.rafendb.common.plan.TableScanNode;
+import org.rafendb.common.query.FromItem;
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.txn.TxId;
@@ -31,6 +33,8 @@ import org.rafendb.processor.plan.command.CreateIndexPlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
+import org.rafendb.processor.schema.ColumnSchema;
+import org.rafendb.processor.tuple.ResultRow;
 
 /**
  * The bind* helpers wire a real operator constructor to one session's context; building an
@@ -243,6 +247,34 @@ class DefaultOperatorFactoryTest {
                 assertThrows(
                         IllegalStateException.class,
                         indexOnly(node -> failing).createIndex(INDEX)::execute));
+    }
+
+    @Test
+    void filterUsesSubqueryRunner() {
+        List<ColumnSchema> schema =
+                List.of(new ColumnSchema(new Expr.ColumnRef("employees", "id"), DataType.INTEGER));
+        List<ColumnSchema> managerSchema =
+                List.of(new ColumnSchema(new Expr.ColumnRef("managers", "id"), DataType.INTEGER));
+        ResultRow one = new ResultRow(List.of(Value.ofInt(1)), null);
+        ResultRow two = new ResultRow(List.of(Value.ofInt(2)), null);
+        SelectQuery managers =
+                new SelectQuery(
+                        "SELECT id FROM managers",
+                        List.of(new Expr.ColumnRef("managers", "id", 0)),
+                        new FromItem.TableRef("managers"),
+                        null,
+                        List.of());
+        // employees.id IN (SELECT id FROM managers)
+        Expr condition = new Expr.InSubquery(new Expr.ColumnRef("employees", "id", 0), managers);
+        DefaultOperatorFactory factory = writeOnly(unexpected2("UPDATE"), unexpected2("DELETE"));
+        FakeChildOp result = new FakeChildOp(managerSchema, List.of(two));
+        factory.setSubqueryRunner(query -> new ExecutionPlan.Rows(managerSchema, result));
+        FakeChildOp child = new FakeChildOp(schema, List.of(one, two));
+        Operator filter = factory.createFilter(child, condition);
+        filter.open();
+        assertSame(two, filter.next());
+        assertNull(filter.next());
+        filter.close();
     }
 
     private static <T, R> Function<T, R> unexpected(String what) {
