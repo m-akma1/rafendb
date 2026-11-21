@@ -26,6 +26,8 @@ import org.rafendb.processor.plan.command.DeletePlanNode;
 import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
+import org.rafendb.processor.subquery.SubqueryEvaluator;
+import org.rafendb.processor.subquery.SubqueryRunner;
 
 /**
  * Membentuk operator dan aksi perintah tanpa menjalankannya.
@@ -38,7 +40,8 @@ import org.rafendb.processor.plan.command.UpdatePlanNode;
  * dependency dan context sesi yang dibutuhkan operator terkait.
  */
 public final class DefaultOperatorFactory implements OperatorFactory {
-    private final ExpressionEvaluator evaluator = new DefaultExpressionEvaluator();
+    private final SubqueryEvaluator evaluator =
+            new SubqueryEvaluator(new DefaultExpressionEvaluator());
     private final Function<TableScanNode, Operator> scanBuilder;
     private final Function<IndexScanNode, Operator> indexScanBuilder;
     private final Function<InsertPlanNode, DMLOperator> insertBuilder;
@@ -324,6 +327,19 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             return Objects.requireNonNull(
                     constructor.create(context, child, node.table()), "DELETE operator");
         };
+    }
+
+    /**
+     * Memasang runner untuk subquery pada kondisi WHERE.
+     *
+     * <p>Dipanggil orchestrator setelah translator dibentuk, karena runner membutuhkan
+     * translator dan translator membutuhkan factory ini.
+     *
+     * @param runner pembentuk operator query dalam yang tidak null
+     * @throws NullPointerException jika runner null
+     */
+    public void setSubqueryRunner(SubqueryRunner runner) {
+        evaluator.setRunner(runner);
     }
 
     /** {@inheritDoc} */
