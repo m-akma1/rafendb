@@ -90,7 +90,7 @@ public final class UpdateOp implements DMLOperator {
     public Long execute() {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
-        StorageQuery sm = ctx.storage();
+        StorageQuery sm = ctx.storageDQL();
 
         List<Change> changes = collect(sm);
 

@@ -251,7 +251,8 @@ class SessionIntegrationTest {
                     new ConcurrencyControlManager(
                             new TransactionManager(), new LockBasedProtocol(), frm);
             ccm.initializeAfterRecovery(frm.getRecoveryInfo());
-            processor = new QueryProcessorImpl(ccm, storage, () -> Engine.optimizer(storage));
+            processor =
+                    new QueryProcessorImpl(ccm, storage, storage, () -> Engine.optimizer(storage));
         }
 
         /** One logged bootstrap transaction, before CCM hands out ids. */

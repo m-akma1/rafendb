@@ -1,6 +1,7 @@
 package org.rafendb.processor.operator;
 
 import org.rafendb.api.concurrency.ConcurrencyControl;
+import org.rafendb.api.storage.StorageDefinition;
 import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.processor.api.SessionView;
@@ -47,7 +48,13 @@ public final class FakeSession implements SessionView {
     }
 
     @Override
-    public StorageQuery storage() {
+    public StorageQuery storageDQL() {
         return storage;
+    }
+
+    /** Storage yang sama buat DDL, kalau storage test-nya bisa DDL; null kalau ga. */
+    @Override
+    public StorageDefinition storageDDL() {
+        return storage instanceof StorageDefinition definition ? definition : null;
     }
 }

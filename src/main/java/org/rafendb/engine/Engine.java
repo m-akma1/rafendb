@@ -227,7 +227,8 @@ public final class Engine implements AutoCloseable {
         r.ccm = ccm;
 
         StorageManager storage = r.storage;
-        QueryProcessor processor = new QueryProcessorImpl(ccm, storage, () -> optimizer(storage));
+        QueryProcessor processor =
+                new QueryProcessorImpl(ccm, storage, storage, () -> optimizer(storage));
         log(
                 "Engine ready with "
                         + kind(mocks, Component.SM)

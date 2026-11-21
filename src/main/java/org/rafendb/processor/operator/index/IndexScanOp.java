@@ -59,7 +59,7 @@ public final class IndexScanOp implements Operator {
             SessionView context, String table, String alias, IndexScanDescriptor descriptor) {
 
         this.context = Objects.requireNonNull(context, "context");
-        this.storage = Objects.requireNonNull(context.storage(), "storage");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
 

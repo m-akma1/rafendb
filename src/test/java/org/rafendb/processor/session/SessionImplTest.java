@@ -35,7 +35,7 @@ class SessionImplTest {
     private final MockStorageManager storage = new MockStorageManager();
     private final SessionImpl session =
             (SessionImpl)
-                    new QueryProcessorImpl(ccm, storage, () -> Engine.optimizer(storage))
+                    new QueryProcessorImpl(ccm, storage, storage, () -> Engine.optimizer(storage))
                             .openSession();
 
     @ParameterizedTest(name = "[{index}] {0}: {1}")

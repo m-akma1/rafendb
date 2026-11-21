@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.optimizer.QueryOptimizer;
 import org.rafendb.api.processor.Session;
+import org.rafendb.api.storage.StorageDefinition;
 import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.OptimizerInternalException;
@@ -54,7 +55,8 @@ import org.rafendb.processor.plan.PlanTranslator;
  */
 final class SessionImpl implements Session, SessionView {
     private final ConcurrencyControl ccm;
-    private final StorageQuery storage;
+    private final StorageQuery storageDQL;
+    private final StorageDefinition storageDDL;
     private final QueryOptimizer optimizer;
     private final PlanTranslator translator;
     private final CommandPlanner commands = new CommandPlanner();
@@ -64,9 +66,14 @@ final class SessionImpl implements Session, SessionView {
     private volatile boolean implicit;
     private volatile boolean open = true;
 
-    SessionImpl(ConcurrencyControl ccm, StorageQuery storage, QueryOptimizer optimizer) {
+    SessionImpl(
+            ConcurrencyControl ccm,
+            StorageQuery storageDQL,
+            StorageDefinition storageDDL,
+            QueryOptimizer optimizer) {
         this.ccm = Objects.requireNonNull(ccm, "ccm");
-        this.storage = Objects.requireNonNull(storage, "storage");
+        this.storageDQL = Objects.requireNonNull(storageDQL, "storageDQL");
+        this.storageDDL = Objects.requireNonNull(storageDDL, "storageDDL");
         this.optimizer = Objects.requireNonNull(optimizer, "optimizer");
         // Operators read this session's transaction through SessionView when they run.
         this.translator =
@@ -115,8 +122,13 @@ final class SessionImpl implements Session, SessionView {
     }
 
     @Override
-    public StorageQuery storage() {
-        return storage;
+    public StorageQuery storageDQL() {
+        return storageDQL;
+    }
+
+    @Override
+    public StorageDefinition storageDDL() {
+        return storageDDL;
     }
 
     @Override

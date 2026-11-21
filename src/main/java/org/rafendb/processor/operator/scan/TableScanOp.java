@@ -43,7 +43,7 @@ public final class TableScanOp implements Operator {
      */
     public TableScanOp(SessionView context, String table, String alias) {
         this.context = Objects.requireNonNull(context, "context");
-        this.storage = Objects.requireNonNull(context.storage(), "storage");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         String qualifier = table;
         if (alias != null) {

@@ -28,7 +28,7 @@ public final class CreateIndexOp implements ExecutionPlan.CommandAction {
     public CreateIndexOp(SessionView context, CreateIndexPlanNode node) {
         this.context = Objects.requireNonNull(context, "context");
         this.node = Objects.requireNonNull(node, "node");
-        this.storage = Objects.requireNonNull(context.storage(), "storage manager");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage manager");
     }
 
     /**

@@ -7,6 +7,7 @@ import org.rafendb.api.concurrency.ConcurrencyLogging;
 import org.rafendb.api.optimizer.QueryOptimizer;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.processor.Session;
+import org.rafendb.api.storage.StorageDefinition;
 import org.rafendb.api.storage.StorageQuery;
 
 /**
@@ -15,7 +16,8 @@ import org.rafendb.api.storage.StorageQuery;
  */
 public final class QueryProcessorImpl implements QueryProcessor {
     private final ConcurrencyControl ccm;
-    private final StorageQuery storage;
+    private final StorageQuery storageDQL;
+    private final StorageDefinition storageDDL;
     private final Supplier<QueryOptimizer> optimizers;
 
     /**
@@ -23,14 +25,21 @@ public final class QueryProcessorImpl implements QueryProcessor {
      *
      * @param ccm the CCM; writes are logged through it, so it must also be {@link
      *     ConcurrencyLogging}
-     * @param storage the storage, through its query interface
+     * @param storageDQL the storage for statement execution, through its {@link StorageQuery}
+     *     interface; see {@link org.rafendb.processor.api.SessionView#storageDQL()}
+     * @param storageDDL the same storage, through its {@link StorageDefinition} interface; used
+     *     only by CREATE TABLE and DROP TABLE
      * @param optimizers makes a new optimizer for each session
      * @throws IllegalArgumentException if {@code ccm} does not log changes
      */
     public QueryProcessorImpl(
-            ConcurrencyControl ccm, StorageQuery storage, Supplier<QueryOptimizer> optimizers) {
+            ConcurrencyControl ccm,
+            StorageQuery storageDQL,
+            StorageDefinition storageDDL,
+            Supplier<QueryOptimizer> optimizers) {
         this.ccm = Objects.requireNonNull(ccm, "ccm");
-        this.storage = Objects.requireNonNull(storage, "storage");
+        this.storageDQL = Objects.requireNonNull(storageDQL, "storageDQL");
+        this.storageDDL = Objects.requireNonNull(storageDDL, "storageDDL");
         this.optimizers = Objects.requireNonNull(optimizers, "optimizers");
         if (!(ccm instanceof ConcurrencyLogging)) {
             throw new IllegalArgumentException("The CCM must also implement ConcurrencyLogging");
@@ -39,6 +48,7 @@ public final class QueryProcessorImpl implements QueryProcessor {
 
     @Override
     public Session openSession() {
-        return new SessionImpl(ccm, storage, Objects.requireNonNull(optimizers.get(), "optimizer"));
+        return new SessionImpl(
+                ccm, storageDQL, storageDDL, Objects.requireNonNull(optimizers.get(), "optimizer"));
     }
 }

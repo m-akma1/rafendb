@@ -40,7 +40,7 @@ public final class InsertOp implements DMLOperator {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
 
-        StorageQuery sm = ctx.storage();
+        StorageQuery sm = ctx.storageDQL();
         Rid rid;
         try {
             // StorageRuntimeException (row does not fit the schema) propagates: nothing changed.

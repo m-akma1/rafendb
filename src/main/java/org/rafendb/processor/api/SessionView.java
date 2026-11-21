@@ -1,6 +1,7 @@
 package org.rafendb.processor.api;
 
 import org.rafendb.api.concurrency.ConcurrencyControl;
+import org.rafendb.api.storage.StorageDefinition;
 import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.txn.TxId;
 
@@ -38,11 +39,21 @@ public interface SessionView {
     ConcurrencyControl ccm();
 
     /**
-     * Returns the storage component shared by all sessions.
+     * Returns the storage for statement execution, shared by all sessions: reading, writing and
+     * indexing rows. Every operator and action uses it except CREATE TABLE and DROP TABLE, which use
+     * {@link #storageDDL()}.
      *
-     * @return the storage, through its query interface only
+     * @return the storage, through its {@link StorageQuery} interface only
      */
-    StorageQuery storage();
+    StorageQuery storageDQL();
+
+    /**
+     * Returns the storage for table DDL, shared by all sessions. Only the CREATE TABLE and DROP
+     * TABLE actions use it; everything else goes through {@link #storageDQL()}.
+     *
+     * @return the storage, through its {@link StorageDefinition} interface only
+     */
+    StorageDefinition storageDDL();
 
     /**
      * Returns the current transaction of an open session, for work that must run inside one.

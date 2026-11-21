@@ -40,7 +40,7 @@ public final class DeleteOp implements DMLOperator {
         Objects.requireNonNull(context, "context");
         this.child = Objects.requireNonNull(child, "child");
         this.table = Objects.requireNonNull(table, "table");
-        this.storage = Objects.requireNonNull(context.storage(), "storage");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage");
         this.support = new WriteSupport(context);
     }
 

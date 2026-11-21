@@ -52,7 +52,7 @@ final class WriteSupport {
                 tx,
                 new ChangeRecord(
                         ResourceId.ofRow(table, rid),
-                        Optional.of(session.storage().encodeRow(table, after)),
+                        Optional.of(session.storageDQL().encodeRow(table, after)),
                         Optional.empty()));
     }
 
@@ -77,20 +77,20 @@ final class WriteSupport {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
                 Optional.empty(),
-                Optional.of(session.storage().encodeRow(table, row)));
+                Optional.of(session.storageDQL().encodeRow(table, row)));
     }
 
     ChangeRecord updateChange(String table, Rid rid, Row before, Row after) {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
-                Optional.of(session.storage().encodeRow(table, before)),
-                Optional.of(session.storage().encodeRow(table, after)));
+                Optional.of(session.storageDQL().encodeRow(table, before)),
+                Optional.of(session.storageDQL().encodeRow(table, after)));
     }
 
     ChangeRecord deleteChange(String table, Rid rid, Row before) {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
-                Optional.of(session.storage().encodeRow(table, before)),
+                Optional.of(session.storageDQL().encodeRow(table, before)),
                 Optional.empty());
     }
 

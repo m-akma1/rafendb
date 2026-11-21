@@ -200,7 +200,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             SessionView context, CreateIndexConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
-        Objects.requireNonNull(context.storage(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(constructor.create(context, node), "CREATE INDEX action");
@@ -367,7 +367,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
 
-        Objects.requireNonNull(context.storage(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
 
         return node -> {
             Objects.requireNonNull(node, "node");
@@ -390,7 +390,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
             SessionView context, IndexScanConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
-        Objects.requireNonNull(context.storage(), "storage");
+        Objects.requireNonNull(context.storageDQL(), "storage");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(
