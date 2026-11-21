@@ -59,6 +59,8 @@ public sealed interface Expr {
      */
     record Binary(Op op, Expr left, Expr right) implements Expr {}
 
+    record Not(Expr child) implements Expr {}
+
     record ScalarSubquery(SelectQuery query) implements Expr {}
 
     record InSubquery(Expr value, SelectQuery query) implements Expr {}
@@ -78,6 +80,7 @@ public sealed interface Expr {
         GE,
         LT,
         LE,
-        AND
+        AND,
+        OR
     }
 }

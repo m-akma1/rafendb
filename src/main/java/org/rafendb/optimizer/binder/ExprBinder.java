@@ -86,20 +86,43 @@ final class ExprBinder {
                     null,
                     "IN subquery");
         }
+        if (expr instanceof Expr.Not not) {
+            Typed child = bind(not.child());
+
+            if (child.kind() != Kind.BOOLEAN && child.kind() != Kind.NULL) {
+                throw new ValidationException(
+                    "NOT requires a boolean operand, got " + child.kind()
+                );
+            }
+
+            return new Typed(
+                new Expr.Not(child.expr()),
+                Kind.BOOLEAN,
+                null,
+                "NOT expression"
+            );
+        }
         if (!(expr instanceof Binary binary))
             throw new ValidationException("Unsupported expression: " + expr);
         Typed left = bind(binary.left());
         Typed right = bind(binary.right());
         Op op = binary.op();
         Expr rewritten = new Binary(op, left.expr(), right.expr());
-        if (op == Op.AND) {
+        if (op == Op.AND || op == Op.OR) {
             require(
-                    (left.kind() == Kind.BOOLEAN || left.kind() == Kind.NULL)
-                            && (right.kind() == Kind.BOOLEAN || right.kind() == Kind.NULL),
-                    "AND requires boolean operands",
-                    left,
-                    right);
-            return new Typed(rewritten, Kind.BOOLEAN, null, "boolean expression");
+                (left.kind() == Kind.BOOLEAN || left.kind() == Kind.NULL)
+                && (right.kind() == Kind.BOOLEAN || right.kind() == Kind.NULL),
+                op + " requires boolean operands",
+                left,
+                right
+            );
+
+            return new Typed(
+                rewritten,
+                Kind.BOOLEAN,
+                null,
+                "boolean expression"
+            );
         }
         if (op == Op.ADD || op == Op.SUB || op == Op.MUL || op == Op.DIV || op == Op.MOD) {
             require(
