@@ -89,6 +89,14 @@ class SessionImplTest {
             BEGIN => BEGIN ACTIVE | BEGIN => ProcessorRuntimeException FAILED | ABORT => ABORT IDLE
             BEGIN => BEGIN ACTIVE | SELEC * FROM prodi => SyntaxException FAILED | SELECT * FROM prodi => ProcessorRuntimeException FAILED | COMMIT => ProcessorRuntimeException FAILED | ABORT => ABORT IDLE
             BEGIN => BEGIN ACTIVE | SELECT * FROM nope => ValidationException FAILED | ABORT => ABORT IDLE | SELECT * FROM prodi => rows3 IDLE
+            INSERT INTO prodi VALUES ('XX', 'Prodi Baru') => affected1 IDLE
+            UPDATE mahasiswa SET ipk = 4 WHERE ipk < 3.5 => affected2 IDLE
+            UPDATE mahasiswa SET ipk = 4 WHERE nim = 1 => affected0 IDLE
+            DELETE FROM mahasiswa WHERE kode_prodi = 'STI' => affected2 IDLE
+            CREATE INDEX mahasiswa_nama_idx ON mahasiswa(nama) USING HASH => CREATE_INDEX IDLE
+            INSERT INTO prodi VALUES ('XX') => ValidationException IDLE
+            BEGIN => BEGIN ACTIVE | INSERT INTO prodi VALUES ('XX', 'Prodi Baru') => affected1 ACTIVE | DELETE FROM prodi => affected3 ACTIVE | COMMIT => COMMIT IDLE
+            BEGIN => BEGIN ACTIVE | CREATE INDEX x ON mahasiswa(nope) => ValidationException FAILED | ABORT => ABORT IDLE
             """)
     void statementsGiveTheirResultAndLeaveTheSessionInTheExpectedState(String script) {
         for (String step : script.split("\\|")) {
@@ -104,6 +112,19 @@ class SessionImplTest {
         session.execute("SELECT * FROM prodi");
 
         assertEquals(List.of("ccm.begin", "ccm.access READ prodi", "ccm.commit T1"), ccm.events());
+    }
+
+    @Test
+    void aWriteLocksLogsAndCommitsInItsOwnTransaction() {
+        session.execute("INSERT INTO prodi VALUES ('XX', 'Prodi Baru')");
+
+        assertEquals(
+                List.of(
+                        "ccm.begin",
+                        "ccm.access WRITE prodi",
+                        "ccm.log INSERT lsn=100",
+                        "ccm.commit T1"),
+                ccm.events());
     }
 
     @Test
@@ -195,7 +216,7 @@ class SessionImplTest {
         try {
             return switch (session.execute(sql)) {
                 case QueryResult.Rows rows -> "rows" + rows.rows().size();
-                case QueryResult.Status status -> status.message();
+                case QueryResult.Status status -> status.message().replace(' ', '_');
                 case QueryResult.Affected affected -> "affected" + affected.count();
             };
         } catch (RuntimeException e) {

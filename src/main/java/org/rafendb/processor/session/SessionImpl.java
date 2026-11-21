@@ -45,8 +45,9 @@ import org.rafendb.processor.plan.PlanTranslator;
  * the transaction is kept and the session stays FAILED, so a later ABORT retries it.
  *
  * <p>Each statement is parsed and bound by the session's own optimizer, then dispatched: transaction
- * statements change the state, a SELECT is optimized, translated, and read in full inside its
- * transaction.
+ * statements change the state; a SELECT is optimized, translated, and read in full inside its
+ * transaction; INSERT, UPDATE, DELETE, and CREATE INDEX are planned by {@link CommandPlanner} and
+ * run once inside theirs (CREATE INDEX takes a table lock, so it needs one too).
  *
  * <p>Used by one thread at a time. {@link #transactionState()} and {@link #close()} may be called
  * from another thread.
@@ -56,6 +57,7 @@ final class SessionImpl implements Session, SessionView {
     private final StorageQuery storage;
     private final QueryOptimizer optimizer;
     private final PlanTranslator translator;
+    private final CommandPlanner commands = new CommandPlanner();
 
     private volatile TxState state = TxState.IDLE;
     private volatile TxId tx;
@@ -212,6 +214,10 @@ final class SessionImpl implements Session, SessionView {
             }
             case ExplainQuery explain ->
                     new QueryResult.Status(optimizer.explain(optimize(explain.selectQuery())));
+            case ParsedQuery command when CommandPlanner.handles(command) -> {
+                QueryPlan plan = new QueryPlan(commands.plan(command), 0);
+                yield runStatement(() -> ResultMapper.command(translator.translate(plan)));
+            }
             default -> throw new ProcessorRuntimeException("This statement is not supported yet");
         };
     }

@@ -38,6 +38,24 @@ final class ResultMapper {
     }
 
     /**
+     * Runs a command plan once. INSERT, UPDATE, and DELETE report how many rows they changed; any
+     * other command reports its status.
+     *
+     * @param plan a {@link ExecutionPlan.Command}
+     * @return {@link QueryResult.Affected} or {@link QueryResult.Status}
+     */
+    static QueryResult command(ExecutionPlan plan) {
+        if (!(plan instanceof ExecutionPlan.Command command)) {
+            throw new IllegalStateException("Expected a command plan, got " + plan);
+        }
+        ExecutionPlan.CommandResult result = command.action().execute();
+        return switch (result.status()) {
+            case "INSERT", "UPDATE", "DELETE" -> new QueryResult.Affected(result.affectedRows());
+            default -> new QueryResult.Status(result.status());
+        };
+    }
+
+    /**
      * Column headers: the column name, or {@code table.column} when two output columns share a
      * name.
      */
