@@ -1,0 +1,24 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.txn.TransactionManager {
+	{method} +awaitNoActive ( timeout : Duration ) : boolean <<synchronized>> 
+	{method} +begin () : TxId <<synchronized>> 
+	{method} +open ( highWater : long ) : void <<synchronized>> 
+	{method} +pause () : void <<synchronized>> 
+	{method} +resume () : void <<synchronized>> 
+	{method} +status ( tx : TxId ) : TxStatus <<synchronized>> 
+	{method} +timestamp ( tx : TxId ) : long <<synchronized>> 
+	{method} +transition ( tx : TxId , next : TxStatus ) : void <<synchronized>> 
+}
+
+
+
+
+
+
+@enduml

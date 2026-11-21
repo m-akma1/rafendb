@@ -1,0 +1,17 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.concurrency.driver.ConcurrencyDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+
+
+
+
+@enduml

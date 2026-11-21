@@ -34,6 +34,14 @@ enum org.rafendb.concurrency.protocol.Protocol$Decision {
 }
 
 
+class org.rafendb.concurrency.protocol.ProtocolConfig {
+	{field} {static} +DEFAULT : ProtocolType
+	{method}  {static} +create ( type : ProtocolType ) : Protocol
+	{method}  {static} +describe ( type : ProtocolType ) : String
+	{method}  {static} +parse ( value : String ) : ProtocolType
+}
+
+
 class org.rafendb.concurrency.protocol.TimestampBasedProtocol {
 	{method} +cancelPending ( tx : TxId ) : void
 	{method} +holdsWrite ( tx : TxId , resource : ResourceId ) : boolean <<synchronized>> 
