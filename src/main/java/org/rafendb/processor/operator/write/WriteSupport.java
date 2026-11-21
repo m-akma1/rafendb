@@ -10,10 +10,7 @@ import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
-import org.rafendb.common.txn.TxResult;
-import org.rafendb.common.txn.TxStatus;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.txn.TableLocks;
 
@@ -21,30 +18,22 @@ import org.rafendb.processor.txn.TableLocks;
  * Shared plumbing of {@link InsertOp}, {@link UpdateOp}, and {@link DeleteOp}: find the session's
  * transaction, ask CCM for WRITE access (retrying while it says WAITING), and log a change.
  *
- * <p> It never begins or commits a transaction. It aborts one in two cases only: CCM itself has
- * already given up on it (the session state is brought in line through the idempotent {@code
- * ccm.abort}), or a change failed to be applied after its record was logged
- * ({@link #abortAfterLoggedFailure}).
+ * <p>It never begins or commits a transaction, and never changes the session's state. It asks CCM
+ * to abort in two cases only: CCM itself has already given up on it (the idempotent {@code
+ * ccm.abort} makes sure its locks are released), or a change failed to be applied after its record
+ * was logged ({@link #abortAfterLoggedFailure}). Either way it throws {@link
+ * TransactionAbortedException}, and the session brings its state in line.
  */
 final class WriteSupport {
-    private final ExecutionContext ctx;
+    private final SessionView session;
 
-    WriteSupport(ExecutionContext ctx) {
-        this.ctx = Objects.requireNonNull(ctx, "ctx");
+    WriteSupport(SessionView session) {
+        this.session = Objects.requireNonNull(session, "session");
     }
 
-    /** The session's active transaction; DML never creates one (see AutoCommit). */
+    /** The session's active transaction; DML never creates one (the session does). */
     TxId requireTx() {
-        SessionContext session = ctx.getSContext();
-        if (!session.isValid()) {
-            throw new IllegalStateException("The session is not valid");
-        }
-        TxId tx = session.getCurrentTxId();
-        if (tx == null) {
-            throw new IllegalStateException(
-                    "No active transaction: run DML inside AutoCommit.run(...) or after BEGIN");
-        }
-        return tx;
+        return session.requireTx();
     }
 
     /**
@@ -54,7 +43,7 @@ final class WriteSupport {
      * @param table contains table name with type {@code String}
      */
     void acquireWrite(TxId tx, String table) {
-        TableLocks.acquireWrite(ctx, table);
+        TableLocks.acquireWrite(session, table);
     }
 
     // QP3 - logging support example for delete
@@ -63,7 +52,7 @@ final class WriteSupport {
                 tx,
                 new ChangeRecord(
                         ResourceId.ofRow(table, rid),
-                        Optional.of(ctx.getStorageManager().encodeRow(table, after)),
+                        Optional.of(session.storageDQL().encodeRow(table, after)),
                         Optional.empty()));
     }
 
@@ -73,16 +62,12 @@ final class WriteSupport {
     }
 
     /**
-     * Clears the session's transaction once CCM confirms ABORTED. If rollback is still incomplete
-     * the id is kept so that a later ABORT (or session close) can retry it.
+     * Asks CCM to abort, so locks are released early. CCM's abort is idempotent; the session makes
+     * sure again when it catches the failure, and retries if this one could not be confirmed.
      */
-    @Deprecated
-    private void syncAfterAbort(TxId tx, Exception primary) {
+    private void abortQuietly(TxId tx, Exception primary) {
         try {
-            TxResult result = ctx.getConcurrencyControl().abort(tx);
-            if (result.status() == TxStatus.ABORTED) {
-                ctx.getSContext().setCurrentTxId(null);
-            }
+            session.ccm().abort(tx);
         } catch (ConcurrencyInternalException | RuntimeException e) {
             primary.addSuppressed(e);
         }
@@ -92,20 +77,20 @@ final class WriteSupport {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
                 Optional.empty(),
-                Optional.of(ctx.getStorageManager().encodeRow(table, row)));
+                Optional.of(session.storageDQL().encodeRow(table, row)));
     }
 
     ChangeRecord updateChange(String table, Rid rid, Row before, Row after) {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
-                Optional.of(ctx.getStorageManager().encodeRow(table, before)),
-                Optional.of(ctx.getStorageManager().encodeRow(table, after)));
+                Optional.of(session.storageDQL().encodeRow(table, before)),
+                Optional.of(session.storageDQL().encodeRow(table, after)));
     }
 
     ChangeRecord deleteChange(String table, Rid rid, Row before) {
         return new ChangeRecord(
                 ResourceId.ofRow(table, rid),
-                Optional.of(ctx.getStorageManager().encodeRow(table, before)),
+                Optional.of(session.storageDQL().encodeRow(table, before)),
                 Optional.empty());
     }
 
@@ -123,23 +108,23 @@ final class WriteSupport {
         TransactionAbortedException failure =
                 new TransactionAbortedException(
                         tx + " was aborted: storage failed while " + what, cause);
-        syncAfterAbort(tx, failure);
+        abortQuietly(tx, failure);
         return failure;
     }
 
     /** Sends one change to CCM, which logs it through FRM, and returns its LSN. */
     long log(TxId tx, ChangeRecord change) {
-        if (!(ctx.getConcurrencyControl() instanceof ConcurrencyLogging logging)) {
+        if (!(session.ccm() instanceof ConcurrencyLogging logging)) {
             throw new IllegalStateException("CCM does not implement ConcurrencyLogging");
         }
         try {
             return logging.logChange(tx, change);
         } catch (ConcurrencyInternalException e) {
-            // CCM already ran its abort path (CC-04); only the session state is left to fix.
+            // CCM already ran its abort path (CC-04); aborting again only confirms it.
             TransactionAbortedException failure =
                     new TransactionAbortedException(
                             tx + " was aborted: its change could not be logged", e);
-            syncAfterAbort(tx, failure);
+            abortQuietly(tx, failure);
             throw failure;
         }
     }

@@ -21,8 +21,8 @@ public interface Session extends AutoCloseable {
         /** An explicit transaction opened by BEGIN is running. */
         ACTIVE,
         /**
-         * The explicit transaction failed or was aborted by the system; the session waits for the
-         * client to end it with ABORT or COMMIT.
+         * The explicit transaction failed or was aborted by the system and has been rolled back;
+         * the session rejects every statement until the client ends it with ABORT.
          */
         FAILED
     }

@@ -72,7 +72,8 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
             }
             case Expr.Not _ ->
                     throw new IllegalArgumentException("Expected scalar expression, got NOT");
-            // QO menolak subquery saat bind (D-SUBQ); QP belum mengeksekusinya.
+            // Subquery dijalankan SubqueryEvaluator (processor/subquery), bukan evaluator dasar
+            // ini.
             case Expr.ScalarSubquery _, Expr.InSubquery _, Expr.ExistsSubquery _ ->
                     throw new IllegalArgumentException("Subqueries are not supported");
         };

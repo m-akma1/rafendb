@@ -4,7 +4,7 @@ rem   scripts\run.cmd server [args]
 rem   scripts\run.cmd client [args]
 rem   scripts\run.cmd driver processor^|optimizer^|storage^|concurrency^|recovery [args]
 rem   scripts\run.cmd reset-data
-rem cmd.exe splits arguments on "=" and ",", so quote flags: "--mock=storage,recovery"
+rem cmd.exe splits arguments on "=" and ",", so quote flags: "--mock=sm,ccm"
 setlocal
 set "ROOT=%~dp0.."
 set "JAR=%ROOT%\target\rafendb.jar"
@@ -38,7 +38,7 @@ exit /b %ERRORLEVEL%
 
 :reset
 if exist "%ROOT%\data" rmdir /s /q "%ROOT%\data"
-echo Removed data, next run will recreates it from the seed.
+echo Removed data. Start the server with --seed to load the sample database.
 exit /b 0
 
 :usage

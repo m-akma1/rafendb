@@ -19,13 +19,12 @@ import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.EventLog;
 import org.rafendb.processor.operator.FakeCcm;
 import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -58,12 +57,7 @@ class UpdateOpBehaviorTest {
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
     private final FakeStorage storage = new FakeStorage(SCHEMA, List.of(), events);
-    private final SessionContext session = new SessionContext(1);
-    private final ExecutionContext ctx = new ExecutionContext(session, ccm, storage, null);
-
-    UpdateOpBehaviorTest() {
-        session.setCurrentTxId(TX);
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
 
     // in place
 
@@ -249,7 +243,6 @@ class UpdateOpBehaviorTest {
         assertThrows(StorageRuntimeException.class, () -> setName(text("bob"), child).execute());
 
         assertEquals(List.of("ccm.access WRITE t", "sm.encodeRow (fails)"), events);
-        assertEquals(TX, session.getCurrentTxId());
         assertEquals(old, storage.rows().get(R1));
         assertChildClosed(child);
     }
@@ -272,7 +265,6 @@ class UpdateOpBehaviorTest {
                         "sm.encodeRow (fails)",
                         "sm.cancelReservation"),
                 events);
-        assertEquals(TX, session.getCurrentTxId());
         assertEquals(old, storage.rows().get(R1));
         assertChildClosed(child);
     }
@@ -320,7 +312,6 @@ class UpdateOpBehaviorTest {
                         "sm.update (fails)",
                         "ccm.abort T1"),
                 events);
-        assertNull(session.getCurrentTxId());
         assertChildClosed(child);
     }
 
@@ -338,7 +329,6 @@ class UpdateOpBehaviorTest {
         assertTrue(
                 events.first("sm.cancelReservation") < events.first("ccm.abort"),
                 events.toString());
-        assertNull(session.getCurrentTxId());
         // cancelReservation is idempotent, so a second cancel in the finally block is fine
         assertTrue(storage.cancelled().stream().allMatch(storage.reserved().getFirst()::equals));
     }
@@ -356,7 +346,6 @@ class UpdateOpBehaviorTest {
         assertTrue(
                 events.first("sm.cancelReservation") < events.first("ccm.abort"),
                 events.toString());
-        assertNull(session.getCurrentTxId());
     }
 
     @Test
@@ -372,26 +361,24 @@ class UpdateOpBehaviorTest {
         assertEquals(0, events.count("sm.delete"));
         assertEquals(List.of(storage.reserved().getFirst()), storage.cancelled());
         assertEquals(1, events.count("ccm.abort"));
-        assertNull(session.getCurrentTxId());
     }
 
     // CCM / session
 
     @Test
-    void abortedByCcmClearsTheSessionAndTouchesNothing() {
+    void abortedByCcmAbortsAndTouchesNothing() {
         ccm.answerNext(AccessResult.aborted("deadlock victim"));
         FakeChildOp child = child(row(1, "alice", 1f), R1);
 
         assertThrows(TransactionAbortedException.class, () -> setName(text("x"), child).execute());
 
         assertEquals(List.of("ccm.access WRITE t", "ccm.abort T1"), events);
-        assertNull(session.getCurrentTxId());
         assertEquals(0, child.getOpenCount(), "must not read after losing the transaction");
     }
 
     @Test
     void refusesToRunWithoutATransaction() {
-        session.setCurrentTxId(null);
+        session.setCurrentTx(null);
 
         assertThrows(
                 IllegalStateException.class,
@@ -404,13 +391,11 @@ class UpdateOpBehaviorTest {
 
     private void assertNothingChanged() {
         assertEquals(List.of("ccm.access WRITE t"), events, "only the access request may happen");
-        assertEquals(TX, session.getCurrentTxId(), "the transaction must stay usable");
     }
 
     private void assertNothingLoggedOrAborted() {
         assertEquals(0, events.count("ccm.log"));
         assertEquals(0, events.count("ccm.abort"));
-        assertEquals(TX, session.getCurrentTxId(), "the transaction must stay usable");
     }
 
     private static void assertChildClosed(FakeChildOp child) {
@@ -453,6 +438,6 @@ class UpdateOpBehaviorTest {
                 value,
                 child,
                 new DefaultExpressionEvaluator(),
-                ctx);
+                session);
     }
 }
