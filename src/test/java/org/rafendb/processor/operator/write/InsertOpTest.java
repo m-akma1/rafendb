@@ -57,13 +57,14 @@ class InsertOpTest {
 
     private final SessionContext session = new SessionContext(1);
 
+    private StorageManager sm;
     private ExecutionContext ctx;
 
     @BeforeEach
     void setUp() {
         session.setCurrentTxId(TX);
 
-        StorageManager sm = (StorageManager) proxy(storage, StorageManager.class);
+        sm = (StorageManager) proxy(storage, StorageManager.class);
 
         ConcurrencyControl cc =
                 (ConcurrencyControl) proxy(ccm, ConcurrencyControl.class, ConcurrencyLogging.class);
@@ -305,7 +306,7 @@ class InsertOpTest {
 
     private Row decode(Optional<byte[]> image) {
         try {
-            return ctx.getStorageManager().decodeRow(TABLE, image.orElseThrow());
+            return sm.decodeRow(TABLE, image.orElseThrow());
         } catch (StorageInternalException e) {
             throw new AssertionError(e);
         }

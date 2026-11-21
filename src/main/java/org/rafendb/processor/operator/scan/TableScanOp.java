@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.rafendb.api.storage.RecordCursor;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.Column;
@@ -27,7 +27,7 @@ import org.rafendb.processor.txn.TableLocks;
  */
 public final class TableScanOp implements Operator {
     private final ExecutionContext context;
-    private final StorageManager storage;
+    private final StorageQuery storage;
     private final String table;
     private final List<ColumnSchema> schema;
     private RecordCursor cursor;

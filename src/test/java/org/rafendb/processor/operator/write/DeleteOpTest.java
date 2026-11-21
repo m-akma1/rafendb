@@ -123,7 +123,7 @@ class DeleteOpTest {
         assertEquals(3, logged.size());
         for (int i = 0; i < deletedRows.size(); i++) {
             ChangeRecord change = logged.get(i);
-            Row before = context.getStorageManager().decodeRow("dosen", change.beforeImage().get());
+            Row before = storage.decodeRow("dosen", change.beforeImage().get());
             assertEquals(deletedRows.get(i).rid(), change.resource().rid());
             assertEquals(deletedRows.get(i).row(), before);
             assertTrue(change.afterImage().isEmpty());

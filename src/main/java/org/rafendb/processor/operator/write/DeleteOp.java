@@ -3,7 +3,7 @@ package org.rafendb.processor.operator.write;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
@@ -24,7 +24,7 @@ import org.rafendb.processor.tuple.ResultRow;
 public final class DeleteOp implements DMLOperator {
     private final Operator child;
     private final String table;
-    private final StorageManager storage;
+    private final StorageQuery storage;
     private final WriteSupport support;
 
     /**

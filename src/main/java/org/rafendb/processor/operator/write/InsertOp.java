@@ -2,7 +2,7 @@ package org.rafendb.processor.operator.write;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
@@ -13,7 +13,7 @@ import org.rafendb.processor.api.ExecutionContext;
 /**
  * INSERT: adds one row inside the session's current transaction.
  *
- * <p>Order, as required by {@link StorageManager#reserveRid}: WRITE access (CCM), reserve the slot
+ * <p>Order, as required by {@link StorageQuery#reserveRid}: WRITE access (CCM), reserve the slot
  * (SM validates the row, nothing changes yet), log the INSERT (CCM to FRM), then store the row.
  * If anything fails after the reservation, the reservation is canceled.
  *
@@ -40,7 +40,7 @@ public final class InsertOp implements DMLOperator {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
 
-        StorageManager sm = ctx.getStorageManager();
+        StorageQuery sm = ctx.getStorageManager();
         Rid rid;
         try {
             // StorageRuntimeException (row does not fit the schema) propagates: nothing changed.
@@ -67,7 +67,7 @@ public final class InsertOp implements DMLOperator {
         return 1L;
     }
 
-    private void cancelQuietly(StorageManager sm, Rid rid) {
+    private void cancelQuietly(StorageQuery sm, Rid rid) {
         try {
             sm.cancelReservation(table, rid);
         } catch (StorageInternalException | RuntimeException ignored) {

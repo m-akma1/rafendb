@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
@@ -35,7 +35,7 @@ import org.rafendb.processor.tuple.ResultRow;
  *       reserve a new Rid. Nothing is logged or written yet, so every failure we can foresee
  *       (evaluation error, NOT NULL, text too long, row too large, storage full) leaves the table
  *       and the transaction untouched.
- *   <li>Per row, in place: log UPDATE, then {@link StorageManager#update}. A record that would
+ *   <li>Per row, in place: log UPDATE, then {@link StorageQuery#update}. A record that would
  *       grow is relocated instead: log DELETE and delete the old Rid, then log INSERT and insert
  *       at the reserved Rid (the Rid changes, as the log requires for a relocation).
  * </ol>
@@ -90,7 +90,7 @@ public final class UpdateOp implements DMLOperator {
     public Long execute() {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
-        StorageManager sm = ctx.getStorageManager();
+        StorageQuery sm = ctx.getStorageManager();
 
         List<Change> changes = collect(sm);
 
@@ -114,7 +114,7 @@ public final class UpdateOp implements DMLOperator {
         return (long) changes.size();
     }
 
-    private void updateInPlace(TxId tx, StorageManager sm, Change c) {
+    private void updateInPlace(TxId tx, StorageQuery sm, Change c) {
         long lsn = support.log(tx, c.first());
         try {
             sm.update(table, c.rid(), c.after(), lsn);
@@ -124,7 +124,7 @@ public final class UpdateOp implements DMLOperator {
     }
 
     /** DELETE at the old Rid, then INSERT at the Rid reserved in {@link #collect}. */
-    private void relocate(TxId tx, StorageManager sm, Change c) {
+    private void relocate(TxId tx, StorageQuery sm, Change c) {
         long deleteLsn = support.log(tx, c.first());
         try {
             if (!sm.delete(table, c.rid(), deleteLsn)) {
@@ -150,7 +150,7 @@ public final class UpdateOp implements DMLOperator {
      * Reads all targets and prepares every write before any of them happens. On failure the
      * reservations made so far are released.
      */
-    private List<Change> collect(StorageManager sm) {
+    private List<Change> collect(StorageQuery sm) {
         TableSchema tableSchema = sm.getSchema(table);
         List<Change> changes = new ArrayList<>();
         try {
@@ -234,7 +234,7 @@ public final class UpdateOp implements DMLOperator {
      * StorageRuntimeException (a user error); a full or failing disk as an internal failure.
      * Either way nothing has been logged or changed yet.
      */
-    private Rid reserve(StorageManager sm, Row after) {
+    private Rid reserve(StorageQuery sm, Row after) {
         try {
             return sm.reserveRid(table, after);
         } catch (StorageInternalException e) {
@@ -243,7 +243,7 @@ public final class UpdateOp implements DMLOperator {
         }
     }
 
-    private void cancelQuietly(StorageManager sm, Rid rid) {
+    private void cancelQuietly(StorageQuery sm, Rid rid) {
         if (rid == null) return;
         try {
             sm.cancelReservation(table, rid);

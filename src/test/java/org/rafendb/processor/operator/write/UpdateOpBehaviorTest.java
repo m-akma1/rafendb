@@ -86,12 +86,13 @@ class UpdateOpBehaviorTest {
     private final Ccm ccm = new Ccm(events);
     private final Storage storage = new Storage(events);
     private final SessionContext session = new SessionContext(1);
+    private StorageManager sm;
     private ExecutionContext ctx;
 
     @BeforeEach
     void setUp() {
         session.setCurrentTxId(TX);
-        StorageManager sm = (StorageManager) proxy(storage, StorageManager.class);
+        sm = (StorageManager) proxy(storage, StorageManager.class);
         ConcurrencyControl cc =
                 (ConcurrencyControl) proxy(ccm, ConcurrencyControl.class, ConcurrencyLogging.class);
         ctx = new ExecutionContext(session, cc, sm, null);
@@ -504,7 +505,7 @@ class UpdateOpBehaviorTest {
     /** Reads a logged image back through the same SM the operator used. */
     private Row decode(Optional<byte[]> image) {
         try {
-            return ctx.getStorageManager().decodeRow(TABLE, image.orElseThrow());
+            return sm.decodeRow(TABLE, image.orElseThrow());
         } catch (StorageInternalException e) {
             throw new AssertionError("logged image cannot be decoded", e);
         }
