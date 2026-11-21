@@ -40,10 +40,10 @@ final class StarExpander {
             throw new ValidationException("Table '" + qualifier + "' is not in FROM clause");
         List<Expr> result = new ArrayList<>();
         for (Scope.Table table : scope.tables()) {
-            if (qualifier != null && !Scope.eq(qualifier, table.name())) continue;
+            if (qualifier != null && !Scope.eq(qualifier, table.qualifier())) continue;
             for (var column : table.schema().columns()) {
                 if (qualifier == null && scope.isHidden(table, column)) continue;
-                result.add(new ColumnRef(table.name(), column.name()));
+                result.add(new ColumnRef(table.qualifier(), column.name()));
             }
         }
         return result;

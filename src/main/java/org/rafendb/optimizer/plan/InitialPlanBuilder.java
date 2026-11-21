@@ -65,7 +65,7 @@ public final class InitialPlanBuilder {
      */
     private PlanNode buildFrom(FromItem item) throws OptimizerInternalException {
         return switch (item) {
-            case FromItem.TableRef table -> new TableScanNode(null, table.name());
+            case FromItem.TableRef table -> new TableScanNode(table.alias(), table.name());
             case FromItem.CartesianProduct product ->
                     new CartesianPlanNode(
                             JoinAlgorithm.BLOCK_NESTED_LOOP,

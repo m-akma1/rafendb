@@ -6,21 +6,34 @@ import java.util.stream.Stream;
 import org.rafendb.common.expr.Expr;
 
 public sealed interface FromItem {
-    List<String> tables();
+    /** Physical source names in FROM order, including repeated occurrences. */
+    default List<String> tables() {
+        return tableRefs().stream().map(TableRef::name).toList();
+    }
 
-    private static List<String> concat(FromItem left, FromItem right) {
-        return Stream.concat(left.tables().stream(), right.tables().stream()).toList();
+    List<TableRef> tableRefs();
+
+    private static List<TableRef> concat(FromItem left, FromItem right) {
+        return Stream.concat(left.tableRefs().stream(), right.tableRefs().stream()).toList();
     }
 
     /** A single table. */
-    record TableRef(String name) implements FromItem {
+    record TableRef(String name, String alias) implements FromItem {
         public TableRef {
             Objects.requireNonNull(name, "name must not be null");
         }
 
+        public TableRef(String name) {
+            this(name, null);
+        }
+
+        public String qualifier() {
+            return alias == null ? name : alias;
+        }
+
         @Override
-        public List<String> tables() {
-            return List.of(name);
+        public List<TableRef> tableRefs() {
+            return List.of(this);
         }
     }
 
@@ -32,7 +45,7 @@ public sealed interface FromItem {
         }
 
         @Override
-        public List<String> tables() {
+        public List<TableRef> tableRefs() {
             return concat(left, right);
         }
     }
@@ -46,7 +59,7 @@ public sealed interface FromItem {
         }
 
         @Override
-        public List<String> tables() {
+        public List<TableRef> tableRefs() {
             return concat(left, right);
         }
     }
@@ -59,7 +72,7 @@ public sealed interface FromItem {
         }
 
         @Override
-        public List<String> tables() {
+        public List<TableRef> tableRefs() {
             return concat(left, right);
         }
     }

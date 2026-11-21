@@ -8,11 +8,9 @@ package org.rafendb.optimizer.cost;
  * @param blockSizeBytes block size in bytes, positive
  * @param bufferBlocks available buffer block count, at least three
  * @param defaultEqSelectivity fallback equality selectivity in [0, 1]
- * @param rangeSelectivity selectivity of one {@code >, >=, <, <=} comparison, in [0, 1]. A fixed
- *     heuristic (default 1/3) on purpose: {@code TableStats} carries no min/max per column, so
- *     {@code (max - v) / (max - min)} cannot be computed. If the Storage Manager later exposes
- *     min/max, replace this per-column in {@code StatsCostModel}. Two bounds on one column
- *     multiply (1/9).
+ * @param rangeSelectivity selectivity of one {@code >, >=, <, <=} comparison, in [0, 1]. The
+ *     default is 1/2, as in the lecture when no min/max or histogram is available. Two independent
+ *     range predicates multiply (1/4).
  */
 public record CostParameters(
         double seekMillis,
@@ -44,11 +42,11 @@ public record CostParameters(
 
     /**
      * Returns defaults: 4 ms/seek, 0.1 ms/transfer, 4096-byte blocks, M=10, equality=0.1 and
-     * range=1/3.
+     * range=1/2.
      *
      * @return immutable default parameters
      */
     public static CostParameters defaults() {
-        return new CostParameters(Cost.SEEK_MILLIS, Cost.TRANSFER_MILLIS, 4096, 10, 0.1, 1.0 / 3.0);
+        return new CostParameters(Cost.SEEK_MILLIS, Cost.TRANSFER_MILLIS, 4096, 10, 0.1, 0.5);
     }
 }
