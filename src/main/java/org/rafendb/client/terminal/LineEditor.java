@@ -20,6 +20,19 @@ public interface LineEditor extends AutoCloseable {
     String readLine(String prompt) throws IOException;
 
     /**
+     * Reads a one-line answer, such as a y/N confirmation. Unlike {@link #readLine}, Enter always
+     * finishes it (it is not a statement that needs {@code ;}), and it is not kept in the history.
+     *
+     * @param prompt the question to show, or {@code null} for none
+     * @return the answer, or {@code null} at the end of input
+     * @throws InterruptedIOException if the user cancelled the input (Ctrl+C)
+     * @throws IOException if reading fails
+     */
+    default String readAnswer(String prompt) throws IOException {
+        return readLine(prompt);
+    }
+
+    /**
      * Returns the inputs entered so far, oldest first. Empty for inputs without history.
      *
      * @return the history

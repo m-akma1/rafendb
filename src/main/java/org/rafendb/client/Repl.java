@@ -469,7 +469,7 @@ final class Repl {
         if (interactive) {
             String answer;
             try {
-                answer = terminal.readLine("Shut down the server for all sessions? [y/N] ");
+                answer = terminal.readAnswer("Shut down the server for all sessions? [y/N] ");
             } catch (IOException e) {
                 answer = null;
             }
