@@ -11,26 +11,19 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.IndexScanDescriptor;
 import org.rafendb.common.txn.AccessResult;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
 import org.rafendb.mock.storage.MockStorageManager;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.FakeCcm;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.tuple.ResultRow;
 
 /** IndexScanOp over the mock SM's sample data (mahasiswa_nim_idx, prodi_kode_idx). */
 class IndexScanOpTest {
     private final MockStorageManager storage = new MockStorageManager();
     private final FakeCcm ccm = new FakeCcm();
-    private final SessionContext session = new SessionContext(1);
-    private final ExecutionContext context = new ExecutionContext(session, ccm, storage, null);
-
-    IndexScanOpTest() {
-        session.setCurrentTxId(new TxId(1));
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
 
     @AfterEach
     void closeStorage() throws Exception {
@@ -42,7 +35,7 @@ class IndexScanOpTest {
                 new Expr.Binary(
                         op, new Expr.ColumnRef("m", "nim", 0), new Expr.Literal(Value.ofInt(key)));
         return new IndexScanOp(
-                context,
+                session,
                 "mahasiswa",
                 "m",
                 new IndexScanDescriptor("mahasiswa_nim_idx", "nim", condition));
@@ -82,7 +75,7 @@ class IndexScanOpTest {
                         new Expr.Literal(Value.ofText(DataType.CHAR, "IF")));
         try (IndexScanOp scan =
                 new IndexScanOp(
-                        context,
+                        session,
                         "prodi",
                         "p",
                         new IndexScanDescriptor("prodi_kode_idx", "kode", condition))) {
@@ -101,7 +94,6 @@ class IndexScanOpTest {
             ccm.answerNext(AccessResult.aborted("deadlock"));
             assertThrows(TransactionAbortedException.class, scan::open);
             assertThrows(IllegalStateException.class, scan::next);
-            assertNull(session.getCurrentTxId());
         }
     }
 

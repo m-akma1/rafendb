@@ -5,7 +5,7 @@ import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
@@ -21,14 +21,14 @@ import org.rafendb.processor.txn.TableLocks;
  */
 public final class CreateIndexOp implements ExecutionPlan.CommandAction {
 
-    private final ExecutionContext context;
+    private final SessionView context;
     private final CreateIndexPlanNode node;
     private final StorageQuery storage;
 
-    public CreateIndexOp(ExecutionContext context, CreateIndexPlanNode node) {
+    public CreateIndexOp(SessionView context, CreateIndexPlanNode node) {
         this.context = Objects.requireNonNull(context, "context");
         this.node = Objects.requireNonNull(node, "node");
-        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage manager");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage manager");
     }
 
     /**

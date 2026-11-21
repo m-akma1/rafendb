@@ -14,15 +14,13 @@ import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.txn.AccessResult;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.EventLog;
 import org.rafendb.processor.operator.FakeCcm;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -40,13 +38,8 @@ class TableScanOpTest {
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
     private final FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI, ANI), events);
-    private final SessionContext session = new SessionContext(1);
-    private final ExecutionContext context = new ExecutionContext(session, ccm, storage, null);
-    private final TableScanOp scan = new TableScanOp(context, "dosen", null);
-
-    TableScanOpTest() {
-        session.setCurrentTxId(new TxId(1));
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
+    private final TableScanOp scan = new TableScanOp(session, "dosen", null);
 
     private static StoredRow row(int slot, int id, String nama) {
         return new StoredRow(
@@ -97,7 +90,7 @@ class TableScanOpTest {
                             new ColumnSchema(new Expr.ColumnRef(qualifier, "id"), DataType.INTEGER),
                             new ColumnSchema(
                                     new Expr.ColumnRef(qualifier, "nama"), DataType.VARCHAR));
-            TableScanOp aliased = new TableScanOp(context, "dosen", alias);
+            TableScanOp aliased = new TableScanOp(session, "dosen", alias);
 
             assertEquals(expected, aliased.schema());
             aliased.open();
@@ -126,7 +119,7 @@ class TableScanOpTest {
 
     @Test
     void unknownTableIsRejected() {
-        assertThrows(StorageRuntimeException.class, () -> new TableScanOp(context, "x", null));
+        assertThrows(StorageRuntimeException.class, () -> new TableScanOp(session, "x", null));
     }
 
     @Test
@@ -162,13 +155,12 @@ class TableScanOpTest {
 
         assertEquals(1, storage.openedCursors());
         assertEquals(0, storage.openCursors());
-        assertNull(session.getCurrentTxId());
         assertThrows(IllegalStateException.class, scan::next);
     }
 
     @Test
     void noActiveTransactionIsRejectedBeforeTheScan() {
-        session.setCurrentTxId(null);
+        session.setCurrentTx(null);
 
         assertThrows(IllegalStateException.class, scan::open);
 

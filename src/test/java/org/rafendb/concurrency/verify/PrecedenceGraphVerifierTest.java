@@ -46,8 +46,6 @@ final class PrecedenceGraphVerifierTest {
         return set;
     }
 
-    // ---- serializable schedules ------------------------------------------------------------
-
     @Test
     void serialScheduleIsSerializableInExecutionOrder() {
         Result result =
@@ -119,8 +117,6 @@ final class PrecedenceGraphVerifierTest {
         assertTrue(result.serialOrder().isEmpty());
     }
 
-    // ---- non-serializable schedules --------------------------------------------------------
-
     @Test
     void cycleIsNotSerializableAndHasNoOrder() {
         // R1(A) W2(A) gives T1 -> T2; R2(B) W1(B) gives T2 -> T1.
@@ -154,8 +150,6 @@ final class PrecedenceGraphVerifierTest {
         assertEquals(Set.of(tx(1), tx(2), tx(3)), result.graph().keySet());
     }
 
-    // ---- committed filter ------------------------------------------------------------------
-
     @Test
     void transactionsThatDidNotCommitAreIgnored() {
         // T3 would close a cycle with T1, but it aborted.
@@ -165,8 +159,6 @@ final class PrecedenceGraphVerifierTest {
         assertEquals(Set.of(tx(1)), result.graph().keySet());
         assertEquals(List.of(tx(1)), result.serialOrder());
     }
-
-    // ---- table versus row ------------------------------------------------------------------
 
     @Test
     void tableAccessOverlapsRowsOfTheSameTable() {
@@ -218,8 +210,6 @@ final class PrecedenceGraphVerifierTest {
         assertEquals(Set.of(), result.graph().get(tx(1)));
     }
 
-    // ---- result is a snapshot --------------------------------------------------------------
-
     @Test
     void resultIsDeeplyUnmodifiable() {
         Result result = verifier.verify(List.of(w(1, A), w(2, A)), committed(1, 2));
@@ -242,8 +232,6 @@ final class PrecedenceGraphVerifierTest {
         assertEquals(List.of(tx(1), tx(2)), result.serialOrder());
         assertEquals(Map.of(tx(1), Set.of(tx(2)), tx(2), Set.of()), result.graph());
     }
-
-    // ---- argument validation ---------------------------------------------------------------
 
     @Test
     void rejectsNullInputs() {

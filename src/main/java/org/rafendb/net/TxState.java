@@ -8,7 +8,7 @@ public enum TxState {
     IDLE('I'),
     /** Inside BEGIN ... COMMIT. */
     ACTIVE('T'),
-    /** The open transaction failed or was aborted and waits for ABORT or COMMIT. */
+    /** The open transaction failed or was aborted and waits for ABORT. */
     FAILED('F');
 
     private final char code;

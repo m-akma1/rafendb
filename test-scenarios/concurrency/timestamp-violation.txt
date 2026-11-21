@@ -1,0 +1,16 @@
+# Timestamp-based rejects the older read. Lock-based permits it and tests explicit rollback.
+reset
+begin T1
+begin T2
+parallel "write T1 b -7 ALLOWED" "write T2 a 8 ALLOWED"
+commit T2
+on-protocol timestamp "read T1 a ABORTED"
+on-protocol lock "read T1 a ALLOWED"
+on-protocol lock "abort T1"
+read T1 b ABORTED
+commit T1 ABORTED
+begin T3
+read T3 b ALLOWED
+commit T3
+assert value b 0
+verify serializable

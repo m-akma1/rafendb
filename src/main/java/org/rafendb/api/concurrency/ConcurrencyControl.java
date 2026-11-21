@@ -11,9 +11,9 @@ import org.rafendb.common.txn.TxResult;
 /**
  * What the Concurrency Control Manager offers to other components.
  *
- * <p>The same calls work for every protocol. Waiting is non-blocking: when access is not available
- * yet, {@link #requestAccess} returns WAITING and the caller asks again with the same arguments
- * until it gets ALLOWED or ABORTED. Repeating a request never creates a second lock.
+ * <p>The same calls work for every protocol. When {@link #requestAccess} returns {@code WAITING},
+ * retry with the same arguments until it returns {@code ALLOWED} or {@code ABORTED}.
+ * Repeating a request never creates a second lock.
  *
  * <p>Both protocols protect whole tables. CCM maps row resources to their normalized table key;
  * row identity is retained separately in change records for logging and Storage Manager writes.
@@ -21,15 +21,7 @@ import org.rafendb.common.txn.TxResult;
  * <p>Thread-safety: all methods may be called concurrently. Calls for one transaction come from one
  * session thread at a time.
  *
- * <p>Errors:
- *
- * <ul>
- *   <li>{@link ConcurrencyInternalException}: a failure while logging or rolling back through the
- *       Failure Recovery Manager. Declared by every method that goes through the FRM. Handled by
- *       the caller, never shown to the user.
- *   <li>{@link IllegalArgumentException} or {@link IllegalStateException}: a call that breaks this
- *       contract.
- * </ul>
+ * <p>Callers handle {@link ConcurrencyInternalException} without exposing it to the user.
  */
 public interface ConcurrencyControl {
 
@@ -37,13 +29,15 @@ public interface ConcurrencyControl {
      * Starts a transaction. Waits while new transactions are held ({@link #pauseNewTransactions()}).
      *
      * @return a new id, greater than every id issued before
-     * @throws IllegalStateException if the CCM is not accepting transactions, or the thread is
-     *     interrupted while waiting
+     * @throws IllegalStateException if the CCM is not accepting transactions, the thread is
+     *     interrupted while waiting, transaction IDs are exhausted, or BEGIN logging fails
      */
     TxId begin();
 
     /**
      * Asks permission to read or write a resource. Granted only while the transaction is ACTIVE.
+     * Returns {@code WAITING} instead of waiting for conflicting protection to be released.
+     * If this request triggers an abort, it attempts rollback through FRM before returning.
      *
      * @param tx a transaction from {@link #begin()}, not null
      * @param type the kind of access, not null

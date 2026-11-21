@@ -53,13 +53,6 @@ final class ExprBinder {
                             : Kind.TEXT;
             return new Typed(expr, kind, type, "literal " + literal.value());
         }
-        // D-SUBQ: QP cannot execute subqueries yet, so reject them here, before any transaction
-        // starts. The binding below is kept for when QP supports them; remove this check then.
-        if (expr instanceof Expr.ScalarSubquery
-                || expr instanceof Expr.ExistsSubquery
-                || expr instanceof Expr.InSubquery) {
-            throw new ValidationException("Subqueries are not supported yet");
-        }
         if (expr instanceof Expr.ScalarSubquery subquery) {
             QueryBinder.SubqueryBinding output =
                     queryBinder.bindSubquery(subquery.query(), true, scope);

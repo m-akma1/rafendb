@@ -1,0 +1,5 @@
+# Input for verify serializable. The edge T1 -> T2 fixes the serial order.
+write T1 a
+read T2 a
+commit T1
+commit T2

@@ -1,0 +1,43 @@
+# QP-08 joins: JOIN ... ON, three tables, NATURAL JOIN, cartesian product, self-join.
+# order i belongs to customer i; order_item i belongs to order i; gift = 'Y' when i % 3 = 0.
+
+query rowsort
+SELECT orders.order_id, customers.name FROM orders
+  JOIN customers ON orders.customer_id = customers.customer_id
+  WHERE orders.order_id < 3;
+----
+1 | Customer 1
+2 | Customer 2
+
+query rowsort
+SELECT order_items.item_id, customers.name FROM order_items
+  JOIN orders ON order_items.order_id = orders.order_id
+  JOIN customers ON orders.customer_id = customers.customer_id
+  WHERE order_items.gift = 'Y' AND customers.customer_id < 10;
+----
+3 | Customer 3
+6 | Customer 6
+9 | Customer 9
+
+query
+SELECT order_id, name FROM orders NATURAL JOIN customers WHERE order_id = 5;
+----
+5 | Customer 5
+
+query rowsort
+SELECT customers.customer_id, orders.order_id FROM customers, orders
+  WHERE customers.customer_id < 3 AND orders.order_id < 3;
+----
+1 | 1
+1 | 2
+2 | 1
+2 | 2
+
+# Aliases tell the two sides of a self-join apart.
+query rowsort
+SELECT a.customer_id, b.customer_id FROM customers AS a
+  JOIN customers AS b ON a.customer_id + 1 = b.customer_id
+  WHERE a.customer_id < 3;
+----
+1 | 2
+2 | 3

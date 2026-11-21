@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.RecoveryInternalException;
 import org.rafendb.common.tuple.Rid;
@@ -193,7 +195,7 @@ class FrmBridgeTest {
                         "writeLog T1 UPDATE [ACTIVE]",
                         "cancelPending T1 [FAILED]",
                         "rollback T1 [FAILED]",
-                        "release T1 ABORTED [ABORTED]"),
+                        "release T1 ABORTED [FAILED]"),
                 calls);
     }
 
@@ -227,8 +229,24 @@ class FrmBridgeTest {
                 List.of(
                         "cancelPending T1 [PARTIALLY_COMMITTED]",
                         "commit T1 [PARTIALLY_COMMITTED]",
-                        "release T1 COMMITTED [COMMITTED]"),
+                        "release T1 COMMITTED [PARTIALLY_COMMITTED]"),
                 calls);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = TxStatus.class,
+            names = {"COMMITTED", "ABORTED"})
+    void checkpointSeesCompletionOnlyAfterProtectionIsReleased(TxStatus outcome) throws Exception {
+        TxId tx = activeTransaction();
+        txns.pause();
+        protocol.beforeRelease =
+                () -> assertDoesNotThrow(() -> assertFalse(txns.awaitNoActive(Duration.ZERO)));
+
+        TxResult result = outcome == TxStatus.COMMITTED ? bridge.commit(tx) : bridge.abort(tx);
+
+        assertEquals(outcome, result.status());
+        assertTrue(txns.awaitNoActive(Duration.ZERO));
     }
 
     @Test
@@ -244,7 +262,7 @@ class FrmBridgeTest {
                         "commit T1 [PARTIALLY_COMMITTED]",
                         "cancelPending T1 [FAILED]",
                         "rollback T1 [FAILED]",
-                        "release T1 ABORTED [ABORTED]"),
+                        "release T1 ABORTED [FAILED]"),
                 calls);
     }
 
@@ -296,7 +314,7 @@ class FrmBridgeTest {
                 List.of(
                         "cancelPending T1 [FAILED]",
                         "rollback T1 [FAILED]",
-                        "release T1 ABORTED [ABORTED]"),
+                        "release T1 ABORTED [FAILED]"),
                 calls);
     }
 
@@ -349,7 +367,7 @@ class FrmBridgeTest {
                 List.of(
                         "cancelPending T1 [FAILED]",
                         "rollback T1 [FAILED]",
-                        "release T1 ABORTED [ABORTED]"),
+                        "release T1 ABORTED [FAILED]"),
                 calls);
     }
 

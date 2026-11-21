@@ -19,7 +19,7 @@ cmd="$1"; shift
 
 if [[ "$cmd" == "reset-data" ]]; then
   rm -rf "$ROOT/data"
-  echo "Removed $ROOT/data, next run will recreates it from the seed."
+  echo "Removed $ROOT/data. Start the server with --seed to load the sample database."
   exit 0
 fi
 

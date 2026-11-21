@@ -14,14 +14,12 @@ import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.txn.AccessResult;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.EventLog;
 import org.rafendb.processor.operator.FakeCcm;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode.IndexKind;
@@ -34,16 +32,11 @@ class CreateIndexOpTest {
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
     private final FakeStorage storage = new FakeStorage(MAHASISWA, List.of(), events);
-    private final SessionContext session = new SessionContext(1);
-    private final ExecutionContext context = new ExecutionContext(session, ccm, storage, null);
-
-    CreateIndexOpTest() {
-        session.setCurrentTxId(new TxId(1));
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
 
     private CreateIndexOp create(IndexKind kind) {
         return new CreateIndexOp(
-                context,
+                session,
                 new CreateIndexPlanNode(
                         "idx_nama", "mahasiswa", new Expr.ColumnRef("mahasiswa", "nama"), kind));
     }

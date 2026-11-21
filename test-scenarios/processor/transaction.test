@@ -1,0 +1,68 @@
+# QP-12 transactions: auto-commit, BEGIN ... COMMIT, BEGIN ... ABORT, and the FAILED state.
+
+# ABORT undoes everything since BEGIN; the transaction sees its own writes before that.
+statement ok
+BEGIN;
+
+statement count 1
+INSERT INTO customers VALUES (61, 'New', 1.5, 'A');
+
+query
+SELECT name FROM customers WHERE customer_id = 61;
+----
+New
+
+statement ok
+ABORT;
+
+query
+SELECT name FROM customers WHERE customer_id = 61;
+
+# COMMIT keeps the change.
+statement ok
+BEGIN;
+
+statement count 1
+UPDATE customers SET credit = 0 WHERE customer_id = 1;
+
+statement ok
+COMMIT;
+
+query
+SELECT credit FROM customers WHERE customer_id = 1;
+----
+0.0
+
+# After an error inside BEGIN, only ABORT is accepted, and the earlier write is undone.
+statement ok
+BEGIN;
+
+statement count 1
+UPDATE customers SET credit = 99 WHERE customer_id = 2;
+
+statement error
+SELEC * FROM customers;
+
+statement error
+SELECT * FROM customers;
+
+statement error
+COMMIT;
+
+statement ok
+ABORT;
+
+query
+SELECT credit FROM customers WHERE customer_id = 2;
+----
+53.0
+
+# Outside a transaction: COMMIT has nothing to end, and a failed statement changes nothing.
+statement error
+COMMIT;
+
+statement error
+INSERT INTO customers VALUES (61, NULL, 1.0, 'A');
+
+query
+SELECT name FROM customers WHERE customer_id = 61;

@@ -1,0 +1,34 @@
+# Run with --mock=sm. The mock Storage Manager serves fixed rows of mahasiswa and prodi;
+# its writes are checked against the schema but not kept.
+
+query rowsort
+SELECT kode, nama FROM prodi;
+----
+EL | Teknik Elektro
+IF | Teknik Informatika
+STI | Sistem dan Teknologi Informasi
+
+# NULL ipk: Michael Johnson's comparison is UNKNOWN, so he is filtered out.
+query rowsort
+SELECT nim FROM mahasiswa WHERE ipk > 3.5;
+----
+13524275
+13524276
+
+query
+SELECT nama, ipk FROM mahasiswa WHERE kode_prodi = 'STI' ORDER BY nim DESC;
+----
+David Brown | 3.1
+Michael Johnson | NULL
+
+query rowsort
+SELECT mahasiswa.nama, prodi.nama FROM mahasiswa
+  JOIN prodi ON mahasiswa.kode_prodi = prodi.kode WHERE prodi.kode = 'EL';
+----
+Sarah Williams | Teknik Elektro
+
+statement count 1
+INSERT INTO mahasiswa VALUES (13524999, 'New Student', 3.5, 'IF');
+
+statement error
+SELECT * FROM nope;

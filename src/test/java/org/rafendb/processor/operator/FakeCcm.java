@@ -23,7 +23,7 @@ import org.rafendb.common.txn.TxStatus;
  *
  * <pre>
  * ccm.begin | ccm.access READ|WRITE &lt;table&gt; | ccm.log INSERT|UPDATE|DELETE lsn=N
- * ccm.log (fails) | ccm.commit T1 | ccm.abort T1
+ * ccm.log (fails) | ccm.commit T1 | ccm.abort T1 (failures are still recorded)
  * </pre>
  */
 public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
@@ -33,6 +33,7 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     private long nextLsn = 100;
     private boolean failNextLog;
     private boolean failNextAbort;
+    private boolean failNextCommit;
     private TxId beginResult = new TxId(1);
     private TxResult commitResult = new TxResult(TxStatus.COMMITTED, "");
     private TxResult abortResult = new TxResult(TxStatus.ABORTED, "");
@@ -70,6 +71,11 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     /** Bikin logChange berikutnya gagal pakai ConcurrencyInternalException. */
     public void failNextLog() {
         failNextLog = true;
+    }
+
+    /** Bikin commit berikutnya gagal pakai ConcurrencyInternalException (CCM udah abort sendiri). */
+    public void failNextCommit() {
+        failNextCommit = true;
     }
 
     /** Bikin abort berikutnya gagal pakai ConcurrencyInternalException. */
@@ -112,8 +118,12 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
     }
 
     @Override
-    public TxResult commit(TxId tx) {
+    public TxResult commit(TxId tx) throws ConcurrencyInternalException {
         events.add("ccm.commit " + tx);
+        if (failNextCommit) {
+            failNextCommit = false;
+            throw new ConcurrencyInternalException("commit record not logged");
+        }
         return commitResult;
     }
 

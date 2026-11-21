@@ -3,8 +3,8 @@ package org.rafendb.net;
 import java.net.ProtocolException;
 
 /**
- * The kinds of message on the wire, each sent as one ASCII type byte. Every {@link #QUERY} is
- * answered by {@code (RESULT | NOTICE)* ERROR? READY}; {@link #HELLO} opens a connection and
+ * The kinds of message on the wire, each sent as one ASCII type byte. Every {@link #QUERY} and
+ * {@link #META} is answered by {@code (RESULT | NOTICE)* ERROR? READY}; {@link #HELLO} opens a connection and
  * {@link #CLOSING} may arrive at any time.
  */
 public enum MessageType {
@@ -12,6 +12,11 @@ public enum MessageType {
     HELLO('H'),
     /** Client to server: one SQL statement, already split by the client. */
     QUERY('Q'),
+    /**
+     * Client to server: one server-side meta-command line, such as {@code \d customers}. Answered
+     * like a {@link #QUERY}; it never changes the transaction state.
+     */
+    META('M'),
     /** Client to server: cancel the running statement. Empty payload. */
     CANCEL('C'),
     /** Client to server: shut the server down. Empty payload. */

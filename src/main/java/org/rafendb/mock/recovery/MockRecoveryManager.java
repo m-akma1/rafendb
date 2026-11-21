@@ -25,7 +25,7 @@ public class MockRecoveryManager implements RecoveryManager {
     private final List<LogPayload> writtenLogs = Collections.synchronizedList(new ArrayList<>());
     private final Map<TxId, TxStatus> txStatuses = new ConcurrentHashMap<>();
     private final AtomicLong mockLsnCounter = new AtomicLong(0);
-    private volatile long lastFlushedLsn = 0;
+    private final AtomicLong lastFlushedLsn = new AtomicLong(0);
     private volatile boolean checkpointCreated = false;
     private volatile boolean crashRecovered = false;
     private volatile long lastRecoveredTimestamp = 0;
@@ -35,25 +35,31 @@ public class MockRecoveryManager implements RecoveryManager {
     @Override
     public long writeLog(LogPayload payload) {
         Objects.requireNonNull(payload, "payload");
-        long lsn = mockLsnCounter.incrementAndGet();
-        writtenLogs.add(payload);
-        return lsn;
+        synchronized (writtenLogs) {
+            long lsn = mockLsnCounter.incrementAndGet();
+            writtenLogs.add(payload);
+            return lsn;
+        }
     }
 
     @Override
     public boolean beginTransaction(TxId tx) {
+        Objects.requireNonNull(tx, "tx");
         txStatuses.put(tx, TxStatus.ACTIVE);
         return true;
     }
 
     @Override
     public boolean commitTransaction(TxId tx) {
+        Objects.requireNonNull(tx, "tx");
         txStatuses.put(tx, TxStatus.COMMITTED);
+        lastFlushedLsn.accumulateAndGet(mockLsnCounter.get(), Math::max);
         return true;
     }
 
     @Override
     public boolean rollbackTransaction(TxId tx) {
+        Objects.requireNonNull(tx, "tx");
         txStatuses.put(tx, TxStatus.ABORTED);
         return true;
     }
@@ -97,11 +103,12 @@ public class MockRecoveryManager implements RecoveryManager {
 
     @Override
     public void forceThrough(long lsn) {
-        this.lastFlushedLsn = Math.max(lastFlushedLsn, lsn);
+        lastFlushedLsn.accumulateAndGet(lsn, Math::max);
     }
 
     @Override
     public TxStatus getTransactionStatus(TxId tx) {
+        Objects.requireNonNull(tx, "tx");
         return txStatuses.get(tx);
     }
 
@@ -130,7 +137,7 @@ public class MockRecoveryManager implements RecoveryManager {
      * @return LSN terakhir yang di-flush / dipaksa ke storage
      */
     public long getLastFlushedLsn() {
-        return lastFlushedLsn;
+        return lastFlushedLsn.get();
     }
 
     /**
@@ -177,7 +184,7 @@ public class MockRecoveryManager implements RecoveryManager {
         writtenLogs.clear();
         txStatuses.clear();
         mockLsnCounter.set(0);
-        lastFlushedLsn = 0;
+        lastFlushedLsn.set(0);
         checkpointCreated = false;
         crashRecovered = false;
         lastRecoveredTimestamp = 0;
