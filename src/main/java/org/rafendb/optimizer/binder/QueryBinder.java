@@ -43,6 +43,10 @@ public final class QueryBinder implements Binder {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
     }
 
+    public Catalog catalog() {
+        return catalog;
+    }
+
     /**
      * Binds a parsed query deterministically; repeated binding returns an equal result.
      *
