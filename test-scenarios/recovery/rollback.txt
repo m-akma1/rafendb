@@ -15,3 +15,18 @@
 #
 # Cara Verifikasi Otomatis:
 #   Jalankan FRManagerTest#testNullAttributeDistinctFromMissingRecord
+#   atau scripts\run.cmd driver recovery --run=test-scenarios\recovery\rollback.txt
+
+begin 1
+insert 1 items 10 null
+commit 1
+assert exists items 10 true
+assert val items 10 null
+begin 2
+update 2 items 10 Present
+assert val items 10 Present
+rollback 2
+assert exists items 10 true
+assert val items 10 null
+assert status 1 COMMITTED
+assert status 2 ABORTED
