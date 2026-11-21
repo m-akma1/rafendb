@@ -1,0 +1,44 @@
+# QP-13 CREATE INDEX: both index kinds, the errors, and queries that stay correct afterwards.
+
+statement ok
+CREATE INDEX orders_customer_idx ON orders(customer_id) USING HASH;
+
+statement ok
+CREATE INDEX customers_credit_idx ON customers(credit);
+
+statement error
+CREATE INDEX orders_customer_idx ON orders(amount);
+
+statement error
+CREATE INDEX missing_idx ON orders(nope);
+
+statement error
+CREATE INDEX missing_idx ON nope(customer_id);
+
+# Rows written after the index exists are found too.
+statement count 1
+INSERT INTO orders VALUES (61, 7, 5.0, NULL);
+
+query rowsort
+SELECT order_id FROM orders WHERE customer_id = 7;
+----
+7
+61
+
+query rowsort
+SELECT customer_id FROM customers WHERE credit > 135;
+----
+57
+58
+59
+60
+
+# Index creation is not logged, so it is refused inside a transaction.
+statement ok
+BEGIN;
+
+statement error
+CREATE INDEX orders_amount_idx ON orders(amount);
+
+statement ok
+ABORT;

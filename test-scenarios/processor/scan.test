@@ -1,0 +1,25 @@
+# QP-05 scan and projection (SELECT, FROM).
+# Sample data: customer i = (i, 'Customer i', 50 + 1.5 * i, 'A' if i is even else 'I').
+
+query rowsort
+SELECT * FROM customers WHERE customer_id < 3;
+----
+1 | Customer 1 | 51.5 | I
+2 | Customer 2 | 53.0 | A
+
+# Projection keeps the requested columns in the requested order.
+query
+SELECT status, name FROM customers WHERE customer_id = 10;
+----
+A | Customer 10
+
+query rowsort
+SELECT order_id, note FROM orders WHERE order_id > 57;
+----
+58 | Order-58
+59 | Order-59
+60 | Order-60
+
+# No matching row is an empty result, not an error.
+query
+SELECT * FROM order_items WHERE item_id = 999;

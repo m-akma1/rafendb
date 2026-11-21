@@ -1,0 +1,60 @@
+# QP-06 filters (WHERE): comparisons, AND, OR, NOT and NULL.
+
+query
+SELECT customer_id FROM customers WHERE customer_id = 7;
+----
+7
+
+# FLOAT comparison: credit = 50 + 1.5 * i > 135 for i >= 57.
+query rowsort
+SELECT customer_id FROM customers WHERE credit > 135;
+----
+57
+58
+59
+60
+
+query rowsort
+SELECT customer_id FROM customers WHERE name = 'Customer 5' OR name = 'Customer 50';
+----
+5
+50
+
+query rowsort
+SELECT customer_id FROM customers WHERE status = 'A' AND customer_id < 7;
+----
+2
+4
+6
+
+query rowsort
+SELECT customer_id FROM customers WHERE NOT (customer_id > 2);
+----
+1
+2
+
+# AND binds tighter than OR: 7 has status I, so only 1 and 2 match.
+query rowsort
+SELECT customer_id FROM customers WHERE customer_id < 3 OR customer_id = 7 AND status = 'A';
+----
+1
+2
+
+# Arithmetic over columns: amount = 10 + order_id.
+query rowsort
+SELECT order_id FROM orders WHERE amount - order_id = 10 AND order_id < 3;
+----
+1
+2
+
+# A comparison with NULL is UNKNOWN, so the row is filtered out by both the condition and its NOT.
+statement count 1
+UPDATE customers SET credit = NULL WHERE customer_id = 1;
+
+query
+SELECT customer_id FROM customers WHERE credit > 0 AND customer_id < 3;
+----
+2
+
+query
+SELECT customer_id FROM customers WHERE NOT (credit > 0) AND customer_id < 3;

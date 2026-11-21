@@ -59,8 +59,15 @@ public final class ResultRenderer {
         return sb.toString();
     }
 
-    /** Shows NULL as {@code NULL} and text without the quotes {@link Value#toString()} adds. */
-    private static String cell(Value value) {
+    /**
+     * Formats one cell the way the client shows it: {@code NULL}, text without the quotes {@link
+     * Value#toString()} adds, and numbers as {@link Value#toString()} gives them. The QP driver
+     * compares expected rows in this form too.
+     *
+     * @param value the cell
+     * @return its text
+     */
+    public static String cell(Value value) {
         if (value.isNull()) return "NULL";
         return value.type().isText() ? value.asText() : value.toString();
     }

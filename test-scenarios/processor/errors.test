@@ -1,0 +1,40 @@
+# Errors a user can make. Each one is reported and the next statement still runs.
+
+statement error
+SELECT * FROM nope;
+
+statement error
+SELECT nope FROM customers;
+
+statement error
+SELECT customer_id FROM customers WHERE name = 3;
+
+statement error
+SELECT customer_id FROM customers WHERE customer_id;
+
+statement error
+INSERT INTO customers VALUES (63, 'Short');
+
+statement error
+INSERT INTO customers VALUES ('x', 'y', 1.0, 'A');
+
+statement error
+INSERT INTO customers VALUES (64, NULL, 1.0, 'A');
+
+statement error
+UPDATE customers SET name = 5 WHERE customer_id = 1;
+
+statement error
+SELEC * FROM customers;
+
+statement error
+SELECT * FROM customers WHERE;
+
+# Ambiguous: both tables have customer_id.
+statement error
+SELECT customer_id FROM customers JOIN orders ON customers.customer_id = orders.customer_id;
+
+query
+SELECT name FROM customers WHERE customer_id = 1;
+----
+Customer 1
