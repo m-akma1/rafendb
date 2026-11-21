@@ -19,7 +19,7 @@ import org.rafendb.net.TxState;
 /**
  * The read-eval-print loop of the client (QP-01). Reads lines, splits them into statements with
  * {@link StatementSplitter}, sends each one and prints its reply; lines starting with {@code \} are
- * meta-commands handled here.
+ * meta-commands, handled here except for {@link #SERVER_META}, which the server answers.
  *
  * <p>A lost connection never ends an interactive client: it prints why, warns if a transaction
  * was open, and waits at the {@code ?>} prompt until {@code \connect}. A non-interactive run (a
@@ -31,6 +31,10 @@ import org.rafendb.net.TxState;
 final class Repl {
     private static final Set<String> QUIT = Set.of("\\q", "\\quit", "\\exit", "quit", "exit");
     private static final Set<String> HELP = Set.of("\\?", "\\h", "\\help", "help");
+
+    /** Meta-commands the server answers; the rest are handled here. */
+    private static final Set<String> SERVER_META = Set.of("\\d", "\\dt", "\\di", "\\stats");
+
     private static final int MAX_FILE_DEPTH = 16;
     private static final String RED = "\u001B[31m";
     private static final String RESET = "\u001B[0m";
@@ -265,15 +269,20 @@ final class Repl {
     }
 
     private void execute(String sql) {
+        send(MessageType.QUERY, sql);
+    }
+
+    /** Sends a statement or a server meta-command and prints its reply. */
+    private void send(MessageType type, String text) {
         if (echo) {
-            out.println(sql);
+            out.println(text);
         }
         if (!connected()) {
             notConnected();
             return;
         }
         long start = System.nanoTime();
-        printReply(link.exchange(new Message(MessageType.QUERY, sql), false), false);
+        printReply(link.exchange(new Message(type, text), false), false);
         if (timing) {
             out.printf(Locale.ROOT, "Time: %.3f ms%n", (System.nanoTime() - start) / 1e6);
         }
@@ -379,6 +388,8 @@ final class Repl {
             quit = true;
         } else if (HELP.contains(command)) {
             help();
+        } else if (SERVER_META.contains(command)) {
+            send(MessageType.META, line);
         } else {
             switch (command) {
                 case "\\r" -> buffer.setLength(0);
@@ -410,6 +421,11 @@ final class Repl {
         out.println("  \\connect [--host=<host>] [--port=<n>]");
         out.println("                       connect again, alias \\c");
         out.println("  \\shutdown            shut the server down for everyone");
+        out.println("Ask the server:");
+        out.println("  \\dt, \\d              list the tables");
+        out.println("  \\d <table>           show a table's columns, indexes, and foreign keys");
+        out.println("  \\di [table]          list the indexes, of one table or all");
+        out.println("  \\stats [table]       show statistics (n_r, b_r, l_r, f_r, V(A,r))");
     }
 
     private void runFile(String argument) {

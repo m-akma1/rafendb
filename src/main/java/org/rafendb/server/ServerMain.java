@@ -17,6 +17,7 @@ import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.engine.Engine;
 import org.rafendb.engine.EngineConfig;
 import org.rafendb.engine.Flags;
+import org.rafendb.engine.MetaCommands;
 import org.rafendb.engine.Version;
 
 /**
@@ -35,6 +36,7 @@ import org.rafendb.engine.Version;
 public final class ServerMain {
     private final ServerConfig config;
     private final QueryProcessor processor;
+    private final MetaCommands metaCommands;
     private final ProtocolType protocol;
     private final ServerSocket listener;
     private final AtomicInteger ids = new AtomicInteger();
@@ -86,7 +88,12 @@ public final class ServerMain {
         }
         ServerMain server;
         try {
-            server = new ServerMain(config, engine.processor(), engine.concurrencyProtocol());
+            server =
+                    new ServerMain(
+                            config,
+                            engine.processor(),
+                            engine.metaCommands(),
+                            engine.concurrencyProtocol());
         } catch (BindException e) {
             engine.close();
             System.err.println("Port " + config.port() + " is already in use.");
@@ -119,14 +126,20 @@ public final class ServerMain {
      *
      * @param config the network and lifecycle settings
      * @param processor the query processor every session is opened from
+     * @param metaCommands what answers the clients' server-side meta-commands
      * @param protocol the concurrency protocol, announced to clients
      * @throws BindException if the port is in use
      * @throws IOException if the port cannot be opened
      */
-    ServerMain(ServerConfig config, QueryProcessor processor, ProtocolType protocol)
+    ServerMain(
+            ServerConfig config,
+            QueryProcessor processor,
+            MetaCommands metaCommands,
+            ProtocolType protocol)
             throws IOException {
         this.config = Objects.requireNonNull(config, "config");
         this.processor = Objects.requireNonNull(processor, "processor");
+        this.metaCommands = Objects.requireNonNull(metaCommands, "metaCommands");
         this.protocol = Objects.requireNonNull(protocol, "protocol");
         this.listener = new ServerSocket(config.port());
     }
@@ -215,6 +228,10 @@ public final class ServerMain {
 
     QueryProcessor processor() {
         return processor;
+    }
+
+    MetaCommands metaCommands() {
+        return metaCommands;
     }
 
     ProtocolType protocol() {

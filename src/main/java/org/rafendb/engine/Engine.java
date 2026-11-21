@@ -81,6 +81,7 @@ public final class Engine implements AutoCloseable {
             EnumSet.of(Component.SM, Component.FRM, Component.CCM);
 
     private final QueryProcessor processor;
+    private final MetaCommands metaCommands;
     private final ProtocolType protocol;
     private final Path dataDirectory;
     private final Resources resources;
@@ -88,10 +89,12 @@ public final class Engine implements AutoCloseable {
 
     private Engine(
             QueryProcessor processor,
+            MetaCommands metaCommands,
             ProtocolType protocol,
             Path dataDirectory,
             Resources resources) {
         this.processor = Objects.requireNonNull(processor, "processor");
+        this.metaCommands = Objects.requireNonNull(metaCommands, "metaCommands");
         this.protocol = Objects.requireNonNull(protocol, "protocol");
         this.dataDirectory = dataDirectory;
         this.resources = resources;
@@ -112,7 +115,12 @@ public final class Engine implements AutoCloseable {
 
     /** An engine over {@link MockQueryProcessor} that opens nothing ({@code --mock=qp}). */
     private static Engine mockProcessorOnly() {
-        return new Engine(new MockQueryProcessor(), ProtocolType.LOCK_BASED, null, null);
+        return new Engine(
+                new MockQueryProcessor(),
+                new MetaCommands(null),
+                ProtocolType.LOCK_BASED,
+                null,
+                null);
     }
 
     /**
@@ -232,7 +240,7 @@ public final class Engine implements AutoCloseable {
                         + ", "
                         + seeded
                         + ".");
-        return new Engine(processor, protocol, dir, r);
+        return new Engine(processor, new MetaCommands(storage), protocol, dir, r);
     }
 
     /**
@@ -429,6 +437,15 @@ public final class Engine implements AutoCloseable {
      */
     public QueryProcessor processor() {
         return processor;
+    }
+
+    /**
+     * Returns the server-side meta-commands, such as {@code \d}, over this engine's storage.
+     *
+     * @return the meta-commands, never {@code null}; with {@code --mock=qp} every one fails
+     */
+    public MetaCommands metaCommands() {
+        return metaCommands;
     }
 
     /**
