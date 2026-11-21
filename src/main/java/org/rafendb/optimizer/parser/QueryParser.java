@@ -45,6 +45,7 @@ public final class QueryParser {
         if (first.isKeyword("BEGIN")
                 || first.isKeyword("COMMIT")
                 || first.isKeyword("CREATE")
+                || first.isKeyword("DROP")
                 || first.isKeyword("ABORT")) {
             return CommandParser.parse(sql, tokens);
         }
@@ -58,11 +59,11 @@ public final class QueryParser {
                         second);
             }
             SelectQuery select =
-                    (SelectQuery) SelectParser.parse(sql, tokens.subList(2, tokens.size()));
+                    (SelectQuery) SelectParser.parse(sql, tokens.subList(1, tokens.size()));
             return new ExplainQuery(sql, select);
         }
         throw TokenCursor.syntaxError(
-                "Expected SELECT, UPDATE, INSERT, DELETE, BEGIN, COMMIT, ABORT or CREATE but found '"
+                "Expected SELECT, UPDATE, INSERT, DELETE, BEGIN, COMMIT, ABORT, CREATE, DROP or EXPLAIN but found '"
                         + first.text()
                         + "'",
                 first);

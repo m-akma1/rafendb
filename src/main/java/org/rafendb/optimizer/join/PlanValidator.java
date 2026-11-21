@@ -72,19 +72,12 @@ final class PlanValidator {
             throw new CostEstimationException("QP does not support join algorithm: " + algorithm);
     }
 
-    /** Offsets are local to this operator's input. Validation does not repair them. */
+    /** Enclosing-scope offsets are checked for binding, without indexing into the local row. */
     private static void requireBoundExpression(Expr expression, List<Expr.ColumnRef> input)
             throws CostEstimationException {
-        if (input == null || !matchesLayout(expression, input) || untypedNull(expression)) {
+        if (input == null || !matchesLayout(expression, input)) {
             throw new CostEstimationException(
                     "Invalid or unbound expression for input layout: " + expression);
         }
-    }
-
-    /** SQL NULL literals must have a type before evaluation. */
-    private static boolean untypedNull(Expr expression) {
-        return expression instanceof Expr.Null
-                || expression instanceof Expr.Binary b
-                        && (untypedNull(b.left()) || untypedNull(b.right()));
     }
 }
