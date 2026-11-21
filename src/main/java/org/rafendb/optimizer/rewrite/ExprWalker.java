@@ -13,6 +13,7 @@ final class ExprWalker {
     private ExprWalker() {}
 
     static boolean containsSubquery(Expr expr) {
+        if (expr instanceof Expr.Not not) return containsSubquery(not.child());
         if (expr instanceof Expr.Binary bin) {
             return containsSubquery(bin.left()) || containsSubquery(bin.right());
         }
@@ -57,6 +58,10 @@ final class ExprWalker {
             return left == bin.left() && right == bin.right()
                     ? bin
                     : new Expr.Binary(bin.op(), left, right);
+        }
+        if (expr instanceof Expr.Not not) {
+            Expr child = map(not.child(), level, f);
+            return child == not.child() ? not : new Expr.Not(child);
         }
         if (expr instanceof Expr.ScalarSubquery sub) {
             return new Expr.ScalarSubquery(mapSelect(sub.query(), level + 1, f));
@@ -114,6 +119,8 @@ final class ExprWalker {
         } else if (expr instanceof Expr.Binary bin) {
             collectCorrelated(bin.left(), level, inside, out);
             collectCorrelated(bin.right(), level, inside, out);
+        } else if (expr instanceof Expr.Not not) {
+            collectCorrelated(not.child(), level, inside, out);
         } else if (expr instanceof Expr.ScalarSubquery sub) {
             collectCorrelatedSelect(sub.query(), level + 1, out);
         } else if (expr instanceof Expr.ExistsSubquery sub) {
