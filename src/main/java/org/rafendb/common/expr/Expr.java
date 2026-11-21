@@ -1,5 +1,6 @@
 package org.rafendb.common.expr;
 
+import org.rafendb.common.query.SelectQuery;
 import org.rafendb.common.type.Value;
 
 /**
@@ -14,10 +15,12 @@ public sealed interface Expr {
      *
      * @param table the table name or alias, or {@code null} if written without a prefix
      * @param column the column name, never {@code null}
-     * @param offset the column's position in the input row, set by the binder; {@code -1} before
+     * @param offset the column's position in its input row, set by the binder; {@code -1} before
      *     binding
+     * @param scopeDepth the number of enclosing query scopes to traverse; zero means the current
+     *     query scope
      */
-    record ColumnRef(String table, String column, int offset) implements Expr {
+    record ColumnRef(String table, String column, int offset, int scopeDepth) implements Expr {
 
         /**
          * Creates an unbound reference, with {@code offset} {@code -1}.
@@ -26,7 +29,12 @@ public sealed interface Expr {
          * @param column the column name, never {@code null}
          */
         public ColumnRef(String table, String column) {
-            this(table, column, -1);
+            this(table, column, -1, 0);
+        }
+
+        /** Creates a reference with an offset and no enclosing-scope qualification. */
+        public ColumnRef(String table, String column, int offset) {
+            this(table, column, offset, 0);
         }
     }
 
@@ -51,6 +59,14 @@ public sealed interface Expr {
      */
     record Binary(Op op, Expr left, Expr right) implements Expr {}
 
+    record Not(Expr child) implements Expr {}
+
+    record ScalarSubquery(SelectQuery query) implements Expr {}
+
+    record InSubquery(Expr value, SelectQuery query) implements Expr {}
+
+    record ExistsSubquery(SelectQuery query) implements Expr {}
+
     /** Operators: arithmetic, comparison, and logical AND. */
     enum Op {
         ADD,
@@ -64,6 +80,7 @@ public sealed interface Expr {
         GE,
         LT,
         LE,
-        AND
+        AND,
+        OR
     }
 }

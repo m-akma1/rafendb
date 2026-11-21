@@ -54,6 +54,17 @@ final class PlanTrees {
         return List.of();
     }
 
+    static boolean containsFixedPredicate(PlanNode node) {
+        if (node instanceof JoinPlanNode join
+                        && join.condition() != null
+                        && !ColumnLayouts.canMovePredicate(join.condition())
+                || node instanceof SelectionPlanNode selection
+                        && !ColumnLayouts.canMovePredicate(selection.condition())) {
+            return true;
+        }
+        return children(node).stream().anyMatch(PlanTrees::containsFixedPredicate);
+    }
+
     /** Null here means an explicit Cartesian product, never an unresolved natural join. */
     static PlanNode createJoinOrCartesian(Expr condition, PlanNode left, PlanNode right) {
         return condition == null
@@ -83,10 +94,11 @@ final class PlanTrees {
             List<Expr> composed = new ArrayList<>();
             for (Expr expr : columns) {
                 if (!(expr instanceof Expr.ColumnRef column)
+                        || column.scopeDepth() != 0
                         || column.offset() < 0
                         || column.offset() >= inner.columns().size()
-                        || !(inner.columns().get(column.offset())
-                                instanceof Expr.ColumnRef source)) {
+                        || !(inner.columns().get(column.offset()) instanceof Expr.ColumnRef source)
+                        || source.scopeDepth() != 0) {
                     return new ProjectionPlanNode(columns, child);
                 }
                 composed.add(new Expr.ColumnRef(column.table(), column.column(), source.offset()));

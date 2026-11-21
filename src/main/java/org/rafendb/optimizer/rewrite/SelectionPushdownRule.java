@@ -144,6 +144,9 @@ public final class SelectionPushdownRule implements RewriteRule {
     }
 
     private static int selectivityRank(Expr condition) {
+        if (ExprWalker.containsSubquery(condition)) {
+            return ExprWalker.isCorrelated(condition) ? 4 : 3;
+        }
         if (condition instanceof Expr.Binary bin) {
             return switch (bin.op()) {
                 case EQ -> 0;

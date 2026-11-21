@@ -19,10 +19,12 @@ import org.rafendb.common.query.FromItem;
  */
 final class FromBinder {
     private final Scope scope;
+    private final QueryBinder queryBinder;
     private final Set<String> merged = new HashSet<>();
 
-    FromBinder(Scope scope) {
+    FromBinder(Scope scope, QueryBinder queryBinder) {
         this.scope = scope;
+        this.queryBinder = queryBinder;
     }
 
     /** Keys ({@code table.column}, lower case) merged away by NATURAL JOINs seen so far. */
@@ -32,7 +34,9 @@ final class FromBinder {
 
     FromItem bind(FromItem item) {
         return switch (item) {
-            case FromItem.TableRef ref -> new FromItem.TableRef(scope.table(ref.name()).name());
+            case FromItem.TableRef ref ->
+                    new FromItem.TableRef(
+                            scope.table(ref.qualifier()).schema().table(), ref.alias());
             case FromItem.CartesianProduct cp ->
                     new FromItem.CartesianProduct(bind(cp.left()), bind(cp.right()));
             case FromItem.Join join -> {
@@ -47,8 +51,8 @@ final class FromBinder {
                 NaturalJoinResolver.Result result =
                         NaturalJoinResolver.resolve(
                                 scope.withHidden(merged),
-                                natural.left().tables(),
-                                natural.right().tables());
+                                natural.left().tableRefs(),
+                                natural.right().tableRefs());
                 merged.addAll(result.merged());
                 if (result.condition() == null) yield new FromItem.CartesianProduct(left, right);
                 Expr condition =
@@ -59,6 +63,6 @@ final class FromBinder {
     }
 
     private ExprBinder conditionBinder(FromItem node) {
-        return new ExprBinder(scope.restrictTo(node.tables()).withHidden(merged));
+        return new ExprBinder(scope.restrictTo(node.tableRefs()).withHidden(merged), queryBinder);
     }
 }
