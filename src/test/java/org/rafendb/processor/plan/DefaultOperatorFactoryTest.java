@@ -295,8 +295,7 @@ class DefaultOperatorFactoryTest {
                                         node -> () -> new ExecutionPlan.CommandResult(0, "ok"))
                                 .createTable(
                                         new CreateTablePlanNode(
-                                                context.getStorageManager()
-                                                        .getSchema("employees"))));
+                                                context.storageDQL().getSchema("employees"))));
         assertThrows(
                 IllegalStateException.class,
                 ddlOnly(
@@ -304,7 +303,7 @@ class DefaultOperatorFactoryTest {
                                         node -> () -> new ExecutionPlan.CommandResult(0, "dropped"))
                                 .createTable(
                                         new CreateTablePlanNode(
-                                                context.getStorageManager().getSchema("employees")))
+                                                context.storageDQL().getSchema("employees")))
                         ::execute);
         assertThrows(
                 IllegalStateException.class,

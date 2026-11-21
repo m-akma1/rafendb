@@ -5,7 +5,9 @@ import java.util.Optional;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.PlanNode;
 import org.rafendb.common.query.CreateIndexQuery;
+import org.rafendb.common.query.CreateTableQuery;
 import org.rafendb.common.query.DeleteQuery;
+import org.rafendb.common.query.DropTableQuery;
 import org.rafendb.common.query.InsertQuery;
 import org.rafendb.common.query.ParsedQuery;
 import org.rafendb.common.query.UpdateQuery;
@@ -13,13 +15,15 @@ import org.rafendb.common.type.Value;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.expr.ExpressionEvaluator;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
+import org.rafendb.processor.plan.command.CreateTablePlanNode;
 import org.rafendb.processor.plan.command.DeletePlanNode;
+import org.rafendb.processor.plan.command.DropTablePlanNode;
 import org.rafendb.processor.plan.command.InsertPlanNode;
 import org.rafendb.processor.plan.command.UpdatePlanNode;
 import org.rafendb.processor.tuple.ResultRow;
 
 /**
- * Turns a bound data-changing statement into its command plan node. The optimizer plans SELECT
+ * Turns a bound data-changing or DDL statement into its command plan node. The optimizer plans SELECT
  * only, so the session plans these itself. Pure: it reads no storage and starts nothing.
  */
 final class CommandPlanner {
@@ -31,13 +35,15 @@ final class CommandPlanner {
      * Returns whether {@link #plan} handles the statement.
      *
      * @param query a bound statement
-     * @return {@code true} for INSERT, UPDATE, DELETE, and CREATE INDEX
+     * @return {@code true} for INSERT, UPDATE, DELETE, CREATE INDEX, CREATE TABLE, and DROP TABLE
      */
     static boolean handles(ParsedQuery query) {
         return query instanceof InsertQuery
                 || query instanceof UpdateQuery
                 || query instanceof DeleteQuery
-                || query instanceof CreateIndexQuery;
+                || query instanceof CreateIndexQuery
+                || query instanceof CreateTableQuery
+                || query instanceof DropTableQuery;
     }
 
     /**
@@ -67,6 +73,8 @@ final class CommandPlanner {
                                 case B_PLUS_TREE -> CreateIndexPlanNode.IndexKind.BTREE;
                                 case HASH -> CreateIndexPlanNode.IndexKind.HASH;
                             });
+            case CreateTableQuery create -> new CreateTablePlanNode(create.toSchema());
+            case DropTableQuery drop -> new DropTablePlanNode(drop.table(), drop.cascade());
             default -> throw new IllegalArgumentException("Not a command: " + query);
         };
     }

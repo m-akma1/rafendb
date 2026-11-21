@@ -204,7 +204,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param node payload schema yang tidak null
          * @return aksi baru yang tidak null
          */
-        ExecutionPlan.CommandAction create(ExecutionContext context, CreateTablePlanNode node);
+        ExecutionPlan.CommandAction create(SessionView context, CreateTablePlanNode node);
     }
 
     /** Constructor DROP TABLE; pembentukan belum mengubah catalog atau file tabel. */
@@ -217,7 +217,7 @@ public final class DefaultOperatorFactory implements OperatorFactory {
          * @param node payload tabel dan cascade yang tidak null
          * @return aksi baru yang tidak null
          */
-        ExecutionPlan.CommandAction create(ExecutionContext context, DropTablePlanNode node);
+        ExecutionPlan.CommandAction create(SessionView context, DropTablePlanNode node);
     }
 
     /**
@@ -242,18 +242,18 @@ public final class DefaultOperatorFactory implements OperatorFactory {
     }
 
     /**
-     * Mengikat CREATE TABLE ke context sesi dan handler DDL yang memiliki akses ke StorageManager.
-     * ExecutionContext hanya menyediakan StorageQuery, sehingga handler menerima context untuk
-     * kebutuhan sesi dan dapat menangkap StorageManager lengkap dari wiring.
+     * Mengikat CREATE TABLE ke context satu sesi. Aksinya memakai {@link SessionView#storageDDL()}.
      *
      * @param context context sesi yang tidak null
      * @param constructor pembentuk aksi CREATE TABLE yang tidak null
      * @return builder untuk parameter createTableBuilder
+     * @throws NullPointerException jika context, storageDDL, constructor, node, atau hasil null
      */
     public static Function<CreateTablePlanNode, ExecutionPlan.CommandAction> bindCreateTable(
-            ExecutionContext context, CreateTableConstructor constructor) {
+            SessionView context, CreateTableConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.storageDDL(), "storageDDL");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(constructor.create(context, node), "CREATE TABLE action");
@@ -261,16 +261,18 @@ public final class DefaultOperatorFactory implements OperatorFactory {
     }
 
     /**
-     * Mengikat DROP TABLE ke context sesi dan handler DDL yang memiliki akses ke StorageManager.
+     * Mengikat DROP TABLE ke context satu sesi. Aksinya memakai {@link SessionView#storageDDL()}.
      *
      * @param context context sesi yang tidak null
      * @param constructor pembentuk aksi DROP TABLE yang tidak null
      * @return builder untuk parameter dropTableBuilder
+     * @throws NullPointerException jika context, storageDDL, constructor, node, atau hasil null
      */
     public static Function<DropTablePlanNode, ExecutionPlan.CommandAction> bindDropTable(
-            ExecutionContext context, DropTableConstructor constructor) {
+            SessionView context, DropTableConstructor constructor) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(constructor, "constructor");
+        Objects.requireNonNull(context.storageDDL(), "storageDDL");
         return node -> {
             Objects.requireNonNull(node, "node");
             return Objects.requireNonNull(constructor.create(context, node), "DROP TABLE action");
