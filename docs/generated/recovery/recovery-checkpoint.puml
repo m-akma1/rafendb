@@ -1,0 +1,20 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.recovery.checkpoint.CheckpointManager {
+	{method} +createCheckpoint () : boolean
+	{method} +createCheckpoint ( concurrencyControl : ConcurrencyControl ) : boolean
+	{method} +getLastCheckpointLsn () : long
+	{method}  {static} +readLastCompletedCheckpointLsn ( logger : Logger ) : long
+}
+
+
+
+
+
+
+@enduml
