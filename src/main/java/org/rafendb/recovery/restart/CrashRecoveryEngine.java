@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.LongSupplier;
-import org.rafendb.api.storage.StorageManager;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
@@ -40,6 +39,10 @@ import org.rafendb.recovery.rollback.UndoStorage;
  * <p>Semua penerapan ke storage memakai {@link Rid} penuh dan generasi tabel dari {@link
  * WALRecord}, bukan id record {@code int} yang sempit. Thread-safe: semua method publik
  * ter-synchronize.
+ *
+ * <p>Kelas ini hanya bergantung pada {@link UndoStorage}, tidak pada {@code StorageManager} maupun
+ * facade FRM, sehingga tidak ada dependensi siklik dengan {@code FRManager}. Adapter ke {@code
+ * StorageManager} dibuat oleh pemanggil.
  */
 public class CrashRecoveryEngine {
 
@@ -99,21 +102,6 @@ public class CrashRecoveryEngine {
     }
 
     /**
-     * Membuat instance CrashRecoveryEngine langsung dengan StorageManager. Alamat baris diteruskan
-     * apa adanya sebagai {@link Rid}.
-     *
-     * @param logger logger WAL
-     * @param storageManager interface manajer storage
-     */
-    public CrashRecoveryEngine(Logger logger, StorageManager storageManager) {
-        this(
-                logger,
-                storageManager != null
-                        ? org.rafendb.recovery.FRManager.storageAdapter(storageManager)
-                        : null);
-    }
-
-    /**
      * Menjalankan fase Analysis dan mengembalikan hasilnya.
      *
      * @return {@link AnalysisResult} berisi transaksi committed, loser, dan id transaksi tertinggi
@@ -152,6 +140,14 @@ public class CrashRecoveryEngine {
 
     /**
      * Eksekusi prosedur pemulihan kegagalan sistem: Analysis, Redo, lalu Undo.
+     *
+     * <p>Method ini sengaja tidak memanggil {@code StorageManager.flush()}. Saat kembali dengan
+     * {@code true}, semua record kompensasi dan ABORT sudah di-flush ke WAL, jadi hasil recovery
+     * sudah durable: jika crash lagi, redo akan mengulang sejarah dan undo tidak membatalkan apa
+     * pun. Page kotor milik storage boleh tetap di buffer karena eviction dijaga oleh {@code
+     * WalSync.forceThrough}. Pemanggil saat startup sebaiknya membuat checkpoint (yang mem-flush
+     * storage) setelah method ini berhasil dan sebelum transaksi baru diterima, agar recovery
+     * berikutnya lebih singkat.
      *
      * @return true jika seluruh tahapan pemulihan crash berhasil
      */
