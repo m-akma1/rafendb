@@ -43,6 +43,9 @@ public record Token(TokenType type, String text, SourcePosition position) implem
                     "SELECT",
                     "FROM",
                     "WHERE",
+                    // Adding IN and EXIST for subquery
+                    "IN",
+                    "EXISTS",
                     "AS",
                     "JOIN",
                     "NATURAL",
