@@ -361,7 +361,6 @@ public final class Engine implements AutoCloseable {
      * Wires the M1 storage graph with 4096-byte pages and the caller's FRM WAL implementation.
      * Loads the catalog and prepares indexes before FRM recovery; admission remains the startup
      * coordinator's job. Recovery must use applyRecovery so rebuilt indexes follow undo/redo.
-     * Module TODOs fail explicitly until their owners implement them.
      */
     public static StorageManager storage(Path directory, int bufferFrames, WalSync wal)
             throws StorageInternalException {

@@ -8,7 +8,10 @@ import org.rafendb.common.plan.SelectionPlanNode;
 import org.rafendb.optimizer.cost.Cost;
 import org.rafendb.optimizer.cost.CostModel;
 
-/** Deterministic placeholder estimates; does not use storage statistics and is thread-safe. */
+/**
+ * Fixed, deterministic estimates for tests. Unlike {@link
+ * org.rafendb.optimizer.cost.StatsCostModel}, it ignores storage statistics. Thread-safe.
+ */
 public final class MockCostModel implements CostModel {
     private final long defaultRows;
 
@@ -42,7 +45,6 @@ public final class MockCostModel implements CostModel {
     @Override
     public Cost estimateLocalCost(PlanNode node) {
         requireNode(node);
-        // TODO: use TableStats, IndexInfo, and QO4/QO5 plan metadata when available.
         if (node instanceof JoinPlanNode) return new Cost(2, defaultRows);
         if (node instanceof SelectionPlanNode) return new Cost(1, defaultRows / 2);
         if (node instanceof ProjectionPlanNode) return new Cost(0, defaultRows / 10);
