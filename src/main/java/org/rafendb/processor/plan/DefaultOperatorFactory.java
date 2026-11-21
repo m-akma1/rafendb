@@ -326,50 +326,31 @@ public final class DefaultOperatorFactory implements OperatorFactory {
     public ExecutionPlan.CommandAction createIndex(CreateIndexPlanNode node) {
         Objects.requireNonNull(node, "node");
         var action = Objects.requireNonNull(createIndexBuilder.apply(node), "CREATE INDEX action");
-        return once(
-                () -> {
-                    var result = Objects.requireNonNull(action.execute(), "CREATE INDEX result");
-                    if (result.affectedRows() != 0) {
-                        throw new IllegalStateException(
-                                "CREATE INDEX must report zero affected rows");
-                    }
-                    return result;
-                });
+        return () -> {
+            var result = Objects.requireNonNull(action.execute(), "CREATE INDEX result");
+            if (result.affectedRows() != 0) {
+                throw new IllegalStateException("CREATE INDEX must report zero affected rows");
+            }
+            return result;
+        };
     }
 
     /**
      * Mengadaptasi jumlah baris DML menjadi hasil perintah internal QP.
      * Interface DML mengizinkan null; hasil tersebut tidak dapat dijadikan jumlah baris
-     * yang sah dan dilaporkan sebagai kegagalan eksekusi.
+     * yang sah dan dilaporkan sebagai kegagalan eksekusi. Penolakan eksekusi ulang
+     * dilakukan oleh {@link DefaultPlanTranslator}, satu-satunya pembentuk perintah.
      */
     private static ExecutionPlan.CommandAction command(DMLOperator operator, String status) {
         Objects.requireNonNull(operator, "DML operator");
 
-        return once(
-                () -> {
-                    Long affectedRows = operator.execute();
-                    if (affectedRows == null) {
-                        throw new IllegalStateException(
-                                status + " operator returned no affected-row count");
-                    }
-
-                    return new ExecutionPlan.CommandResult(affectedRows, status);
-                });
-    }
-
-    /** Menolak pengulangan eksekusi, termasuk setelah eksekusi pertama gagal. */
-    private static ExecutionPlan.CommandAction once(ExecutionPlan.CommandAction action) {
-        return new ExecutionPlan.CommandAction() {
-            private boolean executed;
-
-            @Override
-            public ExecutionPlan.CommandResult execute() {
-                if (executed) {
-                    throw new IllegalStateException("Command already executed");
-                }
-                executed = true;
-                return Objects.requireNonNull(action.execute(), "command result");
+        return () -> {
+            Long affectedRows = operator.execute();
+            if (affectedRows == null) {
+                throw new IllegalStateException(
+                        status + " operator returned no affected-row count");
             }
+            return new ExecutionPlan.CommandResult(affectedRows, status);
         };
     }
 

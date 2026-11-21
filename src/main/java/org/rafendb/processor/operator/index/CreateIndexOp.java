@@ -25,8 +25,6 @@ public final class CreateIndexOp implements ExecutionPlan.CommandAction {
     private final CreateIndexPlanNode node;
     private final StorageQuery storage;
 
-    private boolean executed;
-
     public CreateIndexOp(ExecutionContext context, CreateIndexPlanNode node) {
         this.context = Objects.requireNonNull(context, "context");
         this.node = Objects.requireNonNull(node, "node");
@@ -34,19 +32,12 @@ public final class CreateIndexOp implements ExecutionPlan.CommandAction {
     }
 
     /**
-     * Executes the CREATE INDEX command exactly once.
+     * Executes the CREATE INDEX command under a WRITE lock on the table.
      *
      * @return command result with affectedRows = 0
-     * @throws IllegalStateException if the command has already been executed
      */
     @Override
     public ExecutionPlan.CommandResult execute() {
-        if (executed) {
-            throw new IllegalStateException("CREATE INDEX command already executed");
-        }
-
-        executed = true;
-
         TableLocks.acquireWrite(context, node.table());
 
         IndexInfo indexInfo =

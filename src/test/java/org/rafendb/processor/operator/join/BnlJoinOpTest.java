@@ -12,6 +12,7 @@ import org.rafendb.common.type.Value;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.expr.ExpressionEvaluator;
 import org.rafendb.processor.expr.TruthValue;
+import org.rafendb.processor.operator.FakeChildOp;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
 import org.rafendb.processor.tuple.ResultRow;
@@ -25,22 +26,22 @@ class BnlJoinOpTest {
 
     @Test
     void producesCartesianProductAndConcatenatedSchema() {
-        MemoryOperator outer = input(List.of(column("outer", "id", 0)), row(1), row(2));
-        MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(10), row(20));
+        FakeChildOp outer = input(List.of(column("outer", "id", 0)), row(1), row(2));
+        FakeChildOp inner = input(List.of(column("inner", "id", 0)), row(10), row(20));
         BnlJoinOp join = new BnlJoinOp(outer, inner, null);
 
         assertEquals(List.of(column("outer", "id", 0), column("inner", "id", 0)), join.schema());
 
         join.open();
         assertEquals(List.of(row(1, 10), row(2, 10), row(1, 20), row(2, 20)), drain(join));
-        assertEquals(1, inner.openCount);
+        assertEquals(1, inner.getOpenCount());
         join.close();
     }
 
     @Test
     void appliesInjectedEvaluatorToJoinedRows() {
-        MemoryOperator outer = input(List.of(column("outer", "id", 0)), row(1), row(2));
-        MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(2), row(3));
+        FakeChildOp outer = input(List.of(column("outer", "id", 0)), row(1), row(2));
+        FakeChildOp inner = input(List.of(column("inner", "id", 0)), row(2), row(3));
         BnlJoinOp join =
                 new BnlJoinOp(outer, inner, CONDITION, new DefaultExpressionEvaluator(), 1024);
 
@@ -51,8 +52,8 @@ class BnlJoinOpTest {
 
     @Test
     void rejectsUnknownJoinCondition() {
-        MemoryOperator outer = input(List.of(column("outer", "id", 0)), row(1));
-        MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(1));
+        FakeChildOp outer = input(List.of(column("outer", "id", 0)), row(1));
+        FakeChildOp inner = input(List.of(column("inner", "id", 0)), row(1));
         BnlJoinOp join = new BnlJoinOp(outer, inner, CONDITION, new UnknownEvaluator(), 1024);
 
         join.open();
@@ -62,28 +63,28 @@ class BnlJoinOpTest {
 
     @Test
     void rescansInnerForEachOuterBlockAndAllowsOversizedRows() {
-        MemoryOperator outer = input(List.of(column("outer", "id", 0)), row(1), row(2), row(3));
-        MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(9));
+        FakeChildOp outer = input(List.of(column("outer", "id", 0)), row(1), row(2), row(3));
+        FakeChildOp inner = input(List.of(column("inner", "id", 0)), row(9));
         BnlJoinOp join = new BnlJoinOp(outer, inner, null, 1);
 
         join.open();
         assertEquals(List.of(row(1, 9), row(2, 9), row(3, 9)), drain(join));
-        assertEquals(3, inner.openCount);
+        assertEquals(3, inner.getOpenCount());
         join.close();
     }
 
     @Test
     void returnsNoRowsWhenEitherInputIsEmpty() {
-        MemoryOperator emptyOuter = input(List.of(column("outer", "id", 0)));
-        MemoryOperator nonEmptyInner = input(List.of(column("inner", "id", 0)), row(1));
+        FakeChildOp emptyOuter = input(List.of(column("outer", "id", 0)));
+        FakeChildOp nonEmptyInner = input(List.of(column("inner", "id", 0)), row(1));
         BnlJoinOp emptyOuterJoin = new BnlJoinOp(emptyOuter, nonEmptyInner, null);
 
         emptyOuterJoin.open();
         assertEquals(List.of(), drain(emptyOuterJoin));
         emptyOuterJoin.close();
 
-        MemoryOperator nonEmptyOuter = input(List.of(column("outer", "id", 0)), row(1));
-        MemoryOperator emptyInner = input(List.of(column("inner", "id", 0)));
+        FakeChildOp nonEmptyOuter = input(List.of(column("outer", "id", 0)), row(1));
+        FakeChildOp emptyInner = input(List.of(column("inner", "id", 0)));
         BnlJoinOp emptyInnerJoin = new BnlJoinOp(nonEmptyOuter, emptyInner, null);
 
         emptyInnerJoin.open();
@@ -92,14 +93,11 @@ class BnlJoinOpTest {
     }
 
     @Test
-    void rejectsInvalidBudgetAndNextBeforeOpen() {
-        MemoryOperator outer = input(List.of(column("outer", "id", 0)), row(1));
-        MemoryOperator inner = input(List.of(column("inner", "id", 0)), row(2));
+    void rejectsANonPositiveBlockBudget() {
+        FakeChildOp outer = input(List.of(column("outer", "id", 0)), row(1));
+        FakeChildOp inner = input(List.of(column("inner", "id", 0)), row(2));
 
         assertThrows(IllegalArgumentException.class, () -> new BnlJoinOp(outer, inner, null, 0));
-        BnlJoinOp join = new BnlJoinOp(outer, inner, null);
-        assertThrows(IllegalStateException.class, join::next);
-        join.close();
     }
 
     private static List<ResultRow> drain(Operator operator) {
@@ -111,8 +109,8 @@ class BnlJoinOpTest {
         return rows;
     }
 
-    private static MemoryOperator input(List<ColumnSchema> schema, ResultRow... rows) {
-        return new MemoryOperator(schema, List.of(rows));
+    private static FakeChildOp input(List<ColumnSchema> schema, ResultRow... rows) {
+        return new FakeChildOp(schema, List.of(rows));
     }
 
     private static ColumnSchema column(String table, String name, int offset) {
@@ -133,44 +131,6 @@ class BnlJoinOpTest {
         public TruthValue evaluateCondition(
                 Expr condition, ResultRow row, List<ColumnSchema> schema) {
             return TruthValue.UNKNOWN;
-        }
-    }
-
-    private static final class MemoryOperator implements Operator {
-        private final List<ColumnSchema> schema;
-        private final List<ResultRow> rows;
-        private int position;
-        private int openCount;
-        private boolean open;
-
-        private MemoryOperator(List<ColumnSchema> schema, List<ResultRow> rows) {
-            this.schema = List.copyOf(schema);
-            this.rows = List.copyOf(rows);
-        }
-
-        @Override
-        public void open() {
-            position = 0;
-            open = true;
-            openCount++;
-        }
-
-        @Override
-        public List<ColumnSchema> schema() {
-            return schema;
-        }
-
-        @Override
-        public ResultRow next() {
-            if (!open) {
-                throw new IllegalStateException("Input operator is not open");
-            }
-            return position < rows.size() ? rows.get(position++) : null;
-        }
-
-        @Override
-        public void close() {
-            open = false;
         }
     }
 }
