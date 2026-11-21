@@ -205,29 +205,26 @@ class FRManagerTest {
                                         return method.invoke(realSm, args);
                                     });
 
-            try (FRManager connectedFrm = new FRManager(connectedLogger, countingSm)) {
-                Rid largeSlotRid = new Rid(3L, 1500);
-                ChangeRecord change =
-                        new ChangeRecord(
-                                new ResourceId("users", largeSlotRid),
-                                Optional.empty(),
-                                Optional.of(
-                                        "row-bytes"
-                                                .getBytes(
-                                                        java.nio.charset.StandardCharsets.UTF_8)));
-                long lsn =
-                        connectedFrm.writeLog(
-                                new LogPayload(
-                                        new TxId(10),
-                                        org.rafendb.common.log.LogType.INSERT,
-                                        System.currentTimeMillis(),
-                                        Optional.of(change)));
-                assertEquals(1L, lsn);
-                assertEquals(largeSlotRid, connectedLogger.getLogsSorted().getFirst().getRid());
+            FRManager connectedFrm = new FRManager(connectedLogger, countingSm);
+            Rid largeSlotRid = new Rid(3L, 1500);
+            ChangeRecord change =
+                    new ChangeRecord(
+                            new ResourceId("users", largeSlotRid),
+                            Optional.empty(),
+                            Optional.of(
+                                    "row-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            long lsn =
+                    connectedFrm.writeLog(
+                            new LogPayload(
+                                    new TxId(10),
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    System.currentTimeMillis(),
+                                    Optional.of(change)));
+            assertEquals(1L, lsn);
+            assertEquals(largeSlotRid, connectedLogger.getLogsSorted().getFirst().getRid());
 
-                assertTrue(connectedFrm.createCheckpoint(mockCc));
-                assertEquals(1, flushCount[0]);
-            }
+            assertTrue(connectedFrm.createCheckpoint(mockCc));
+            assertEquals(1, flushCount[0]);
         }
     }
 
@@ -258,8 +255,8 @@ class FRManagerTest {
         Rid rid;
         try (Logger realLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager realSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, realLogger);
-                FRManager realFrm = new FRManager(realLogger, realSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            FRManager realFrm = new FRManager(realLogger, realSm);
             realSm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "items",
@@ -341,8 +338,8 @@ class FRManagerTest {
         // Restart: CrashRecoveryEngine harus me-redo Tx 3 via decodeRow
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(redoneRow),
@@ -371,8 +368,8 @@ class FRManagerTest {
         Rid rid;
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "items",
@@ -483,8 +480,8 @@ class FRManagerTest {
 
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertTrue(restartedSm.fetch("items", committedRid).isPresent());
             assertTrue(restartedSm.fetch("items", uncommittedRid).isEmpty());
@@ -511,8 +508,8 @@ class FRManagerTest {
         Rid newRid;
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "events",
@@ -587,8 +584,8 @@ class FRManagerTest {
 
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(newRow),
@@ -613,8 +610,8 @@ class FRManagerTest {
         long customerCountBefore;
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 16, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 16, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             TxId tx1 = new TxId(1);
             assertTrue(realFrm.beginTransaction(tx1));
             sm.loadSampleDatabase(
@@ -650,8 +647,8 @@ class FRManagerTest {
 
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 16, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 16, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             long customerCountAfter = 0;
             try (var cursor = restartedSm.scan("customers")) {
@@ -710,8 +707,8 @@ class FRManagerTest {
         Rid rid1;
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "products",
@@ -804,8 +801,8 @@ class FRManagerTest {
 
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     java.util.List.of(rid1),
@@ -877,8 +874,8 @@ class FRManagerTest {
         Rid rid2;
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             sm.createTable(
                     new org.rafendb.common.schema.TableSchema(
                             "docs",
@@ -968,8 +965,8 @@ class FRManagerTest {
 
         try (Logger restartedLogger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager restartedSm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger);
-                FRManager restartedFrm = new FRManager(restartedLogger, restartedSm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm = new FRManager(restartedLogger, restartedSm);
             assertTrue(restartedFrm.recoverFromCrash());
             assertEquals(
                     Optional.of(v1Row),
@@ -998,8 +995,8 @@ class FRManagerTest {
 
         try (Logger logger = new Logger(walPath);
                 org.rafendb.api.storage.StorageManager sm =
-                        org.rafendb.engine.Engine.storage(dataDir, 8, logger);
-                FRManager realFrm = new FRManager(logger, sm)) {
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            FRManager realFrm = new FRManager(logger, sm);
             assertTrue(realFrm.recoverFromCrash());
 
             var ccm =
@@ -1346,5 +1343,210 @@ class FRManagerTest {
             assertEquals(threads * perThread, lsns.size());
             assertEquals(threads * perThread, concurrentLogger.getLogsSorted().size());
         }
+    }
+
+    @Test
+    void testUndoStorageConstructorAutoDetectsStorageManagerAdapter() throws Exception {
+        Path walPath = tempDir.resolve("adapter-ctor-wal.log");
+        Path dataDir = tempDir.resolve("adapter-ctor-data");
+
+        org.rafendb.common.tuple.Row r1 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Keep")));
+        org.rafendb.common.tuple.Row r2 =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(2),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "Rollback")));
+
+        Rid rid1;
+        Rid rid2;
+        try (Logger realLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager realSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            FRManager adapterFrm = new FRManager(realLogger, FRManager.storageAdapter(realSm));
+            realSm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "name",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            30,
+                                            false,
+                                            false))));
+
+            TxId tx1 = new TxId(1);
+            assertTrue(adapterFrm.beginTransaction(tx1));
+            rid1 = realSm.reserveRid("items", r1);
+            adapterFrm.writeLog(
+                    LogPayload.ofChange(
+                            tx1,
+                            org.rafendb.common.log.LogType.INSERT,
+                            new ChangeRecord(
+                                    ResourceId.ofRow("items", rid1),
+                                    Optional.empty(),
+                                    Optional.of(realSm.encodeRow("items", r1)))));
+            assertTrue(adapterFrm.commitTransaction(tx1));
+
+            assertNotEquals(0L, realLogger.getLogsSorted().get(1).getTableGeneration());
+
+            TxId tx2 = new TxId(2);
+            assertTrue(adapterFrm.beginTransaction(tx2));
+            rid2 = realSm.reserveRid("items", r2);
+            long lsn2 =
+                    adapterFrm.writeLog(
+                            LogPayload.ofChange(
+                                    tx2,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    new ChangeRecord(
+                                            ResourceId.ofRow("items", rid2),
+                                            Optional.empty(),
+                                            Optional.of(realSm.encodeRow("items", r2)))));
+            realSm.insert("items", rid2, r2, lsn2);
+            assertTrue(adapterFrm.rollbackTransaction(tx2));
+            assertTrue(realSm.fetch("items", rid2).isEmpty());
+        }
+
+        try (Logger restartedLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager restartedSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, restartedLogger)) {
+            FRManager restartedFrm =
+                    new FRManager(restartedLogger, FRManager.storageAdapter(restartedSm));
+            assertTrue(restartedFrm.recoverFromCrash());
+            assertEquals(
+                    Optional.of(r1),
+                    restartedSm.fetch("items", rid1).map(org.rafendb.common.tuple.StoredRow::row));
+            assertTrue(restartedSm.fetch("items", rid2).isEmpty());
+        }
+    }
+
+    @Test
+    void testUnnormalizedTableNameResolvesCanonicalTableAndRecovers() throws Exception {
+        Path walPath = tempDir.resolve("case-wal.log");
+        Path dataDir = tempDir.resolve("case-data");
+
+        org.rafendb.common.tuple.Row row =
+                new org.rafendb.common.tuple.Row(
+                        java.util.List.of(
+                                org.rafendb.common.type.Value.ofInt(1),
+                                org.rafendb.common.type.Value.ofText(
+                                        org.rafendb.common.type.DataType.VARCHAR, "MixedCase")));
+
+        Rid rid;
+        try (Logger realLogger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager realSm =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, realLogger)) {
+            FRManager realFrm = new FRManager(realLogger, realSm);
+            realSm.createTable(
+                    new org.rafendb.common.schema.TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new org.rafendb.common.schema.Column(
+                                            "id",
+                                            org.rafendb.common.type.DataType.INTEGER,
+                                            0,
+                                            false,
+                                            true),
+                                    new org.rafendb.common.schema.Column(
+                                            "name",
+                                            org.rafendb.common.type.DataType.VARCHAR,
+                                            30,
+                                            false,
+                                            false))));
+
+            TxId tx1 = new TxId(1);
+            assertTrue(realFrm.beginTransaction(tx1));
+            rid = realSm.reserveRid("items", row);
+            byte[] encoded = realSm.encodeRow("items", row);
+            long lsn1 =
+                    realFrm.writeLog(
+                            LogPayload.ofChange(
+                                    tx1,
+                                    org.rafendb.common.log.LogType.INSERT,
+                                    new ChangeRecord(
+                                            ResourceId.ofRow(" Items ", rid),
+                                            Optional.empty(),
+                                            Optional.of(encoded))));
+            assertTrue(lsn1 > 0);
+            assertEquals("items", realLogger.getLogsSorted().get(1).getTableName());
+            assertNotEquals(0L, realLogger.getLogsSorted().get(1).getTableGeneration());
+            realSm.insert("items", rid, row, lsn1);
+            assertTrue(realFrm.rollbackTransaction(tx1));
+            assertTrue(realSm.fetch("items", rid).isEmpty());
+        }
+    }
+
+    @Test
+    void testWriteLogRejectsNullRidAndUnwrappedNpeOnInvalidChange() {
+        LogPayload tableChangePayload =
+                LogPayload.ofChange(
+                        new TxId(1),
+                        org.rafendb.common.log.LogType.INSERT,
+                        new ChangeRecord(
+                                ResourceId.ofTable("items"),
+                                Optional.empty(),
+                                Optional.of(new byte[] {1})));
+        assertThrows(IllegalArgumentException.class, () -> frm.writeLog(tableChangePayload));
+
+        LogPayload nullResourcePayload =
+                LogPayload.ofChange(
+                        new TxId(1),
+                        org.rafendb.common.log.LogType.INSERT,
+                        new ChangeRecord(null, Optional.empty(), Optional.of(new byte[] {1})));
+        assertThrows(NullPointerException.class, () -> frm.writeLog(nullResourcePayload));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> frm.writeLog(1, LogType.INSERT, "items", -1, null, "x"));
+    }
+
+    @Test
+    void testLifecycleValidationAndCheckpointTxZeroIsolation() throws Exception {
+        assertFalse(frm.beginTransaction(0));
+        assertFalse(frm.beginTransaction(-1));
+        assertFalse(frm.commitTransaction(999));
+
+        assertTrue(frm.beginTransaction(10));
+        assertFalse(frm.beginTransaction(10));
+        assertTrue(frm.commitTransaction(10));
+        assertFalse(frm.commitTransaction(10));
+
+        assertTrue(frm.createCheckpoint(new org.rafendb.mock.concurrency.MockConcurrencyControl()));
+        assertNull(frm.getTransactionStatus(0));
+
+        long lsn =
+                frm.writeLog(
+                        LogPayload.ofEvent(
+                                new TxId(77), org.rafendb.common.log.LogType.CHECKPOINT_END));
+        assertTrue(lsn > 0);
+        assertTrue(frm.recoverFromCrash());
+        assertNull(frm.getTransactionStatus(77));
+    }
+
+    @Test
+    void testZeroArgRecoverToPointInTimeRestoresLatestCommittedState() throws Exception {
+        frm.beginTransaction(1);
+        frm.writeLog(1, LogType.INSERT, "users", 1, null, "Committed");
+        frm.commitTransaction(1);
+
+        frm.beginTransaction(2);
+        frm.writeLog(2, LogType.INSERT, "users", 2, null, "Uncommitted");
+        storage.data.put("users#2", "Uncommitted");
+
+        assertTrue(frm.recoverToPointInTime());
+        assertEquals("Committed", storage.data.get("users#1"));
+        assertFalse(storage.data.containsKey("users#2"));
+        assertEquals(TxStatus.COMMITTED, frm.getTransactionStatus(1));
+        assertEquals(TxStatus.ABORTED, frm.getTransactionStatus(2));
     }
 }

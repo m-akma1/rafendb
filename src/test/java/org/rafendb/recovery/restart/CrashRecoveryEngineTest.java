@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
@@ -248,6 +249,48 @@ class CrashRecoveryEngineTest {
     }
 
     @Test
+    void completedCheckpointLimitsRestartToPostCheckpointHistory(@TempDir Path dir)
+            throws Exception {
+        Path wal = dir.resolve("checkpoint-recovery.wal");
+        Rid committedBefore = new Rid(10L, 1);
+        Rid committedAfter = new Rid(11L, 2);
+        Rid loserAfter = new Rid(12L, 3);
+
+        Logger persistent = new Logger(wal);
+        persistent.logTransactionEvent(1, LogType.BEGIN);
+        persistent.logDataChange(
+                1, LogType.INSERT, 1000L, "t", 1L, committedBefore, null, "before");
+        persistent.logTransactionEvent(1, LogType.COMMIT);
+
+        CheckpointManager checkpoint = new CheckpointManager(persistent);
+        assertTrue(checkpoint.createCheckpoint());
+        long checkpointLsn = checkpoint.getLastCheckpointLsn();
+        assertTrue(checkpointLsn > 0);
+
+        persistent.logTransactionEvent(2, LogType.BEGIN);
+        persistent.logDataChange(2, LogType.INSERT, 2000L, "t", 1L, committedAfter, null, "after");
+        persistent.logTransactionEvent(2, LogType.COMMIT);
+
+        persistent.logTransactionEvent(3, LogType.BEGIN);
+        persistent.logDataChange(3, LogType.INSERT, 3000L, "t", 1L, loserAfter, null, "loser");
+        persistent.flushAll();
+        persistent.close();
+
+        Logger restarted = new Logger(wal);
+        TestStorage storage = new TestStorage();
+        storage.data.put(key("t", committedBefore), "before");
+
+        CrashRecoveryEngine recovery = new CrashRecoveryEngine(restarted, storage, () -> NOW);
+        assertTrue(recovery.recoverFromCrash());
+        assertEquals("before", storage.data.get(key("t", committedBefore)));
+        assertEquals("after", storage.data.get(key("t", committedAfter)));
+        assertNull(storage.data.get(key("t", loserAfter)));
+        assertTrue(recovery.getCommittedTransactions().contains(2));
+        assertTrue(recovery.getLoserTransactions().contains(3));
+        restarted.close();
+    }
+
+    @Test
     void recoveryResultSurvivesRestartFromWalFile(@TempDir Path dir) throws Exception {
         Path wal = dir.resolve("rafendb.wal");
         Rid rid = new Rid(42L, 1500);
@@ -296,5 +339,91 @@ class CrashRecoveryEngineTest {
             }
         }
         throw new AssertionError("no data change for tx " + tx);
+    }
+
+    /** Menulis checkpoint quiescent ke log dan mengembalikan LSN CHECKPOINT_END-nya. */
+    private long writeCheckpoint() throws Exception {
+        logger.logTransactionEvent(0, LogType.CHECKPOINT_BEGIN);
+        logger.logTransactionEvent(0, LogType.CHECKPOINT_END);
+        return logger.getCurrentLSN();
+    }
+
+    @Test
+    void redoStartsAfterSafeCheckpointButAnalysisSeesWholeLog() throws Exception {
+        logger.logTransactionEvent(1, LogType.BEGIN);
+        logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
+        logger.logTransactionEvent(1, LogType.COMMIT);
+        long checkpoint = writeCheckpoint();
+        logger.logTransactionEvent(2, LogType.BEGIN);
+        long bobLsn = logger.logDataChange(2, LogType.INSERT, 2000L, "users", 2, null, "Bob");
+        logger.logTransactionEvent(2, LogType.COMMIT);
+        logger.logTransactionEvent(3, LogType.BEGIN);
+        long carolLsn = logger.logDataChange(3, LogType.INSERT, 3000L, "users", 3, null, "Carol");
+
+        storage.data.put(legacyKey("users", 1), "Alice"); // sudah di-flush oleh checkpoint
+        CrashRecoveryEngine fromCheckpoint =
+                new CrashRecoveryEngine(logger, storage, () -> NOW, () -> checkpoint);
+
+        assertTrue(fromCheckpoint.recoverFromCrash());
+        assertEquals(checkpoint, fromCheckpoint.getRedoStartLsn());
+        assertEquals(2, fromCheckpoint.getRedoCount());
+        assertEquals(List.of(bobLsn, carolLsn), storage.appliedLsns.subList(0, 2));
+        assertEquals(java.util.Set.of(1, 2), fromCheckpoint.getCommittedTransactions());
+        assertEquals(java.util.Set.of(3), fromCheckpoint.getLoserTransactions());
+        assertEquals("Alice", storage.data.get(legacyKey("users", 1)));
+        assertEquals("Bob", storage.data.get(legacyKey("users", 2)));
+        assertNull(storage.data.get(legacyKey("users", 3)));
+    }
+
+    @Test
+    void staleOrForeignCheckpointPointerFallsBackToFullRedo() throws Exception {
+        logger.logTransactionEvent(1, LogType.BEGIN);
+        long insertLsn = logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
+        logger.logTransactionEvent(1, LogType.COMMIT);
+
+        for (long pointer : new long[] {insertLsn, 999L, -5L}) {
+            storage.data.clear();
+            CrashRecoveryEngine stale =
+                    new CrashRecoveryEngine(logger, storage, () -> NOW, () -> pointer);
+            assertTrue(stale.recoverFromCrash());
+            assertEquals(0, stale.getRedoStartLsn());
+            assertEquals(1, stale.getRedoCount());
+            assertEquals("Alice", storage.data.get(legacyKey("users", 1)));
+        }
+    }
+
+    @Test
+    void checkpointWithActiveTransactionFallsBackToFullRedo() throws Exception {
+        logger.logTransactionEvent(1, LogType.BEGIN);
+        logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
+        long checkpoint = writeCheckpoint(); // T1 masih aktif: checkpoint tidak quiescent
+        logger.logTransactionEvent(1, LogType.COMMIT);
+
+        CrashRecoveryEngine unsafe =
+                new CrashRecoveryEngine(logger, storage, () -> NOW, () -> checkpoint);
+
+        assertTrue(unsafe.recoverFromCrash());
+        assertEquals(0, unsafe.getRedoStartLsn());
+        assertEquals("Alice", storage.data.get(legacyKey("users", 1)));
+    }
+
+    @Test
+    void failingCheckpointSourceFallsBackToFullRedo() throws Exception {
+        logger.logTransactionEvent(1, LogType.BEGIN);
+        logger.logDataChange(1, LogType.INSERT, 1000L, "users", 1, null, "Alice");
+        logger.logTransactionEvent(1, LogType.COMMIT);
+
+        CrashRecoveryEngine broken =
+                new CrashRecoveryEngine(
+                        logger,
+                        storage,
+                        () -> NOW,
+                        () -> {
+                            throw new IllegalStateException("pointer unreadable");
+                        });
+
+        assertTrue(broken.recoverFromCrash());
+        assertEquals(0, broken.getRedoStartLsn());
+        assertEquals("Alice", storage.data.get(legacyKey("users", 1)));
     }
 }

@@ -3,6 +3,7 @@ package org.rafendb.recovery.rollback;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.LoggerErrorException;
@@ -40,6 +42,7 @@ public final class RollbackManager {
     private final RollbackLog logger;
     private final UndoStorage storage;
     private final LongSupplier clock;
+    private final IntSupplier systemTransactionIds;
 
     /** Dipegang bersama (shared) oleh rollback, dan secara eksklusif oleh pemulihan historis. */
     private final ReentrantReadWriteLock restoreLock = new ReentrantReadWriteLock();
@@ -70,9 +73,36 @@ public final class RollbackManager {
      * @throws NullPointerException jika ada argumen yang null
      */
     public RollbackManager(RollbackLog logger, UndoStorage storage, LongSupplier clock) {
+        this(
+                logger,
+                storage,
+                clock,
+                () -> Objects.requireNonNull(logger, "logger").getHighestTransactionId() + 1);
+    }
+
+    /**
+     * Membuat manager yang mengambil id transaksi sistem pemulihan historis dari sumber luar.
+     * Saat CCM aktif, sambungkan ke pemberi id transaksi milik CCM agar id transaksi sistem tidak
+     * pernah dipakai juga oleh transaksi pengguna. Tanpa sumber ini, id diambil dari {@code
+     * getHighestTransactionId() + 1}, yang hanya aman dalam mode pemeliharaan.
+     *
+     * @param logger logger WAL milik FR2, tidak boleh null
+     * @param storage adapter Storage Manager, tidak boleh null
+     * @param clock mengembalikan waktu sekarang dalam milidetik epoch, tidak boleh null
+     * @param systemTransactionIds memberi id transaksi baru yang positif dan belum ada di log
+     *     setiap kali dipanggil, tidak boleh null
+     * @throws NullPointerException jika ada argumen yang null
+     */
+    public RollbackManager(
+            RollbackLog logger,
+            UndoStorage storage,
+            LongSupplier clock,
+            IntSupplier systemTransactionIds) {
         this.logger = Objects.requireNonNull(logger, "logger");
         this.storage = Objects.requireNonNull(storage, "storage");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.systemTransactionIds =
+                Objects.requireNonNull(systemTransactionIds, "systemTransactionIds");
     }
 
     // ------------------------------------------------------------------------------------------
@@ -122,19 +152,25 @@ public final class RollbackManager {
 
     /** Me-rollback satu transaksi; pemanggil sudah memegang monitor transaksinya. */
     private RollbackStatus rollbackLocked(int idTransaction) throws LoggerErrorException {
+        // Log selalu dicek dulu, juga saat ada sisa langkah di pending: crash recovery yang
+        // berjalan di proses yang sama bisa sudah membatalkan transaksi ini dan menulis ABORT.
+        // Melanjutkan sisa langkah lama di sini akan menimpa data yang lebih baru.
+        List<WALRecord> records = logger.getLogsByTransaction(idTransaction);
+        if (records.isEmpty()) {
+            pending.remove(idTransaction);
+            return RollbackStatus.UNKNOWN_TRANSACTION;
+        }
+        if (has(records, LogType.COMMIT)) {
+            pending.remove(idTransaction);
+            return RollbackStatus.ALREADY_COMMITTED;
+        }
+        if (has(records, LogType.ABORT)) {
+            pending.remove(idTransaction);
+            logger.flushAll(); // pemanggilan sebelumnya mungkin gagal saat mem-flush ABORT
+            return RollbackStatus.ALREADY_ABORTED;
+        }
         Deque<Step> todo = pending.get(idTransaction);
         if (todo == null) {
-            List<WALRecord> records = logger.getLogsByTransaction(idTransaction);
-            if (records.isEmpty()) {
-                return RollbackStatus.UNKNOWN_TRANSACTION;
-            }
-            if (has(records, LogType.COMMIT)) {
-                return RollbackStatus.ALREADY_COMMITTED;
-            }
-            if (has(records, LogType.ABORT)) {
-                logger.flushAll(); // pemanggilan sebelumnya mungkin gagal saat mem-flush ABORT
-                return RollbackStatus.ALREADY_ABORTED;
-            }
             todo = new ArrayDeque<>();
             for (WALRecord r : records) {
                 if (r.getLogType().isDataChange()) {
@@ -164,8 +200,12 @@ public final class RollbackManager {
      * target. Pembatalan dicatat sebagai satu transaksi sistem baru yang commit dan di-flush.
      *
      * <p>Prasyarat (mode pemeliharaan): tidak ada transaksi yang berjalan dan tidak ada yang
-     * dimulai sampai method ini selesai. Setelahnya, CCM wajib memberi nomor transaksi baru di atas
-     * {@link RollbackLog#getHighestTransactionId()}.
+     * dimulai sampai method ini selesai. Id transaksi sistem diambil dari sumber id yang diberikan
+     * di konstruktor; tanpa sumber itu, CCM wajib memberi nomor transaksi baru di atas {@link
+     * RollbackLog#getHighestTransactionId()}.
+     *
+     * <p>Idempoten: memanggil ulang dengan target yang sama mengembalikan {@code 0} dan tidak
+     * menulis apa pun, karena perubahan yang sudah dibatalkan oleh pemulihan sebelumnya dilewati.
      *
      * @param targetTimestamp titik waktu tujuan, dalam milidetik epoch
      * @return jumlah perubahan yang dibatalkan; {@code 0} jika basis data sudah berada di titik itu
@@ -277,21 +317,26 @@ public final class RollbackManager {
             throw new IllegalStateException("Transactions still running: " + unfinished);
         }
 
-        List<WALRecord> toUndo = new ArrayList<>();
-        for (WALRecord r : all.reversed()) {
+        List<WALRecord> candidates = new ArrayList<>();
+        for (WALRecord r : all) {
             int tx = r.getIdTransaction();
             if (r.getLogType().isDataChange() && !kept.contains(tx) && !aborted.contains(tx)) {
                 if (r.getTableName() == null || r.getRid() == null) {
                     throw new IllegalStateException("Malformed data change record: " + r);
                 }
-                toUndo.add(r);
+                candidates.add(r);
             }
         }
+        List<WALRecord> toUndo = withoutCancellingPairs(candidates).reversed();
         if (toUndo.isEmpty()) {
             return 0;
         }
 
-        int systemTx = logger.getHighestTransactionId() + 1;
+        int systemTx = systemTransactionIds.getAsInt();
+        if (systemTx <= 0 || !logger.getLogsByTransaction(systemTx).isEmpty()) {
+            throw new IllegalStateException(
+                    "System transaction id " + systemTx + " is not positive or already in the log");
+        }
         logger.logTransactionEvent(systemTx, LogType.BEGIN);
         try {
             for (WALRecord r : toUndo) {
@@ -356,6 +401,50 @@ public final class RollbackManager {
                 r.getRid(),
                 r.getBeforeValue(),
                 step.compensationLsn);
+    }
+
+    /**
+     * Membuang pasangan perubahan yang saling meniadakan pada baris yang sama, misalnya perubahan
+     * asli dan record kompensasi yang ditulis pemulihan historis sebelumnya. Untuk setiap baris,
+     * perubahan diproses sesuai urutan LSN memakai stack: jika sebuah perubahan adalah kebalikan
+     * persis dari perubahan di puncak stack (nilai sebelum dan sesudah tertukar), keduanya dibuang.
+     * Membatalkan pasangan seperti itu tidak mengubah apa pun, jadi hasil akhirnya sama, tetapi
+     * pemulihan ulang ke target yang sama tidak lagi menulis apa pun.
+     *
+     * @param changes perubahan data terurut LSN naik
+     * @return perubahan yang tersisa, tetap terurut LSN naik
+     */
+    private static List<WALRecord> withoutCancellingPairs(List<WALRecord> changes) {
+        Map<String, Deque<WALRecord>> perRow = new HashMap<>();
+        Set<Long> cancelled = new HashSet<>();
+        for (WALRecord r : changes) {
+            String row =
+                    r.getTableName()
+                            + "#"
+                            + r.getTableGeneration()
+                            + "#"
+                            + r.getRid().block()
+                            + ":"
+                            + r.getRid().slot();
+            Deque<WALRecord> stack = perRow.computeIfAbsent(row, k -> new ArrayDeque<>());
+            WALRecord top = stack.peek();
+            if (top != null
+                    && Objects.equals(r.getBeforeValue(), top.getAfterValue())
+                    && Objects.equals(r.getAfterValue(), top.getBeforeValue())) {
+                stack.pop();
+                cancelled.add(top.getLSN());
+                cancelled.add(r.getLSN());
+            } else {
+                stack.push(r);
+            }
+        }
+        List<WALRecord> remaining = new ArrayList<>();
+        for (WALRecord r : changes) {
+            if (!cancelled.contains(r.getLSN())) {
+                remaining.add(r);
+            }
+        }
+        return remaining;
     }
 
     /** Mengecek apakah ada record bertipe {@code type} di dalam daftar. */
