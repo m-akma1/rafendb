@@ -1,0 +1,15 @@
+# Run with TIMESTAMP_BASED. The older transaction's read is rejected and T1 rolls back.
+reset
+begin T1
+begin T2
+write T1 b -7 ALLOWED
+write T2 a 8 ALLOWED
+commit T2
+read T1 a ABORTED
+read T1 b ABORTED
+commit T1 ABORTED
+begin T3
+read T3 b ALLOWED
+commit T3
+assert value b 0
+verify serializable

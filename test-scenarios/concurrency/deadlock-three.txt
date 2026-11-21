@@ -1,0 +1,19 @@
+# Run with LOCK_BASED. T3 is the victim and the other transactions commit.
+reset
+begin T1
+begin T2
+begin T3
+write T1 a 1 ALLOWED
+write T2 b 2 ALLOWED
+write T3 c 3 ALLOWED
+write T1 b 4 WAITING
+write T2 c 5 WAITING
+write T3 a 6 ABORTED
+commit T3 ABORTED
+retry T2 ALLOWED
+commit T2
+retry T1 ALLOWED
+commit T1
+assert value b 4
+assert value c 5
+verify serializable

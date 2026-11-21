@@ -1,0 +1,15 @@
+# Run with LOCK_BASED. The younger transaction T2 is the victim.
+reset
+begin T1
+begin T2
+write T1 a 1 ALLOWED
+write T2 b 2 ALLOWED
+write T1 b 3 WAITING
+write T2 a 4 ABORTED
+commit T2 ABORTED
+assert value b 0
+retry T1 ALLOWED
+commit T1
+assert value a 1
+assert value b 3
+verify serializable

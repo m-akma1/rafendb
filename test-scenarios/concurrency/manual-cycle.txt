@@ -1,0 +1,7 @@
+# Input for verify cyclic, with edges T1 -> T2 on a and T2 -> T1 on b.
+read T1 a
+read T2 b
+write T1 b
+write T2 a
+commit T1
+commit T2
