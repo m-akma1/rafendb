@@ -13,7 +13,30 @@ interface org.rafendb.processor.operator.Operator {
 }
 
 
+class org.rafendb.processor.operator.ddl.CreateTableOp {
+	{method} +execute () : CommandResult
+}
+
+
+class org.rafendb.processor.operator.ddl.DropTableOp {
+	{method} +execute () : CommandResult
+}
+
+
 class org.rafendb.processor.operator.filter.FilterOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.index.CreateIndexOp {
+	{method} +execute () : CommandResult
+}
+
+
+class org.rafendb.processor.operator.index.IndexScanOp {
 	{method} +close () : void
 	{method} +next () : ResultRow
 	{method} +open () : void
@@ -29,7 +52,24 @@ class org.rafendb.processor.operator.join.BnlJoinOp {
 }
 
 
+class org.rafendb.processor.operator.limit.LimitOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+	{method}  {static} +wrap ( rows : Rows , limit : Integer ) : Rows
+}
+
+
 class org.rafendb.processor.operator.scan.ProjectOp {
+	{method} +close () : void
+	{method} +next () : ResultRow
+	{method} +open () : void
+	{method} +schema () : List
+}
+
+
+class org.rafendb.processor.operator.scan.TableScanOp {
 	{method} +close () : void
 	{method} +next () : ResultRow
 	{method} +open () : void
@@ -50,17 +90,41 @@ interface org.rafendb.processor.operator.write.DMLOperator {
 }
 
 
+class org.rafendb.processor.operator.write.DeleteOp {
+	{method} +execute () : Long
+}
+
+
+class org.rafendb.processor.operator.write.InsertOp {
+	{method} +execute () : Long
+}
+
+
+class org.rafendb.processor.operator.write.UpdateOp {
+	{method} +execute () : Long
+}
+
+
 
 
 org.rafendb.processor.operator.filter.FilterOp *--  org.rafendb.processor.operator.Operator : child
 org.rafendb.processor.operator.filter.FilterOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.index.IndexScanOp ..|>  org.rafendb.processor.operator.Operator
 org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : inner
 org.rafendb.processor.operator.join.BnlJoinOp *--  org.rafendb.processor.operator.Operator : outer
 org.rafendb.processor.operator.join.BnlJoinOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.limit.LimitOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.limit.LimitOp ..|>  org.rafendb.processor.operator.Operator
 org.rafendb.processor.operator.scan.ProjectOp *--  org.rafendb.processor.operator.Operator : child
 org.rafendb.processor.operator.scan.ProjectOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.scan.TableScanOp ..|>  org.rafendb.processor.operator.Operator
 org.rafendb.processor.operator.sort.SortOp *--  org.rafendb.processor.operator.Operator : child
 org.rafendb.processor.operator.sort.SortOp ..|>  org.rafendb.processor.operator.Operator
+org.rafendb.processor.operator.write.DeleteOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.write.DeleteOp ..|>  org.rafendb.processor.operator.write.DMLOperator
+org.rafendb.processor.operator.write.InsertOp ..|>  org.rafendb.processor.operator.write.DMLOperator
+org.rafendb.processor.operator.write.UpdateOp *--  org.rafendb.processor.operator.Operator : child
+org.rafendb.processor.operator.write.UpdateOp ..|>  org.rafendb.processor.operator.write.DMLOperator
 
 
 @enduml

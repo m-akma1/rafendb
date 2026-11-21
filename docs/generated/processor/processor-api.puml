@@ -1,0 +1,22 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.processor.api.SessionView {
+	{method}  {abstract} +ccm () : ConcurrencyControl
+	{method}  {abstract} +currentTx () : TxId
+	{method}  {abstract} +isOpen () : boolean
+	{method} +requireTx () : TxId
+	{method}  {abstract} +storageDDL () : StorageDefinition
+	{method}  {abstract} +storageDQL () : StorageQuery
+}
+
+
+
+
+
+
+@enduml

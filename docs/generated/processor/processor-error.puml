@@ -1,0 +1,20 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.error.QueryExecutionException {
+}
+
+
+class org.rafendb.processor.error.TransactionAbortedException {
+}
+
+
+
+
+
+
+@enduml

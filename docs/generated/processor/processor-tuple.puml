@@ -1,0 +1,21 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.tuple.ResultRow {
+	{method}  {static} +concat ( outer : ResultRow , inner : ResultRow ) : ResultRow
+	{method} +get ( index : int ) : Value
+	{method} +rid () : Rid
+	{method} +size () : int
+	{method} +values () : List
+}
+
+
+
+
+
+
+@enduml

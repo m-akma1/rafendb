@@ -1,0 +1,18 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+class org.rafendb.processor.txn.TableLocks {
+	{method}  {static} +acquireRead ( session : SessionView , table : String ) : void
+	{method}  {static} +acquireWrite ( session : SessionView , table : String ) : void
+}
+
+
+
+
+
+
+@enduml

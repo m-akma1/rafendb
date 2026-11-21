@@ -1,0 +1,41 @@
+@startuml
+
+set namespaceSeparator .
+hide empty members
+skinparam linetype ortho
+
+
+interface org.rafendb.processor.execution.ExecutionPlan {
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$Command {
+	{method} +action () : CommandAction
+}
+
+
+interface org.rafendb.processor.execution.ExecutionPlan$CommandAction {
+	{method}  {abstract} +execute () : CommandResult
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$CommandResult {
+	{method} +affectedRows () : long
+	{method} +status () : String
+}
+
+
+class org.rafendb.processor.execution.ExecutionPlan$Rows {
+	{method} +columns () : List
+	{method} +operator () : Operator
+}
+
+
+
+
+org.rafendb.processor.execution.ExecutionPlan$Command *--  org.rafendb.processor.execution.ExecutionPlan$CommandAction : action
+org.rafendb.processor.execution.ExecutionPlan$Command ..|>  org.rafendb.processor.execution.ExecutionPlan
+org.rafendb.processor.execution.ExecutionPlan$Rows ..|>  org.rafendb.processor.execution.ExecutionPlan
+
+
+@enduml

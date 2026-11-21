@@ -5,6 +5,71 @@ hide empty members
 skinparam linetype ortho
 
 
+class org.rafendb.processor.plan.DefaultOperatorFactory {
+	{method}  {static} +bindCreateIndex ( context : SessionView , constructor : CreateIndexConstructor ) : Function
+	{method}  {static} +bindCreateTable ( context : SessionView , constructor : CreateTableConstructor ) : Function
+	{method}  {static} +bindDelete ( context : SessionView , constructor : DeleteConstructor ) : BiFunction
+	{method}  {static} +bindDropTable ( context : SessionView , constructor : DropTableConstructor ) : Function
+	{method}  {static} +bindIndexScan ( context : SessionView , constructor : IndexScanConstructor ) : Function
+	{method}  {static} +bindInsert ( context : SessionView , constructor : InsertConstructor ) : Function
+	{method}  {static} +bindScan ( context : SessionView , constructor : ScanConstructor ) : Function
+	{method}  {static} +bindUpdate ( context : SessionView , evaluator : ExpressionEvaluator , constructor : UpdateConstructor ) : BiFunction
+	{method} +createDelete ( node : DeletePlanNode , child : Operator ) : CommandAction
+	{method} +createFilter ( child : Operator , condition : Expr ) : Operator
+	{method} +createIndex ( node : CreateIndexPlanNode ) : CommandAction
+	{method} +createIndexScan ( node : IndexScanNode ) : Operator
+	{method} +createInsert ( node : InsertPlanNode ) : CommandAction
+	{method} +createJoin ( outer : Operator , inner : Operator , condition : Expr ) : Operator
+	{method} +createProject ( child : Operator , expressions : List ) : Operator
+	{method} +createScan ( node : TableScanNode ) : Operator
+	{method} +createSort ( child : Operator , keyIndex : int , ascending : boolean ) : Operator
+	{method} +createTable ( node : CreateTablePlanNode ) : CommandAction
+	{method} +createUpdate ( node : UpdatePlanNode , child : Operator ) : CommandAction
+	{method} +dropTable ( node : DropTablePlanNode ) : CommandAction
+	{method} +setSubqueryRunner ( runner : SubqueryRunner ) : void
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$CreateIndexConstructor {
+	{method}  {abstract} +create ( context : SessionView , node : CreateIndexPlanNode ) : CommandAction
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$CreateTableConstructor {
+	{method}  {abstract} +create ( context : SessionView , node : CreateTablePlanNode ) : CommandAction
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$DeleteConstructor {
+	{method}  {abstract} +create ( context : SessionView , child : Operator , table : String ) : DMLOperator
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$DropTableConstructor {
+	{method}  {abstract} +create ( context : SessionView , node : DropTablePlanNode ) : CommandAction
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$IndexScanConstructor {
+	{method}  {abstract} +create ( context : SessionView , table : String , alias : String , descriptor : IndexScanDescriptor ) : Operator
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$InsertConstructor {
+	{method}  {abstract} +create ( table : String , values : List , context : SessionView ) : DMLOperator
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$ScanConstructor {
+	{method}  {abstract} +create ( context : SessionView , table : String , alias : String ) : Operator
+}
+
+
+interface org.rafendb.processor.plan.DefaultOperatorFactory$UpdateConstructor {
+	{method}  {abstract} +create ( table : String , column : ColumnRef , value : Expr , child : Operator , evaluator : ExpressionEvaluator , context : SessionView ) : DMLOperator
+}
+
+
 class org.rafendb.processor.plan.DefaultPlanTranslator {
 	{method} +translate ( plan : QueryPlan ) : ExecutionPlan
 }
@@ -20,7 +85,9 @@ interface org.rafendb.processor.plan.OperatorFactory {
 	{method}  {abstract} +createProject ( child : Operator , expressions : List ) : Operator
 	{method}  {abstract} +createScan ( node : TableScanNode ) : Operator
 	{method}  {abstract} +createSort ( child : Operator , keyIndex : int , ascending : boolean ) : Operator
+	{method}  {abstract} +createTable ( node : CreateTablePlanNode ) : CommandAction
 	{method}  {abstract} +createUpdate ( node : UpdatePlanNode , child : Operator ) : CommandAction
+	{method}  {abstract} +dropTable ( node : DropTablePlanNode ) : CommandAction
 }
 
 
@@ -45,9 +112,24 @@ enum org.rafendb.processor.plan.command.CreateIndexPlanNode$IndexKind {
 }
 
 
+class org.rafendb.processor.plan.command.CreateTablePlanNode {
+	{method} +children () : List
+	{method} +describe () : String
+	{method} +schema () : TableSchema
+}
+
+
 class org.rafendb.processor.plan.command.DeletePlanNode {
 	{method} +children () : List
 	{method} +condition () : Optional
+	{method} +describe () : String
+	{method} +table () : String
+}
+
+
+class org.rafendb.processor.plan.command.DropTablePlanNode {
+	{method} +cascade () : boolean
+	{method} +children () : List
 	{method} +describe () : String
 	{method} +table () : String
 }
@@ -87,6 +169,7 @@ class org.rafendb.processor.plan.command.UpdatePlanNode {
 
 
 
+org.rafendb.processor.plan.DefaultOperatorFactory ..|>  org.rafendb.processor.plan.OperatorFactory
 org.rafendb.processor.plan.DefaultPlanTranslator -->  org.rafendb.processor.plan.OperatorFactory : factory
 org.rafendb.processor.plan.DefaultPlanTranslator ..|>  org.rafendb.processor.plan.PlanTranslator
 org.rafendb.processor.plan.command.CreateIndexPlanNode *--  org.rafendb.processor.plan.command.CreateIndexPlanNode$IndexKind : kind
