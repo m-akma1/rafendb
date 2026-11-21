@@ -143,8 +143,9 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
             }
             throw failure;
         }
-        txns.transition(tx, TxStatus.COMMITTED);
+        // Publish the final status only after protocol cleanup.
         protocol.release(tx, TxStatus.COMMITTED);
+        txns.transition(tx, TxStatus.COMMITTED);
         return new TxResult(TxStatus.COMMITTED, "");
     }
 
@@ -178,8 +179,8 @@ public final class FrmBridge implements ConcurrencyLogging, ConcurrencyMaintenan
             if (!rolledBack) {
                 throw new ConcurrencyInternalException("rollback of " + tx + " failed");
             }
-            txns.transition(tx, TxStatus.ABORTED);
             protocol.release(tx, TxStatus.ABORTED);
+            txns.transition(tx, TxStatus.ABORTED);
             rollbackLocks.remove(tx, rollbackLock);
             return new TxResult(TxStatus.ABORTED, "");
         }

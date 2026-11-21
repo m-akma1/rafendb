@@ -15,6 +15,7 @@ final class FakeProtocol implements Protocol {
     private final List<String> calls;
     private final TransactionManager txns;
     boolean failReset;
+    Runnable beforeRelease = () -> {};
 
     FakeProtocol(List<String> calls, TransactionManager txns) {
         this.calls = calls;
@@ -43,6 +44,7 @@ final class FakeProtocol implements Protocol {
 
     @Override
     public void release(TxId tx, TxStatus outcome) {
+        beforeRelease.run();
         calls.add("release " + tx + " " + outcome + " [" + txns.status(tx) + "]");
     }
 
