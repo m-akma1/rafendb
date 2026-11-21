@@ -1,14 +1,20 @@
 package org.rafendb.engine;
 
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ProtocolType;
 import org.rafendb.api.processor.QueryProcessor;
+import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
 import org.rafendb.api.storage.WalSync;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.mock.processor.MockQueryProcessor;
+import org.rafendb.recovery.FRManager;
+import org.rafendb.recovery.log.Logger;
 import org.rafendb.storage.StorageManagerImpl;
 import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
@@ -18,38 +24,29 @@ import org.rafendb.storage.record.RecordSerializer;
 import org.rafendb.storage.seed.SampleDatabaseLoader;
 
 /**
- * Composition root: builds the components, wires them together and hands the {@link
- * QueryProcessor} to the server. For now only the mock QP is wired; real components and {@code
- * --mock} flags are added here once they exist.
+ * Builds component implementations and owns their startup order. The server currently uses
+ * {@link #withMocks()}; the standalone SM driver uses {@link #storageDriver(Path, int)} for real
+ * storage and recovery. The client only connects over sockets and never opens database files.
  */
 public final class Engine {
     /*
-     * TODO(QP1): real wiring, after PR #55 (FRM) and PR #54 (QO) are merged.
+     * TODO(QP1): connect ServerMain to the real QP, QO and CCM. The persistent SM driver's
+     * resource graph below is already available, but does not start a server or manage sessions.
      *
-     * Entry point: Engine.start(EngineConfig) and Engine.close(). EngineConfig holds dataDir,
-     * mocks (Set<Component>, from --mock), concurrency (ProtocolType), bufferFrames,
-     * seedSampleData and drainTimeout. ServerMain and the driver kit build it from their flags.
+     * The real server must start in this order:
+     *  1. Lock the database directory so two processes cannot mutate the same files.
+     *  2. Open the persistent WAL and storage, injecting that WAL's forceThrough into SM.
+     *     storageDriver() already loads the catalog and initializes indexes before recovery.
+     *  3. Run crash recovery; reject client admission if recovery fails.
+     *  4. Initialize the configured CCM protocol with recovered transaction/logical timestamp
+     *     high-water marks. Connect FRM checkpoint admission control to this same CCM.
+     *  5. If sample data is requested, load it exclusively with a logged bootstrap transaction;
+     *     its caller must commit or roll back, and handle unlogged DDL on failure.
+     *  6. Build QO over this storage's metadata, then QP over the shared QO, SM, CCM and FRM.
+     *  7. Accept clients and give each its own QP session. Announce the actual CCM protocol.
      *
-     * start, in this order:
-     *  1. Lock dataDir/.lock with FileChannel.tryLock; refuse a second engine on the same data.
-     *  2. SM: Engine.storage(dataDir, bufferFrames, walHolder). walHolder is a late-bound
-     *     WalSync, because FRM needs SM and SM needs FRM for forceThrough.
-     *  3. FRM: new FRManager(new Logger(walPath), storage), bind walHolder, recoverFromCrash().
-     *     With #55, FRM also takes the ConcurrencyControl for quiescent checkpoints, while CCM
-     *     takes FRM: a second cycle that needs a setter or late binding from FRM or CCM.
-     *  4. CCM: new ConcurrencyControlManager(new TransactionManager(), protocol, frm), then
-     *     initializeAfterRecovery(info). FRM does not yet report RecoveryInfo (highest tx id
-     *     and timestamp in the log); without it, tx ids restart at 1 and may collide.
-     *  5. Seed: with #55, loadSampleDatabase(logInsert) runs inside a bootstrap transaction
-     *     that the engine begins, logs each INSERT through, and commits or rolls back.
-     *  6. QO: with #54, new QueryOptimizerImpl(parser, binder(catalog), joinOptimizer(storage),
-     *     planBuilder), one per session unless it is thread-safe.
-     *  7. QP: the real QueryProcessor once it exists; MockQueryProcessor until then.
-     *  8. Print one line per component: real or mock.
-     *
-     * close, in reverse: ccm.pauseNewTransactions() and awaitNoActive(drainTimeout), optional
-     * checkpoint (decision D3), storage.close(), frm.close(), release the lock.
-     *
+     * Shutdown must stop new transactions, wait for active work to finish, then close storage
+     * before WAL and release the directory lock. Client history/config (--home) stays separate.
      */
 
     private final QueryProcessor processor;
@@ -92,6 +89,65 @@ public final class Engine {
         catalog.load();
         storage.initializeIndexes();
         return storage;
+    }
+
+    /**
+     * Opens the standalone storage driver's persistent data and WAL, exclusively, and recovers
+     * before returning. This does not start the server or initialize its component graph.
+     */
+    public static DriverStorage storageDriver(Path directory, int bufferFrames) throws Exception {
+        Files.createDirectories(directory);
+        FileChannel lockFile =
+                FileChannel.open(
+                        directory.resolve(".lock"),
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE);
+        Logger logger = null;
+        StorageManager storage = null;
+        try {
+            if (lockFile.tryLock() == null) {
+                throw new IllegalStateException(
+                        "database directory is already in use: " + directory);
+            }
+            logger = new Logger(directory.resolve("wal.log"));
+            storage = storage(directory, bufferFrames, logger);
+            FRManager recovery = new FRManager(logger, storage);
+            if (!recovery.recoverFromCrash()) {
+                throw new StorageInternalException("storage driver crash recovery failed");
+            }
+            storage.flush();
+            return new DriverStorage(
+                    storage, recovery, logger.getHighestTransactionId(), logger, lockFile);
+        } catch (Exception failure) {
+            for (AutoCloseable resource : new AutoCloseable[] {storage, logger, lockFile}) {
+                if (resource != null) {
+                    try {
+                        resource.close();
+                    } catch (Exception cleanup) {
+                        failure.addSuppressed(cleanup);
+                    }
+                }
+            }
+            throw failure;
+        }
+    }
+
+    /** Resources of one exclusive driver run; closes storage before its WAL and directory lock. */
+    public record DriverStorage(
+            StorageManager storage,
+            RecoveryManager recovery,
+            long maxTransactionId,
+            AutoCloseable wal,
+            FileChannel lockFile)
+            implements AutoCloseable {
+        @Override
+        public void close() throws Exception {
+            try (lockFile;
+                    wal;
+                    storage) {
+                // Resources close in reverse order, including when a flush fails.
+            }
+        }
     }
 
     /**

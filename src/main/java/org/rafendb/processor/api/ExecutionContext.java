@@ -2,7 +2,7 @@ package org.rafendb.processor.api;
 
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.recovery.RecoveryManager;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageQuery;
 
 /**
  * Provide the execution environment such as dependency to SessionContext, CCM, SM, and FRM
@@ -15,7 +15,7 @@ import org.rafendb.api.storage.StorageManager;
 public class ExecutionContext {
     private final SessionContext sContext;
     private final ConcurrencyControl ccm;
-    private final StorageManager sm;
+    private final StorageQuery sm;
     private final RecoveryManager frm;
 
     /**
@@ -28,10 +28,7 @@ public class ExecutionContext {
      * @param frm the recovery manager component
      */
     public ExecutionContext(
-            SessionContext sContext,
-            ConcurrencyControl ccm,
-            StorageManager sm,
-            RecoveryManager frm) {
+            SessionContext sContext, ConcurrencyControl ccm, StorageQuery sm, RecoveryManager frm) {
         this.sContext = sContext;
         this.ccm = ccm;
         this.sm = sm;
@@ -61,7 +58,7 @@ public class ExecutionContext {
      *
      * @return the storage manager component
      */
-    public StorageManager getStorageManager() {
+    public StorageQuery getStorageManager() {
         return this.sm;
     }
 

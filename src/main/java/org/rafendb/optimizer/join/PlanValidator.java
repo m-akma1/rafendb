@@ -5,7 +5,7 @@ import static org.rafendb.optimizer.join.ColumnLayouts.outputColumns;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.OptimizerInternalException.CostEstimationException;
 import org.rafendb.common.expr.Expr;
 import org.rafendb.common.plan.*;
@@ -15,11 +15,11 @@ import org.rafendb.common.plan.*;
  * Uses shared layout and index rules. It does not bind names or check expression types.
  */
 final class PlanValidator {
-    private final StorageManager storage;
+    private final StorageMetadata storage;
     private final AccessPathOptimizer access;
 
     /** Generated and incoming index scans must follow the same eligibility rules. */
-    PlanValidator(StorageManager storage, AccessPathOptimizer access) {
+    PlanValidator(StorageMetadata storage, AccessPathOptimizer access) {
         this.storage = Objects.requireNonNull(storage, "storage");
         this.access = Objects.requireNonNull(access, "access");
     }

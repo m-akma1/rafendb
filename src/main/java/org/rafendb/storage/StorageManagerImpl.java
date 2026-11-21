@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.ToLongFunction;
 import org.rafendb.api.storage.RecordCursor;
 import org.rafendb.api.storage.StorageManager;
@@ -18,6 +19,7 @@ import org.rafendb.common.schema.TableStats;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
+import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.type.Value;
 import org.rafendb.storage.buffer.BufferManager;
 import org.rafendb.storage.catalog.CatalogManager;
@@ -81,6 +83,39 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized TableSchema getSchema(String table) {
         ensureOpen();
         return catalog.getSchema(table);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized UUID getTableGeneration(String table) {
+        ensureOpen();
+        return catalog.getTableGeneration(table);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized byte[] encodeRow(String table, Row row) {
+        ensureOpen();
+        Objects.requireNonNull(row, "row");
+        TableSchema schema = catalog.getSchema(table);
+        try {
+            return serializer.serialize(row, schema);
+        } catch (IllegalArgumentException e) {
+            throw new StorageRuntimeException("cannot encode row for " + table, e);
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized Row decodeRow(String table, byte[] image) throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(image, "image");
+        TableSchema schema = catalog.getSchema(table);
+        try {
+            return serializer.deserialize(ByteBuffer.wrap(image), schema);
+        } catch (IllegalArgumentException e) {
+            throw new StorageInternalException("invalid row image for " + table, e);
+        }
     }
 
     /** {@inheritDoc} */
@@ -186,9 +221,7 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized Rid reserveRid(String table, Row row) throws StorageInternalException {
         ensureOpen();
         Objects.requireNonNull(row, "row");
-        TableSchema schema = catalog.getSchema(table);
-        catalog.validateRow(table, row);
-        int size = serializer.encodedSize(row, schema);
+        int size = encodeRow(table, row).length;
         if (size > maxRecordSize()) {
             throw new StorageRuntimeException("row is too large for one block: " + table);
         }
@@ -240,8 +273,7 @@ public class StorageManagerImpl implements StorageManager {
         ensureOpen();
         Objects.requireNonNull(rid, "rid");
         Objects.requireNonNull(row, "row");
-        TableSchema schema = catalog.getSchema(table);
-        validateAsInternal(table, row);
+        byte[] bytes = encodeAsInternal(table, row);
         String file = catalog.tableFile(table);
         long blockCount = blocks.size(file);
         if (rid.block() >= blockCount) {
@@ -255,7 +287,7 @@ public class StorageManagerImpl implements StorageManager {
                     || page.slotStatus(rid.slot()) != SlottedPage.SlotStatus.RESERVED) {
                 throw new StorageInternalException("not a pending reservation: " + rid);
             }
-            pageInsert(page, rid.slot(), serializer.serialize(row, schema));
+            pageInsert(page, rid.slot(), bytes);
             try {
                 indexes.onInsert(table, rid, row, lsn);
             } catch (StorageInternalException | RuntimeException e) {
@@ -278,7 +310,7 @@ public class StorageManagerImpl implements StorageManager {
         Objects.requireNonNull(rid, "rid");
         Objects.requireNonNull(row, "row");
         TableSchema schema = catalog.getSchema(table);
-        catalog.validateRow(table, row);
+        byte[] bytes = encodeRow(table, row);
         String file = catalog.tableFile(table);
         long blockCount = blocks.size(file);
         if (rid.block() >= blockCount) {
@@ -293,7 +325,7 @@ public class StorageManagerImpl implements StorageManager {
                 throw new StorageInternalException("no live record at " + rid);
             }
             Row before = serializer.deserialize(ByteBuffer.wrap(old.get()), schema);
-            pageUpdate(page, rid.slot(), serializer.serialize(row, schema));
+            pageUpdate(page, rid.slot(), bytes);
             try {
                 indexes.onUpdate(table, rid, before, row, lsn);
             } catch (StorageInternalException | RuntimeException e) {
@@ -414,8 +446,7 @@ public class StorageManagerImpl implements StorageManager {
         String file = catalog.tableFile(table);
         byte[] bytes = null;
         if (image.isPresent()) {
-            validateAsInternal(table, image.get());
-            bytes = serializer.serialize(image.get(), schema);
+            bytes = encodeAsInternal(table, image.get());
         }
         catalog.persistAllocation(table, rid);
         if (image.isPresent()) ensureBlocks(file, rid.block());
@@ -502,6 +533,14 @@ public class StorageManagerImpl implements StorageManager {
     public synchronized void loadSampleDatabase() throws StorageInternalException {
         ensureOpen();
         samples.load(this);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized void loadSampleDatabase(ToLongFunction<ChangeRecord> logInsert)
+            throws StorageInternalException {
+        ensureOpen();
+        samples.load(this, Objects.requireNonNull(logInsert, "logInsert"));
     }
 
     /**
@@ -592,10 +631,10 @@ public class StorageManagerImpl implements StorageManager {
         }
     }
 
-    /** Re-reports a client-side validation failure as the internal type some methods need. */
-    private void validateAsInternal(String table, Row row) throws StorageInternalException {
+    /** Encodes recovery/insert images while mapping invalid rows to the contract's internal error. */
+    private byte[] encodeAsInternal(String table, Row row) throws StorageInternalException {
         try {
-            catalog.validateRow(table, row);
+            return encodeRow(table, row);
         } catch (StorageRuntimeException e) {
             throw new StorageInternalException(e.getMessage(), e);
         }
