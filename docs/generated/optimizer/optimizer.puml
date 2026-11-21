@@ -5,6 +5,13 @@ hide empty members
 skinparam linetype ortho
 
 
+class org.rafendb.optimizer.QueryOptimizerImpl {
+	{method} +explain ( plan : QueryPlan ) : String
+	{method} +optimize ( bound : ParsedQuery ) : QueryPlan
+	{method} +parse ( sql : String ) : ParsedQuery
+}
+
+
 interface org.rafendb.optimizer.binder.Binder {
 	{method}  {abstract} +bind ( parsed : ParsedQuery ) : ParsedQuery
 }
@@ -13,11 +20,14 @@ interface org.rafendb.optimizer.binder.Binder {
 class org.rafendb.optimizer.binder.QueryBinder {
 	{method} +bind ( parsed : ParsedQuery ) : ParsedQuery
 	{method} +bind ( query : SelectQuery ) : SelectQuery
+	{method} +catalog () : Catalog
 }
 
 
 class org.rafendb.optimizer.catalog.CachingCatalog {
+	{method} +beginStatement () : void
 	{method} +getSchema ( table : String ) : TableSchema
+	{method} +invalidateAll () : void
 	{method} +listIndexes ( table : String ) : List
 	{method} +listTables () : List
 }
@@ -28,6 +38,11 @@ interface org.rafendb.optimizer.catalog.Catalog {
 	{method}  {abstract} +getStats ( table : String ) : TableStats
 	{method}  {abstract} +listIndexes ( table : String ) : List
 	{method}  {abstract} +listTables () : List
+}
+
+
+interface org.rafendb.optimizer.catalog.StatementScopedCatalog {
+	{method}  {abstract} +beginStatement () : void
 }
 
 
@@ -73,6 +88,43 @@ class org.rafendb.optimizer.cost.StatsCostModel {
 }
 
 
+class org.rafendb.optimizer.driver.OptimizerDriver {
+	{method}  {static} +main ( args : String[] ) : void
+}
+
+
+enum org.rafendb.optimizer.driver.ScenarioOutcome {
+	{field} +SYNTAX_ERROR
+	{field} +VALID
+	{field} +VALIDATION_ERROR
+}
+
+
+class org.rafendb.optimizer.driver.ScenarioResult {
+	{method} +actual () : ScenarioOutcome
+	{method} +detail () : String
+	{method} +passed () : boolean
+	{method} +scenario () : TestScenario
+}
+
+
+class org.rafendb.optimizer.driver.ScenarioRunner {
+	{method} +run ( scenario : TestScenario ) : ScenarioResult
+}
+
+
+class org.rafendb.optimizer.driver.TestScenario {
+	{method} +expected () : ScenarioOutcome
+	{method} +name () : String
+	{method} +sql () : String
+}
+
+
+class org.rafendb.optimizer.explain.PlanExplainer {
+	{method}  {static} +explain ( plan : QueryPlan ) : String
+}
+
+
 class org.rafendb.optimizer.join.AccessPathOptimizer {
 	{method} +generateCandidates ( root : PlanNode ) : List
 }
@@ -101,7 +153,7 @@ enum org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode {
 
 
 class org.rafendb.optimizer.join.JoinOptimizer {
-	{method} +generateCandidates ( root : PlanNode , storage : StorageManager ) : List
+	{method} +generateCandidates ( root : PlanNode , storage : StorageMetadata ) : List
 	{method} +normalize ( root : PlanNode ) : PlanNode
 }
 
@@ -118,6 +170,16 @@ class org.rafendb.optimizer.lexer.TokenizerImpl {
 
 class org.rafendb.optimizer.parser.QueryParser {
 	{method} +parse ( sql : String ) : ParsedQuery
+}
+
+
+class org.rafendb.optimizer.plan.InitialPlanBuilder {
+	{method} +build ( query : SelectQuery ) : QueryPlan
+}
+
+
+class org.rafendb.optimizer.rewrite.PlanRewriter {
+	{method} +rewrite ( root : PlanNode ) : PlanNode
 }
 
 
@@ -140,14 +202,28 @@ class org.rafendb.optimizer.rewrite.SelectionPushdownRule {
 
 
 
+org.rafendb.optimizer.QueryOptimizerImpl *--  org.rafendb.optimizer.binder.QueryBinder : binder
+org.rafendb.optimizer.QueryOptimizerImpl *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer : optimizer
+org.rafendb.optimizer.QueryOptimizerImpl *--  org.rafendb.optimizer.parser.QueryParser : parser
+org.rafendb.optimizer.QueryOptimizerImpl *--  org.rafendb.optimizer.plan.InitialPlanBuilder : planBuilder
+org.rafendb.optimizer.QueryOptimizerImpl *--  org.rafendb.optimizer.rewrite.PlanRewriter : rewriter
 org.rafendb.optimizer.binder.QueryBinder *--  org.rafendb.optimizer.catalog.Catalog : catalog
 org.rafendb.optimizer.binder.QueryBinder ..|>  org.rafendb.optimizer.binder.Binder
 org.rafendb.optimizer.catalog.CachingCatalog *--  org.rafendb.optimizer.catalog.Catalog : delegate
-org.rafendb.optimizer.catalog.CachingCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
+org.rafendb.optimizer.catalog.CachingCatalog ..|>  org.rafendb.optimizer.catalog.StatementScopedCatalog
+org.rafendb.optimizer.catalog.StatementScopedCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
 org.rafendb.optimizer.catalog.StorageManagerCatalog ..|>  org.rafendb.optimizer.catalog.Catalog
 org.rafendb.optimizer.cost.StatsCostModel *--  org.rafendb.optimizer.catalog.Catalog : catalog
 org.rafendb.optimizer.cost.StatsCostModel *--  org.rafendb.optimizer.cost.CostParameters : parameters
 org.rafendb.optimizer.cost.StatsCostModel ..|>  org.rafendb.optimizer.cost.CostModel
+org.rafendb.optimizer.driver.OptimizerDriver -->  org.rafendb.optimizer.driver.ScenarioRunner : runner
+org.rafendb.optimizer.driver.ScenarioResult *--  org.rafendb.optimizer.driver.ScenarioOutcome : actual
+org.rafendb.optimizer.driver.ScenarioResult *--  org.rafendb.optimizer.driver.TestScenario : scenario
+org.rafendb.optimizer.driver.ScenarioRunner *--  org.rafendb.optimizer.binder.QueryBinder : binder
+org.rafendb.optimizer.driver.ScenarioRunner *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer : optimizer
+org.rafendb.optimizer.driver.ScenarioRunner *--  org.rafendb.optimizer.parser.QueryParser : parser
+org.rafendb.optimizer.driver.ScenarioRunner *--  org.rafendb.optimizer.plan.InitialPlanBuilder : planBuilder
+org.rafendb.optimizer.driver.TestScenario *--  org.rafendb.optimizer.driver.ScenarioOutcome : expected
 org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.cost.CostModel : costs
 org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.AccessPathOptimizer : access
 org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig : config
@@ -155,6 +231,8 @@ org.rafendb.optimizer.join.JoinAccessPathOptimizer *--  org.rafendb.optimizer.jo
 org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchConfig *--  org.rafendb.optimizer.join.JoinAccessPathOptimizer$SearchMode : mode
 org.rafendb.optimizer.lexer.TokenizerImpl ..|>  org.rafendb.optimizer.lexer.Tokenizer
 org.rafendb.optimizer.parser.QueryParser *--  org.rafendb.optimizer.lexer.Tokenizer : tokenizer
+org.rafendb.optimizer.plan.InitialPlanBuilder *--  org.rafendb.optimizer.cost.CostModel : model
+org.rafendb.optimizer.rewrite.PlanRewriter "1" o-- "0..*"  org.rafendb.optimizer.rewrite.RewriteRule : rules
 org.rafendb.optimizer.rewrite.ProjectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 org.rafendb.optimizer.rewrite.SelectionPushdownRule ..|>  org.rafendb.optimizer.rewrite.RewriteRule
 
