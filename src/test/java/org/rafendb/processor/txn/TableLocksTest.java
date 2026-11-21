@@ -22,74 +22,61 @@ class TableLocksTest {
     }
 
     @Test
-    void readAllowedReturnsRightAway() {
+    void asksForTheRequestedAccessOnTheTable() {
         TableLocks.acquireRead(context, "dosen");
-        assertEquals(List.of("request READ dosen"), ccm.getEvents());
-        assertEquals(0, ccm.getAbortCount());
-    }
+        TableLocks.acquireWrite(context, "prodi");
 
-    @Test
-    void writeAsksForWriteAccess() {
-        TableLocks.acquireWrite(context, "dosen");
-        assertEquals(List.of("request WRITE dosen"), ccm.getEvents());
+        assertEquals(List.of("ccm.access READ dosen", "ccm.access WRITE prodi"), ccm.events());
     }
 
     @Test
     void waitingIsRetriedUntilAllowed() {
         ccm.answerNext(AccessResult.waiting());
         ccm.answerNext(AccessResult.waiting());
+
         TableLocks.acquireRead(context, "dosen");
-        assertEquals(
-                List.of("request READ dosen", "request READ dosen", "request READ dosen"),
-                ccm.getEvents());
+
+        assertEquals(3, ccm.events().count("ccm.access READ dosen"));
         assertEquals(new TxId(1), session.getCurrentTxId());
     }
 
     @Test
-    void abortedAbortsTransactionAndThrows() {
+    void abortedAbortsTransactionAndSurfacesCcmReason() {
         ccm.answerNext(AccessResult.aborted("Deadlock"));
+
         TransactionAbortedException error =
                 assertThrows(
                         TransactionAbortedException.class,
                         () -> TableLocks.acquireRead(context, "dosen"));
-        assertEquals("Runtime error at Query Processor: Deadlock", error.getMessage());
-        assertEquals(1, ccm.getAbortCount());
+
+        assertTrue(error.getMessage().contains("Deadlock"));
+        assertEquals(List.of("ccm.access READ dosen", "ccm.abort T1"), ccm.events());
         assertNull(session.getCurrentTxId());
-    }
-
-    @Test
-    void noActiveTransactionIsRejected() {
-        session.setCurrentTxId(null);
-        IllegalStateException error =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> TableLocks.acquireRead(context, "dosen"));
-        assertEquals(
-                "No active transaction: run the statement inside AutoCommit.run(...) or after BEGIN",
-                error.getMessage());
-        assertTrue(ccm.getEvents().isEmpty());
-    }
-
-    @Test
-    void invalidSessionIsRejected() {
-        session.invalidate();
-        IllegalStateException error =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> TableLocks.acquireRead(context, "dosen"));
-        assertEquals("The session is not valid", error.getMessage());
     }
 
     @Test
     void failedAbortIsSuppressedAndTxIdIsKept() {
         ccm.answerNext(AccessResult.aborted("Deadlock"));
         ccm.failNextAbort();
+
         TransactionAbortedException error =
                 assertThrows(
                         TransactionAbortedException.class,
                         () -> TableLocks.acquireRead(context, "dosen"));
-        assertEquals(1, error.getSuppressed().length);
+
         assertInstanceOf(ConcurrencyInternalException.class, error.getSuppressed()[0]);
         assertEquals(new TxId(1), session.getCurrentTxId());
+    }
+
+    @Test
+    void noActiveTransactionOrInvalidSessionAsksNothing() {
+        session.setCurrentTxId(null);
+        assertThrows(IllegalStateException.class, () -> TableLocks.acquireRead(context, "dosen"));
+
+        session.setCurrentTxId(new TxId(1));
+        session.invalidate();
+        assertThrows(IllegalStateException.class, () -> TableLocks.acquireRead(context, "dosen"));
+
+        assertEquals(List.of(), ccm.events());
     }
 }

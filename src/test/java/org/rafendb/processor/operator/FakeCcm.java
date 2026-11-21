@@ -1,7 +1,9 @@
 package org.rafendb.processor.operator;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import org.rafendb.api.concurrency.ConcurrencyControl;
 import org.rafendb.api.concurrency.ConcurrencyLogging;
@@ -16,21 +18,53 @@ import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 
 /**
- * CCM palsu buat test: jawaban requestAccess bisa diatur, nyatet urutan kejadian (request, log,
- * abort), LSN naik terus, dan log bisa disuruh gagal. Method lain ga dipakai.
+ * CCM palsu buat test QP. Jawaban begin/requestAccess/commit/abort bisa diatur, LSN mulai dari 100,
+ * dan tiap panggilan dicatat ke {@link EventLog}:
+ *
+ * <pre>
+ * ccm.begin | ccm.access READ|WRITE &lt;table&gt; | ccm.log INSERT|UPDATE|DELETE lsn=N
+ * ccm.log (fails) | ccm.commit T1 | ccm.abort T1
+ * </pre>
  */
 public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
-    private final List<String> events = new ArrayList<>();
-    private final List<AccessResult> answers = new ArrayList<>();
+    private final EventLog events;
+    private final Deque<AccessResult> accessAnswers = new ArrayDeque<>();
     private final List<ChangeRecord> logged = new ArrayList<>();
-    private long nextLsn = 1;
-    private int abortCount;
+    private long nextLsn = 100;
     private boolean failNextLog;
     private boolean failNextAbort;
+    private TxId beginResult = new TxId(1);
+    private TxResult commitResult = new TxResult(TxStatus.COMMITTED, "");
+    private TxResult abortResult = new TxResult(TxStatus.ABORTED, "");
 
-    /** Atur jawaban requestAccess berikutnya. Kalau antriannya kosong, jawabannya ALLOWED. */
+    /** CCM palsu dengan log kejadiannya sendiri. */
+    public FakeCcm() {
+        this(new EventLog());
+    }
+
+    /** CCM palsu yang nyatet ke log bersama (misalnya punya FakeStorage). */
+    public FakeCcm(EventLog events) {
+        this.events = events;
+    }
+
+    /** Antrikan jawaban requestAccess berikutnya. Kalau antriannya kosong, jawabannya ALLOWED. */
     public void answerNext(AccessResult answer) {
-        answers.add(answer);
+        accessAnswers.add(answer);
+    }
+
+    /** Atur TxId yang dibalikin begin(); boleh null. */
+    public void beginReturns(TxId tx) {
+        beginResult = tx;
+    }
+
+    /** Atur hasil commit(). */
+    public void commitReturns(TxResult result) {
+        commitResult = result;
+    }
+
+    /** Atur hasil abort(). */
+    public void abortReturns(TxResult result) {
+        abortResult = result;
     }
 
     /** Bikin logChange berikutnya gagal pakai ConcurrencyInternalException. */
@@ -43,62 +77,61 @@ public final class FakeCcm implements ConcurrencyControl, ConcurrencyLogging {
         failNextAbort = true;
     }
 
-    /** Urutan kejadian, misalnya "request READ dosen" atau "abort T1". */
-    public List<String> getEvents() {
+    public EventLog events() {
         return events;
     }
 
-    /** Berapa kali abort dipanggil. */
-    public int getAbortCount() {
-        return abortCount;
-    }
-
-    /** ChangeRecord yang berhasil di-log, urut sesuai LSN-nya (1, 2, 3, ...). */
-    public List<ChangeRecord> getLoggedChanges() {
+    /** ChangeRecord yang berhasil di-log, urut sesuai LSN-nya. */
+    public List<ChangeRecord> logged() {
         return logged;
     }
 
     @Override
-    public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
-        events.add("request " + type + " " + resource.table());
-        if (answers.isEmpty()) {
-            return AccessResult.allowed();
-        }
-        return answers.remove(0);
+    public TxId begin() {
+        events.add("ccm.begin");
+        return beginResult;
     }
 
     @Override
-    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
-        abortCount++;
-        events.add("abort " + tx);
-        if (failNextAbort) {
-            failNextAbort = false;
-            throw new ConcurrencyInternalException("Rollback failed");
-        }
-        return new TxResult(TxStatus.ABORTED, "");
+    public AccessResult requestAccess(TxId tx, AccessType type, ResourceId resource) {
+        events.add("ccm.access " + type + " " + resource.table());
+        return accessAnswers.isEmpty() ? AccessResult.allowed() : accessAnswers.poll();
     }
 
     @Override
     public long logChange(TxId tx, ChangeRecord change) throws ConcurrencyInternalException {
         if (failNextLog) {
             failNextLog = false;
-            throw new ConcurrencyInternalException("Log write failed");
+            events.add("ccm.log (fails)");
+            throw new ConcurrencyInternalException("log failed");
         }
-        events.add("log " + change.resource().table() + " " + change.resource().rid());
         logged.add(change);
-        long lsn = nextLsn;
-        nextLsn++;
+        long lsn = nextLsn++;
+        events.add("ccm.log " + kind(change) + " lsn=" + lsn);
         return lsn;
     }
 
     @Override
-    public TxId begin() {
-        throw new UnsupportedOperationException();
+    public TxResult commit(TxId tx) {
+        events.add("ccm.commit " + tx);
+        return commitResult;
     }
 
     @Override
-    public TxResult commit(TxId tx) {
-        throw new UnsupportedOperationException();
+    public TxResult abort(TxId tx) throws ConcurrencyInternalException {
+        events.add("ccm.abort " + tx);
+        if (failNextAbort) {
+            failNextAbort = false;
+            throw new ConcurrencyInternalException("rollback failed");
+        }
+        return abortResult;
+    }
+
+    private static String kind(ChangeRecord change) {
+        if (change.beforeImage().isEmpty()) {
+            return "INSERT";
+        }
+        return change.afterImage().isEmpty() ? "DELETE" : "UPDATE";
     }
 
     @Override

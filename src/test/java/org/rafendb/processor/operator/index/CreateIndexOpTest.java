@@ -2,202 +2,84 @@ package org.rafendb.processor.operator.index;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.rafendb.api.storage.StorageQuery;
-import org.rafendb.common.error.ConcurrencyInternalException;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.error.StorageRuntimeException;
 import org.rafendb.common.expr.Expr;
+import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.IndexType;
-import org.rafendb.mock.concurrency.MockConcurrencyControl;
-import org.rafendb.mock.storage.MockStorageManager;
+import org.rafendb.common.schema.TableSchema;
+import org.rafendb.common.txn.AccessResult;
+import org.rafendb.common.txn.TxId;
+import org.rafendb.common.type.DataType;
 import org.rafendb.processor.api.ExecutionContext;
 import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.QueryExecutionException;
-import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.error.TransactionAbortedException;
+import org.rafendb.processor.operator.EventLog;
+import org.rafendb.processor.operator.FakeCcm;
+import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.plan.command.CreateIndexPlanNode;
-import org.rafendb.processor.txn.AutoCommit;
-import org.rafendb.processor.txn.TransactionCoordinator;
+import org.rafendb.processor.plan.command.CreateIndexPlanNode.IndexKind;
 
 class CreateIndexOpTest {
-    private MockStorageManager delegate;
-    private StorageQuery storage;
-    private MockConcurrencyControl ccm;
-    private TransactionCoordinator coordinator;
-    private ExecutionContext context;
+    private static final TableSchema MAHASISWA =
+            new TableSchema(
+                    "mahasiswa", List.of(new Column("nama", DataType.VARCHAR, 50, true, false)));
 
-    private final List<IndexInfo> createdIndexes = new ArrayList<>();
-    private StorageInternalException injectedFailure;
+    private final EventLog events = new EventLog();
+    private final FakeCcm ccm = new FakeCcm(events);
+    private final FakeStorage storage = new FakeStorage(MAHASISWA, List.of(), events);
+    private final SessionContext session = new SessionContext(1);
+    private final ExecutionContext context = new ExecutionContext(session, ccm, storage, null);
 
-    @BeforeEach
-    void setUp() {
-        delegate = new MockStorageManager();
-        ccm = new MockConcurrencyControl();
-
-        createdIndexes.clear();
-        injectedFailure = null;
-
-        storage =
-                (StorageQuery)
-                        Proxy.newProxyInstance(
-                                StorageQuery.class.getClassLoader(),
-                                new Class<?>[] {StorageQuery.class},
-                                (proxy, method, args) -> {
-                                    if (method.getName().equals("createIndex")) {
-
-                                        if (injectedFailure != null) {
-                                            throw injectedFailure;
-                                        }
-
-                                        IndexInfo index = (IndexInfo) args[0];
-
-                                        try {
-                                            method.invoke(delegate, args);
-                                            createdIndexes.add(index);
-                                            return null;
-
-                                        } catch (InvocationTargetException e) {
-                                            throw e.getCause();
-                                        }
-                                    }
-
-                                    try {
-                                        return method.invoke(delegate, args);
-
-                                    } catch (InvocationTargetException e) {
-                                        throw e.getCause();
-                                    }
-                                });
-
-        SessionContext session = new SessionContext(1);
-
-        coordinator = new TransactionCoordinator(session, ccm, storage, null);
-
-        context = coordinator.getExecutionContext();
+    CreateIndexOpTest() {
+        session.setCurrentTxId(new TxId(1));
     }
 
-    @AfterEach
-    void closeStorage() throws StorageInternalException {
-        delegate.close();
+    private CreateIndexOp create(IndexKind kind) {
+        return new CreateIndexOp(
+                context,
+                new CreateIndexPlanNode(
+                        "idx_nama", "mahasiswa", new Expr.ColumnRef("mahasiswa", "nama"), kind));
     }
 
-    private CreateIndexPlanNode createNode(
-            String indexName, String columnName, CreateIndexPlanNode.IndexKind kind) {
-        return new CreateIndexPlanNode(
-                indexName, "mahasiswa", new Expr.ColumnRef("mahasiswa", columnName), kind);
+    @ParameterizedTest
+    @CsvSource({"BTREE, B_PLUS_TREE", "HASH, HASH"})
+    void locksTheTableThenAsksStorageForTheMatchingIndexType(IndexKind kind, IndexType type) {
+        assertEquals(0, create(kind).execute().affectedRows());
+
+        assertEquals(List.of("ccm.access WRITE mahasiswa", "sm.createIndex"), events);
+        assertEquals(
+                List.of(new IndexInfo("idx_nama", "mahasiswa", "nama", type)), storage.indexes());
     }
 
     @Test
-    void shouldCreateBTreeIndexSuccessfully() {
-        // Arrange
-        CreateIndexPlanNode node =
-                createNode("idx_mahasiswa_nama_btree", "nama", CreateIndexPlanNode.IndexKind.BTREE);
+    void abortedLockCreatesNothing() {
+        ccm.answerNext(AccessResult.aborted("deadlock"));
 
-        CreateIndexOp operation = new CreateIndexOp(context, node);
+        assertThrows(TransactionAbortedException.class, create(IndexKind.BTREE)::execute);
 
-        // Act
-        ExecutionPlan.CommandResult result;
-
-        try {
-            result = AutoCommit.run(coordinator, operation::execute);
-        } catch (ConcurrencyInternalException e) {
-            throw new RuntimeException(e);
-        }
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(0, result.affectedRows());
-
-        assertEquals(1, createdIndexes.size());
-
-        IndexInfo expected =
-                new IndexInfo(
-                        "idx_mahasiswa_nama_btree", "mahasiswa", "nama", IndexType.B_PLUS_TREE);
-
-        assertEquals(expected, createdIndexes.get(0));
+        assertTrue(storage.indexes().isEmpty());
     }
 
     @Test
-    void shouldCreateHashIndexSuccessfully() {
-        // Arrange
-        CreateIndexPlanNode node =
-                createNode("idx_mahasiswa_nama_hash", "nama", CreateIndexPlanNode.IndexKind.HASH);
+    void storageErrorsKeepTheirKind() {
+        StorageRuntimeException rejected = new StorageRuntimeException("unknown column");
+        storage.failOn("createIndex", 1, rejected);
+        assertSame(
+                rejected,
+                assertThrows(StorageRuntimeException.class, create(IndexKind.BTREE)::execute));
 
-        CreateIndexOp operation = new CreateIndexOp(context, node);
+        storage.failOn("createIndex", 2, new StorageInternalException("disk write failed"));
+        QueryExecutionException wrapped =
+                assertThrows(QueryExecutionException.class, create(IndexKind.BTREE)::execute);
+        assertInstanceOf(StorageInternalException.class, wrapped.getCause());
 
-        // Act
-        ExecutionPlan.CommandResult result;
-
-        try {
-            result = AutoCommit.run(coordinator, operation::execute);
-        } catch (ConcurrencyInternalException e) {
-            throw new RuntimeException(e);
-        }
-        // Assert
-        assertNotNull(result);
-        assertEquals(0, result.affectedRows());
-
-        assertEquals(1, createdIndexes.size());
-
-        IndexInfo expected =
-                new IndexInfo("idx_mahasiswa_nama_hash", "mahasiswa", "nama", IndexType.HASH);
-
-        assertEquals(expected, createdIndexes.get(0));
-    }
-
-    @Test
-    void shouldPropagateStorageRuntimeException() {
-        // Arrange
-        CreateIndexPlanNode node =
-                createNode(
-                        "idx_invalid_column",
-                        "unknown_column",
-                        CreateIndexPlanNode.IndexKind.BTREE);
-
-        CreateIndexOp operation = new CreateIndexOp(context, node);
-
-        // Act
-        StorageRuntimeException thrown =
-                assertThrows(
-                        StorageRuntimeException.class,
-                        () -> AutoCommit.run(coordinator, operation::execute));
-
-        // Assert
-        assertNotNull(thrown);
-        assertTrue(thrown.getMessage().contains("unknown column"));
-
-        assertTrue(createdIndexes.isEmpty());
-    }
-
-    @Test
-    void shouldWrapStorageInternalException() {
-        // Arrange
-        CreateIndexPlanNode node =
-                createNode(
-                        "idx_mahasiswa_nama_internal", "nama", CreateIndexPlanNode.IndexKind.BTREE);
-
-        injectedFailure = new StorageInternalException("Simulated storage failure");
-
-        CreateIndexOp operation = new CreateIndexOp(context, node);
-
-        // Act
-        QueryExecutionException thrown =
-                assertThrows(
-                        QueryExecutionException.class,
-                        () -> AutoCommit.run(coordinator, operation::execute));
-        // Assert
-        assertNotNull(thrown.getCause());
-
-        assertInstanceOf(StorageInternalException.class, thrown.getCause());
-
-        assertTrue(thrown.getCause().getMessage().contains("Simulated storage failure"));
-        assertTrue(createdIndexes.isEmpty());
+        assertTrue(storage.indexes().isEmpty());
     }
 }

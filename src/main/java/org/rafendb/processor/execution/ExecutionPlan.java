@@ -24,11 +24,14 @@ public sealed interface ExecutionPlan {
         }
     }
 
-    /** Aksi untuk satu eksekusi yang tidak aman dipakai bersamaan dan tidak boleh dijalankan dua kali. */
+    /**
+     * Aksi untuk satu eksekusi yang tidak aman dipakai bersamaan dan tidak boleh dijalankan dua kali.
+     * Penolakan eksekusi kedua dijaga di satu tempat, yaitu {@code Command} yang dibentuk
+     * {@code DefaultPlanTranslator}; aksi dari factory tidak perlu menjaganya sendiri.
+     */
     interface CommandAction {
         /**
-         * Menjalankan perintah sekali dan mengembalikan hasil yang tidak null.
-         * @throws IllegalStateException jika dipanggil lebih dari sekali
+         * Menjalankan perintah dan mengembalikan hasil yang tidak null.
          */
         CommandResult execute();
     }
