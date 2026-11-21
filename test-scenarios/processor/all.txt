@@ -1,0 +1,12 @@
+# Every QP scenario on the real components. Run from the repository root:
+#   scripts/run.sh driver processor --run=test-scenarios/processor/all.txt
+# mock-sm.test needs its own run with --mock=sm.
+test test-scenarios/processor/scan.test
+test test-scenarios/processor/filter.test
+test test-scenarios/processor/join.test
+test test-scenarios/processor/sort.test
+test test-scenarios/processor/dml.test
+test test-scenarios/processor/transaction.test
+test test-scenarios/processor/index.test
+test test-scenarios/processor/errors.test
+test test-scenarios/processor/bonus.test

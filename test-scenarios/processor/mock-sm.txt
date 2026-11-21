@@ -1,0 +1,3 @@
+# The QP scenario on the mock Storage Manager. Run from the repository root:
+#   scripts/run.sh driver processor --mock=sm --run=test-scenarios/processor/mock-sm.txt
+test test-scenarios/processor/mock-sm.test

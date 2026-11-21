@@ -1,0 +1,49 @@
+# QP-09 ORDER BY: query (without rowsort) checks the order too.
+
+query
+SELECT customer_id FROM customers WHERE customer_id > 56 ORDER BY customer_id DESC;
+----
+60
+59
+58
+57
+
+query
+SELECT customer_id FROM customers WHERE customer_id < 4 ORDER BY customer_id ASC;
+----
+1
+2
+3
+
+# Text sorts character by character, so 'Customer 10' comes before 'Customer 9'.
+query
+SELECT name FROM customers WHERE customer_id > 8 AND customer_id < 12 ORDER BY name;
+----
+Customer 10
+Customer 11
+Customer 9
+
+# Two keys: status ascending, then customer_id descending within each status.
+query
+SELECT status, customer_id FROM customers WHERE customer_id < 5 ORDER BY status, customer_id DESC;
+----
+A | 4
+A | 2
+I | 3
+I | 1
+
+query
+SELECT order_id, amount FROM orders WHERE order_id < 4 ORDER BY amount DESC;
+----
+3 | 13.0
+2 | 12.0
+1 | 11.0
+
+# Sorting a join result.
+query
+SELECT customers.name, orders.order_id FROM orders
+  JOIN customers ON orders.customer_id = customers.customer_id
+  WHERE orders.order_id > 58 ORDER BY orders.order_id DESC;
+----
+Customer 60 | 60
+Customer 59 | 59

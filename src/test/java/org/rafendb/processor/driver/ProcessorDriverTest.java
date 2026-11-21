@@ -56,6 +56,12 @@ class ProcessorDriverTest {
     }
 
     @Test
+    void theScenarioFilesPass() {
+        assertEquals(0, run("", "--run=test-scenarios/processor/all.txt"), output);
+        assertEquals(0, run("", "--mock=sm", "--run=test-scenarios/processor/mock-sm.txt"), output);
+    }
+
+    @Test
     void everyRecordKindPassesWhenTheResultMatches() throws IOException {
         Path file =
                 scenario(
