@@ -1,5 +1,5 @@
 /**
- * Selection and projection rules (QO-09, QO-10). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Heuristic plan rewrites (QO-09, QO-10). {@link PlanRewriter} applies selection pushdown and projection pushdown to a plan tree, pass after pass, until a pass changes nothing or a pass limit is reached.
  *
  * <p>Owner: G3 Query Optimizer (QO4).
  */

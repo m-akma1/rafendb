@@ -1,5 +1,5 @@
 /**
- * Plan tree printer (QO-15). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * EXPLAIN output (QO-15). {@link PlanExplainer} renders a query plan as an indented tree, one node per line, followed by the plan's total cost.
  *
  * <p>Owner: G3 Query Optimizer (QO1).
  */

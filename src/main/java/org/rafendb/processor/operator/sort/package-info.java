@@ -1,5 +1,5 @@
 /**
- * ORDER BY (QP-09). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * ORDER BY (QP-09). {@link SortOp} reads its whole child when opened, then returns the rows sorted by one key column. The sort is stable.
  *
  * <p>Owner: G1 Query Processor (QP4).
  */

@@ -1,5 +1,5 @@
 /**
- * Block nested loop, cartesian and natural join (QP-08). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Joins (QP-08). {@link BnlJoinOp} is a block nested loop join: it buffers a block of outer rows and reads the inner input once per block. Cartesian product, JOIN ... ON and NATURAL JOIN all use it; they differ only in the join condition.
  *
  * <p>Owner: G1 Query Processor (QP4).
  */

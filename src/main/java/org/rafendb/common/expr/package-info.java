@@ -1,5 +1,5 @@
 /**
- * Expression tree produced by QO (QO-04) and evaluated by QP (QP-04). TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Expression tree (QO-04, QP-04). {@link Expr} is built by the QO parser for SELECT lists, WHERE, JOIN ... ON and SET, including IN, EXISTS and scalar subqueries. QO resolves column references to offsets, and QP evaluates the tree.
  *
  * <p>Owner: QO2, QP2.
  */

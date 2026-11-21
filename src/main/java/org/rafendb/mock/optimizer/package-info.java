@@ -1,5 +1,5 @@
 /**
- * Mocks of api.optimizer. TODO: Edit dan sesuaikan deskripsi sesuai jobdesk masing-masing.
+ * Mock of {@code api.optimizer}. {@link MockQueryOptimizer} records calls and returns trivial, well-formed results ({@link MockParsedQuery}, {@link MockPlanNode}), so other components can run without the real optimizer. The subpackages hold mocks of optimizer internals.
  *
  * <p>Owner: G3 Query Optimizer.
  */
