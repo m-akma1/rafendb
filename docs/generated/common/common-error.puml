@@ -46,11 +46,13 @@ class org.rafendb.common.error.ProcessorRuntimeException {
 
 
 abstract class org.rafendb.common.error.RafenDBInternalException {
+	{method} +component () : Component
 	{method} +getMessage () : String
 }
 
 
 abstract class org.rafendb.common.error.RafenDBRuntimeException {
+	{method} +component () : Component
 	{method} +getMessage () : String
 }
 

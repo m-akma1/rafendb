@@ -19,12 +19,29 @@ class org.rafendb.common.expr.Expr$Binary {
 class org.rafendb.common.expr.Expr$ColumnRef {
 	{method} +column () : String
 	{method} +offset () : int
+	{method} +scopeDepth () : int
 	{method} +table () : String
+}
+
+
+class org.rafendb.common.expr.Expr$ExistsSubquery {
+	{method} +query () : SelectQuery
+}
+
+
+class org.rafendb.common.expr.Expr$InSubquery {
+	{method} +query () : SelectQuery
+	{method} +value () : Expr
 }
 
 
 class org.rafendb.common.expr.Expr$Literal {
 	{method} +value () : Value
+}
+
+
+class org.rafendb.common.expr.Expr$Not {
+	{method} +child () : Expr
 }
 
 
@@ -44,7 +61,13 @@ enum org.rafendb.common.expr.Expr$Op {
 	{field} +MOD
 	{field} +MUL
 	{field} +NE
+	{field} +OR
 	{field} +SUB
+}
+
+
+class org.rafendb.common.expr.Expr$ScalarSubquery {
+	{method} +query () : SelectQuery
 }
 
 
@@ -55,8 +78,14 @@ org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr : right
 org.rafendb.common.expr.Expr$Binary *--  org.rafendb.common.expr.Expr$Op : op
 org.rafendb.common.expr.Expr$Binary ..|>  org.rafendb.common.expr.Expr
 org.rafendb.common.expr.Expr$ColumnRef ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$ExistsSubquery ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$InSubquery *--  org.rafendb.common.expr.Expr : value
+org.rafendb.common.expr.Expr$InSubquery ..|>  org.rafendb.common.expr.Expr
 org.rafendb.common.expr.Expr$Literal ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$Not *--  org.rafendb.common.expr.Expr : child
+org.rafendb.common.expr.Expr$Not ..|>  org.rafendb.common.expr.Expr
 org.rafendb.common.expr.Expr$Null ..|>  org.rafendb.common.expr.Expr
+org.rafendb.common.expr.Expr$ScalarSubquery ..|>  org.rafendb.common.expr.Expr
 
 
 @enduml
