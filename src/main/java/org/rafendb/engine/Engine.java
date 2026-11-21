@@ -179,10 +179,10 @@ public final class Engine implements AutoCloseable {
         RecoveryManager frm;
         WalSync wal;
         if (mocks.contains(Component.FRM)) {
-            try (MockRecoveryManager mock = new MockRecoveryManager()) {
-                frm = mock;
-                wal = mock;
-            }
+            @SuppressWarnings("resource") // its close() does nothing
+            MockRecoveryManager mock = new MockRecoveryManager();
+            frm = mock;
+            wal = mock;
         } else {
             r.logger = new Logger(dir.resolve("wal.log"));
             wal = r.logger;
@@ -195,12 +195,12 @@ public final class Engine implements AutoCloseable {
 
         long nextTx = 1;
         if (r.logger != null) {
-            try (FRManager real = new FRManager(r.logger, r.storage)) {
-                r.frm = real;
-                frm = real;
-                if (!real.recoverFromCrash()) {
-                    throw new StartupException("Crash recovery of " + dir + " failed.");
-                }
+            // Owned by Resources and never closed by itself: closing it would close the WAL, which
+            // Resources closes after storage, on shutdown and on a failed start alike.
+            r.frm = new FRManager(r.logger, r.storage);
+            frm = r.frm;
+            if (!r.frm.recoverFromCrash()) {
+                throw new StartupException("Crash recovery of " + dir + " failed.");
             }
             r.storage.flush();
             nextTx = r.logger.getHighestTransactionId() + 1;
