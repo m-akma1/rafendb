@@ -10,7 +10,7 @@ import org.rafendb.common.expr.Expr;
 import org.rafendb.common.schema.Column;
 import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.StoredRow;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.Operator;
@@ -26,7 +26,7 @@ import org.rafendb.processor.txn.TableLocks;
  * instance buat satu eksekusi.
  */
 public final class TableScanOp implements Operator {
-    private final ExecutionContext context;
+    private final SessionView context;
     private final StorageQuery storage;
     private final String table;
     private final List<ColumnSchema> schema;
@@ -41,9 +41,9 @@ public final class TableScanOp implements Operator {
      * @throws NullPointerException kalau context, storage manager-nya, atau table null
      * @throws org.rafendb.common.error.StorageRuntimeException kalau tabelnya ga ada
      */
-    public TableScanOp(ExecutionContext context, String table, String alias) {
+    public TableScanOp(SessionView context, String table, String alias) {
         this.context = Objects.requireNonNull(context, "context");
-        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
+        this.storage = Objects.requireNonNull(context.storage(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         String qualifier = table;
         if (alias != null) {

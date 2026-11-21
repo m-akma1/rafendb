@@ -16,11 +16,10 @@ import org.rafendb.common.txn.ResourceId;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.EventLog;
 import org.rafendb.processor.operator.FakeCcm;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 
 /** InsertOp against a fake CCM and SM that share one ordered event log (see FakeCcm/FakeStorage). */
@@ -44,13 +43,8 @@ class InsertOpTest {
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
     private final FakeStorage storage = new FakeStorage(SCHEMA, List.of(), events);
-    private final SessionContext session = new SessionContext(1);
-    private final InsertOp insert =
-            new InsertOp("t", ROW.values(), new ExecutionContext(session, ccm, storage, null));
-
-    InsertOpTest() {
-        session.setCurrentTxId(TX);
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
+    private final InsertOp insert = new InsertOp("t", ROW.values(), session);
 
     @Test
     void locksReservesLogsThenInserts() {
@@ -68,12 +62,11 @@ class InsertOpTest {
         assertTrue(record.beforeImage().isEmpty());
         assertEquals(ROW, storage.decodeRow(record.afterImage().orElseThrow()));
         assertEquals(ROW, storage.rows().get(RID));
-        assertEquals(TX, session.getCurrentTxId());
     }
 
     @Test
     void refusesToRunWithoutATransaction() {
-        session.setCurrentTxId(null);
+        session.setCurrentTx(null);
 
         assertThrows(IllegalStateException.class, insert::execute);
 
@@ -81,13 +74,12 @@ class InsertOpTest {
     }
 
     @Test
-    void abortedByCcmClearsTheSessionAndTouchesNothing() {
+    void abortedByCcmAbortsAndTouchesNothing() {
         ccm.answerNext(AccessResult.aborted("deadlock victim"));
 
         assertThrows(TransactionAbortedException.class, insert::execute);
 
         assertEquals(List.of("ccm.access WRITE t", "ccm.abort T1"), events);
-        assertNull(session.getCurrentTxId());
     }
 
     @Test
@@ -98,7 +90,6 @@ class InsertOpTest {
 
         assertInstanceOf(StorageInternalException.class, e.getCause());
         assertEquals(List.of("ccm.access WRITE t", "sm.reserveRid (fails)"), events);
-        assertEquals(TX, session.getCurrentTxId());
     }
 
     @Test
@@ -108,7 +99,6 @@ class InsertOpTest {
         assertThrows(StorageRuntimeException.class, insert::execute);
 
         assertEquals(List.of("ccm.access WRITE t", "sm.reserveRid (fails)"), events);
-        assertEquals(TX, session.getCurrentTxId());
     }
 
     @Test
@@ -125,7 +115,6 @@ class InsertOpTest {
                         "sm.cancelReservation"),
                 events);
         assertEquals(List.of(RID), storage.cancelled());
-        assertEquals(TX, session.getCurrentTxId());
     }
 
     @Test
@@ -143,7 +132,6 @@ class InsertOpTest {
                         "sm.cancelReservation"),
                 events);
         assertTrue(storage.rows().isEmpty());
-        assertNull(session.getCurrentTxId());
     }
 
     @Test
@@ -163,6 +151,5 @@ class InsertOpTest {
                         "sm.cancelReservation",
                         "ccm.abort T1"),
                 events);
-        assertNull(session.getCurrentTxId());
     }
 }

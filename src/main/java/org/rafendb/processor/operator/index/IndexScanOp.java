@@ -13,7 +13,7 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
@@ -34,7 +34,7 @@ import org.rafendb.processor.txn.TableLocks;
  */
 public final class IndexScanOp implements Operator {
 
-    private final ExecutionContext context;
+    private final SessionView context;
     private final StorageQuery storage;
     private final String table;
     private final IndexScanDescriptor descriptor;
@@ -56,10 +56,10 @@ public final class IndexScanOp implements Operator {
      * @throws NullPointerException if context, storage manager, table, or descriptor is null
      */
     public IndexScanOp(
-            ExecutionContext context, String table, String alias, IndexScanDescriptor descriptor) {
+            SessionView context, String table, String alias, IndexScanDescriptor descriptor) {
 
         this.context = Objects.requireNonNull(context, "context");
-        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
+        this.storage = Objects.requireNonNull(context.storage(), "storage");
         this.table = Objects.requireNonNull(table, "table");
         this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
 
