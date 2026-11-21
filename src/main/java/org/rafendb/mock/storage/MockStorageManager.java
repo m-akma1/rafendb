@@ -2,6 +2,7 @@ package org.rafendb.mock.storage;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -443,6 +444,19 @@ public final class MockStorageManager implements StorageManager {
     @Override
     public void flush() throws StorageInternalException {
         ensureOpen();
+    }
+
+    @Override
+    public void captureSnapshot(Path snapshotDirectory) throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+    }
+
+    @Override
+    public void restoreSnapshot(Path snapshotDirectory) throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+        reloadAfterRestore();
     }
 
     /**

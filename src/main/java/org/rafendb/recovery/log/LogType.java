@@ -21,7 +21,11 @@ public enum LogType {
     /** Checkpoint dimulai. */
     CHECKPOINT_BEGIN,
     /** Checkpoint selesai. */
-    CHECKPOINT_END;
+    CHECKPOINT_END,
+    /** Point-in-time recovery dimulai. */
+    PITR_BEGIN,
+    /** Point-in-time recovery selesai. */
+    PITR_END;
 
     /**
      * Mengecek apakah record bertipe ini mengubah data tabel sehingga bisa dibatalkan (undo).

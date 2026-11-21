@@ -25,6 +25,8 @@ import org.rafendb.recovery.checkpoint.CheckpointManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
+import org.rafendb.recovery.pitr.PitrAdmission;
+import org.rafendb.recovery.pitr.PitrManager;
 import org.rafendb.recovery.restart.CrashRecoveryEngine;
 import org.rafendb.recovery.rollback.RollbackManager;
 import org.rafendb.recovery.rollback.UndoStorage;
@@ -44,6 +46,7 @@ public class FRManager implements RecoveryManager {
     private final Logger logger;
     private final RollbackManager rollbackManager;
     private final CheckpointManager checkpointManager;
+    private final PitrManager pitrManager;
     private final CrashRecoveryEngine crashRecoveryManager;
     private final StorageRecovery storageManager;
     private final boolean encodeBinaryImages;
@@ -73,6 +76,7 @@ public class FRManager implements RecoveryManager {
                         crashRecoveryManager, "crashRecoveryManager must not be null");
         this.storageManager = null;
         this.encodeBinaryImages = false;
+        this.pitrManager = null;
     }
 
     /**
@@ -100,6 +104,15 @@ public class FRManager implements RecoveryManager {
         this.crashRecoveryManager = new CrashRecoveryEngine(logger, storage);
         this.storageManager = storageManager;
         this.encodeBinaryImages = encodeBinaryImages;
+        PitrManager createdPitr = null;
+        if (storageManager != null) {
+            try {
+                createdPitr = new PitrManager(logger, storageManager, null, null);
+            } catch (Exception ignored) {
+                createdPitr = null;
+            }
+        }
+        this.pitrManager = createdPitr;
     }
 
     /**
@@ -426,6 +439,9 @@ public class FRManager implements RecoveryManager {
      */
     public boolean recoverToPointInTime(long targetTimestamp) {
         try {
+            if (pitrManager != null) {
+                return pitrManager.recoverToTimestamp(targetTimestamp);
+            }
             rollbackManager.recoverToPointInTime(targetTimestamp);
             return true;
         } catch (Exception e) {
@@ -452,6 +468,9 @@ public class FRManager implements RecoveryManager {
      */
     public boolean recoverToTransaction(int idTransaction) {
         try {
+            if (pitrManager != null) {
+                return pitrManager.recoverToTransaction(idTransaction);
+            }
             rollbackManager.recoverToTransaction(idTransaction);
             return true;
         } catch (Exception e) {
@@ -471,6 +490,60 @@ public class FRManager implements RecoveryManager {
      */
     public boolean recoverToTransaction(TxId tx) {
         return recoverToTransaction(toTxIdInt(tx));
+    }
+
+    /**
+     * Runs PITR with explicit CCM and server maintenance coordination.
+     */
+    public boolean recoverToPointInTime(
+            long targetTimestamp,
+            ConcurrencyControl concurrencyControl,
+            PitrAdmission pitrAdmission) {
+        PitrManager pitr =
+                pitrAdmission == null
+                        ? newPitrManager(concurrencyControl)
+                        : newPitrManager(concurrencyControl, pitrAdmission);
+        if (pitr == null) {
+            return false;
+        }
+        try {
+            return pitr.recoverToTimestamp(targetTimestamp);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Runs PITR to a committed transaction with explicit maintenance coordination. */
+    public boolean recoverToTransaction(
+            int idTransaction, ConcurrencyControl concurrencyControl, PitrAdmission pitrAdmission) {
+        PitrManager pitr =
+                pitrAdmission == null
+                        ? newPitrManager(concurrencyControl)
+                        : newPitrManager(concurrencyControl, pitrAdmission);
+        if (pitr == null) {
+            return false;
+        }
+        try {
+            return pitr.recoverToTransaction(idTransaction);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private PitrManager newPitrManager(ConcurrencyControl concurrencyControl) {
+        return newPitrManager(concurrencyControl, null);
+    }
+
+    private PitrManager newPitrManager(
+            ConcurrencyControl concurrencyControl, PitrAdmission pitrAdmission) {
+        if (storageManager == null) {
+            return pitrManager;
+        }
+        try {
+            return new PitrManager(logger, storageManager, concurrencyControl, pitrAdmission);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -518,6 +591,11 @@ public class FRManager implements RecoveryManager {
     /** @return instance CheckpointManager yang digunakan */
     public CheckpointManager getCheckpointManager() {
         return checkpointManager;
+    }
+
+    /** @return PITR manager, or null if this FRManager has no storage recovery facade */
+    public PitrManager getPitrManager() {
+        return pitrManager;
     }
 
     /** @return instance CrashRecoveryEngine yang digunakan */

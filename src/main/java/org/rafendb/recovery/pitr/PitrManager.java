@@ -1,16 +1,33 @@
 package org.rafendb.recovery.pitr;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import org.rafendb.api.concurrency.ConcurrencyControl;
+import org.rafendb.api.concurrency.ConcurrencyMaintenance;
+import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageRecovery;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.tuple.Row;
+import org.rafendb.common.txn.RecoveryInfo;
+import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.LoggerErrorException;
 import org.rafendb.recovery.log.WALRecord;
+import org.rafendb.recovery.rollback.RollbackManager;
 
 /**
  * In-memory snapshot-based PITR mock. It uses the production WAL record model and applies only
@@ -18,6 +35,12 @@ import org.rafendb.recovery.log.WALRecord;
  */
 public final class PitrManager {
     private final Logger logger;
+    private final StorageRecovery storageManager;
+    private final ConcurrencyControl concurrencyControl;
+    private final PitrAdmission pitrAdmission;
+    private final RollbackManager rollbackManager;
+    private final StorageManager realStorage;
+    private final Path snapshotDirectory;
     private Map<String, Map<Rid, String>> snapshotRows = Map.of();
     private Map<String, Map<Rid, String>> currentRows = Map.of();
     private long snapshotTimestamp;
@@ -28,10 +51,62 @@ public final class PitrManager {
     private long lastReplayLsn;
     private int recoveredHighestTransactionId;
     private long recoveredHighestTimestamp;
+    private long pitrBoundaryLsn;
+    private long pitrBoundaryTimestamp;
+    private Throwable lastPitrFailure;
 
     public PitrManager(Logger logger) throws LoggerErrorException {
+        this(logger, null, null, null);
+    }
+
+    /** Creates a PITR manager connected to real recovery storage. */
+    public PitrManager(Logger logger, StorageRecovery storageManager) throws LoggerErrorException {
+        this(logger, storageManager, null, null);
+    }
+
+    /**
+     * Creates a PITR manager connected to real storage and concurrency control.
+     *
+     * @param logger persistent WAL
+     * @param storageManager storage recovery facade
+     * @param concurrencyControl optional CCM for maintenance quiescing and reset
+     */
+    public PitrManager(
+            Logger logger, StorageRecovery storageManager, ConcurrencyControl concurrencyControl)
+            throws LoggerErrorException {
+        this(logger, storageManager, concurrencyControl, null);
+    }
+
+    /** Creates a PITR manager with server admission coordination. */
+    public PitrManager(
+            Logger logger,
+            StorageRecovery storageManager,
+            ConcurrencyControl concurrencyControl,
+            PitrAdmission pitrAdmission)
+            throws LoggerErrorException {
         this.logger = Objects.requireNonNull(logger, "logger");
-        captureSnapshot(0, Map.of());
+        this.storageManager = storageManager;
+        this.concurrencyControl = concurrencyControl;
+        this.pitrAdmission = pitrAdmission;
+        this.realStorage = storageManager instanceof StorageManager manager ? manager : null;
+        String logPath = logger.getLogFilePath();
+        this.snapshotDirectory =
+                logPath == null || logPath.isEmpty()
+                        ? Path.of(System.getProperty("java.io.tmpdir"), "rafendb-pitr-snapshot")
+                        : Path.of(logPath + ".pitr-snapshot");
+        this.rollbackManager =
+                storageManager != null
+                        ? new RollbackManager(
+                                logger,
+                                FRManager.storageAdapter(storageManager),
+                                System::currentTimeMillis)
+                        : null;
+        loadPitrBoundary();
+        if (realStorage != null) {
+            captureLiveSnapshot(System.currentTimeMillis());
+        } else {
+            captureSnapshot(0, Map.of());
+        }
     }
 
     /**
@@ -45,6 +120,7 @@ public final class PitrManager {
         if (timestamp < 0) throw new IllegalArgumentException("timestamp must not be negative");
         Objects.requireNonNull(rows, "rows");
         logger.flushAll();
+        validateWalOrder(logger.getLogsSorted());
         snapshotRows = copyRows(rows);
         currentRows = copyRows(rows);
         snapshotTimestamp = timestamp;
@@ -54,10 +130,35 @@ public final class PitrManager {
         clearResult();
     }
 
+    /** Captures a consistent logical snapshot of live tables, catalog schemas and indexes. */
+    public synchronized void captureLiveSnapshot(long timestamp) throws LoggerErrorException {
+        if (realStorage == null) {
+            throw new IllegalStateException("PITR requires a StorageManager");
+        }
+        if (timestamp < 0) {
+            throw new IllegalArgumentException("timestamp must not be negative");
+        }
+        try {
+            realStorage.flush();
+            logger.flushAll();
+            realStorage.captureSnapshot(snapshotDirectory);
+            snapshotTimestamp = timestamp;
+            List<WALRecord> wal = logger.getLogsSorted();
+            snapshotLsn = wal.isEmpty() ? 0 : wal.getLast().getLSN();
+            snapshotAvailable = true;
+            clearResult();
+        } catch (org.rafendb.common.error.StorageInternalException | RuntimeException e) {
+            throw new LoggerErrorException("Failed to capture PITR snapshot", e);
+        }
+    }
+
     /** Restores the state after every transaction whose COMMIT timestamp is at most the target. */
     public synchronized boolean recoverToTimestamp(long targetTimestamp)
             throws LoggerErrorException {
         if (!snapshotAvailable || targetTimestamp < snapshotTimestamp) return false;
+        if (rollbackManager != null) {
+            return recoverRealToTimestamp(targetTimestamp);
+        }
         List<WALRecord> wal = durableWal();
         long latestCommitTimestamp = latestCommitTimestamp(wal);
         if (targetTimestamp > latestCommitTimestamp && targetTimestamp != snapshotTimestamp) {
@@ -79,6 +180,9 @@ public final class PitrManager {
     public synchronized boolean recoverToTransaction(int transactionId)
             throws LoggerErrorException {
         if (!snapshotAvailable || transactionId <= 0) return false;
+        if (rollbackManager != null) {
+            return recoverRealToTransaction(transactionId);
+        }
         List<WALRecord> wal = durableWal();
         WALRecord targetCommit = null;
         for (WALRecord record : wal) {
@@ -95,6 +199,18 @@ public final class PitrManager {
     /** Restores through the latest durable COMMIT, or to the snapshot if there are no commits. */
     public synchronized boolean recoverToLatestCommit() throws LoggerErrorException {
         if (!snapshotAvailable) return false;
+        if (rollbackManager != null) {
+            List<WALRecord> wal = durableWal();
+            WALRecord latest = null;
+            for (WALRecord record : wal) {
+                if (record.getLogType() == LogType.COMMIT
+                        && (latest == null || record.getLsn() > latest.getLsn())) {
+                    latest = record;
+                }
+            }
+            if (latest == null) return false;
+            return recoverRealToTransaction(latest.getIdTransaction());
+        }
         List<WALRecord> wal = durableWal();
         WALRecord latest = null;
         for (WALRecord record : wal) {
@@ -108,54 +224,280 @@ public final class PitrManager {
         return runRecovery(wal, latest.getTimestamp(), latest.getLSN(), null);
     }
 
-    private boolean runRecovery(
-            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx) {
-        if (!stopClientAdmission()) return false;
+    private boolean recoverRealToTimestamp(long targetTimestamp) throws LoggerErrorException {
+        boolean paused = false;
+        boolean admissionPaused = false;
         try {
-            if (!restoreStorageSnapshot(timestampBoundary, lsnBoundary)) return false;
-            if (!reloadStorageAfterRestore()) return false;
-            if (!restore(wal, timestampBoundary, lsnBoundary, targetTx)) return false;
-            if (!rebuildIndexesAndStatistics()) return false;
-            return resetConcurrencyState(recoveredHighestTransactionId, recoveredHighestTimestamp);
+            if (targetTimestamp < snapshotTimestamp) {
+                return false;
+            }
+            if (pitrAdmission != null) {
+                pitrAdmission.pauseAdmission();
+                admissionPaused = true;
+                if (!pitrAdmission.awaitNoActiveSessions(Duration.ofMinutes(1))) {
+                    return false;
+                }
+            }
+            if (concurrencyControl != null) {
+                concurrencyControl.pauseNewTransactions();
+                paused = true;
+                if (!concurrencyControl.awaitNoActive(Duration.ofMinutes(1))) {
+                    return false;
+                }
+            }
+            long boundaryLsn = latestCommitLsn(targetTimestamp);
+            logger.logTransactionEvent(0, LogType.PITR_BEGIN);
+            restoreLiveSnapshotAndReplay(boundaryLsn, null);
+            resetConcurrencyStateFromWal();
+            lastReplayLsn = latestCommitLsn(targetTimestamp);
+            snapshotTimestamp = targetTimestamp;
+            pitrBoundaryLsn = lastReplayLsn;
+            pitrBoundaryTimestamp = targetTimestamp;
+            logger.logTransactionEvent(0, LogType.PITR_END);
+            pitrBoundaryLsn = logger.getCurrentLSN();
+            writePitrBoundary(pitrBoundaryLsn, pitrBoundaryTimestamp);
+            return true;
+        } catch (InterruptedException | RuntimeException | LoggerErrorException e) {
+            lastPitrFailure = e;
+            return false;
         } finally {
-            resumeClientAdmission();
+            if (paused) {
+                concurrencyControl.resumeNewTransactions();
+            }
+            if (admissionPaused) {
+                pitrAdmission.resumeAdmission();
+            }
         }
     }
 
-    /**
-     * QP integration seam. The current repository has no server-admission contract, so this
-     * in-memory manager cannot quiesce client connections.
-     */
-    private boolean stopClientAdmission() {
-        return true;
+    private void restoreLiveSnapshotAndReplay(long boundaryLsn, Integer targetTransaction)
+            throws LoggerErrorException {
+        if (realStorage == null) {
+            throw new IllegalStateException("A real StorageManager is required");
+        }
+
+        try {
+            realStorage.restoreSnapshot(snapshotDirectory);
+            realStorage.reloadAfterRestore();
+
+            List<WALRecord> wal = logger.getLogsSorted();
+            Set<Integer> committed = new HashSet<>();
+            for (WALRecord record : wal) {
+                if (record.getLogType() == LogType.COMMIT
+                        && record.getLSN() <= boundaryLsn
+                        && (targetTransaction == null || record.getLSN() <= boundaryLsn)) {
+                    committed.add(record.getIdTransaction());
+                }
+            }
+
+            for (WALRecord record : wal) {
+                if (!record.getLogType().isDataChange()
+                        || record.getLSN() <= snapshotLsn
+                        || record.getLSN() > boundaryLsn
+                        || !committed.contains(record.getIdTransaction())) {
+                    continue;
+                }
+                WALRecord commit =
+                        wal.stream()
+                                .filter(
+                                        r ->
+                                                r.getIdTransaction() == record.getIdTransaction()
+                                                        && r.getLogType() == LogType.COMMIT
+                                                        && r.getLSN() <= boundaryLsn)
+                                .findFirst()
+                                .orElse(null);
+                if (commit == null || record.getLSN() >= commit.getLSN()) {
+                    continue;
+                }
+                if (record.getTableName() == null || record.getRid() == null) {
+                    throw new IllegalStateException("Malformed PITR data-change record");
+                }
+
+                Optional<Row> image = Optional.empty();
+                if (record.getAfterValue() != null) {
+                    byte[] raw = decodeB64Image(record.getAfterValue());
+                    image = Optional.of(realStorage.decodeRow(record.getTableName(), raw));
+                }
+                realStorage.applyRecovery(
+                        record.getTableName(), record.getRid(), image, record.getLSN());
+            }
+
+            realStorage.flush();
+            realStorage.reloadAfterRestore();
+        } catch (RuntimeException | org.rafendb.common.error.StorageInternalException e) {
+            throw new LoggerErrorException("Failed to restore PITR snapshot", e);
+        }
     }
 
-    /**
-     * SM integration seam. The current StorageManager contract has no snapshot-copy or atomic
-     * restore operation; callers must supply the snapshot rows through {@link #captureSnapshot}.
-     */
-    private boolean restoreStorageSnapshot(long targetTimestamp, long targetLsn) {
-        return true;
+    private static byte[] decodeB64Image(String image) {
+        String prefix = "B64:";
+        if (image.startsWith(prefix)) {
+            return Base64.getDecoder().decode(image.substring(prefix.length()));
+        }
+        return image.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    /** Reloads storage state after a real snapshot restore; unavailable in this in-memory manager. */
-    private boolean reloadStorageAfterRestore() {
-        return true;
+    private boolean recoverRealToTransaction(int transactionId) throws LoggerErrorException {
+        boolean paused = false;
+        boolean admissionPaused = false;
+        try {
+            WALRecord commit = null;
+            for (WALRecord record : durableWal()) {
+                if (record.getIdTransaction() == transactionId
+                        && record.getLogType() == LogType.COMMIT) {
+                    commit = record;
+                    break;
+                }
+            }
+            if (commit == null) {
+                return false;
+            }
+            if (commit.getTimestamp() < snapshotTimestamp) {
+                return false;
+            }
+
+            if (pitrAdmission != null) {
+                pitrAdmission.pauseAdmission();
+                admissionPaused = true;
+                if (!pitrAdmission.awaitNoActiveSessions(Duration.ofMinutes(1))) {
+                    return false;
+                }
+            }
+            if (concurrencyControl != null) {
+                concurrencyControl.pauseNewTransactions();
+                paused = true;
+                if (!concurrencyControl.awaitNoActive(Duration.ofMinutes(1))) {
+                    return false;
+                }
+            }
+            logger.logTransactionEvent(0, LogType.PITR_BEGIN);
+            restoreLiveSnapshotAndReplay(commit.getLsn(), transactionId);
+            resetConcurrencyStateFromWal();
+            lastReplayLsn = commit.getLsn();
+            snapshotTimestamp = commit.getTimestamp();
+            pitrBoundaryLsn = lastReplayLsn;
+            pitrBoundaryTimestamp = snapshotTimestamp;
+            logger.logTransactionEvent(0, LogType.PITR_END);
+            pitrBoundaryLsn = logger.getCurrentLSN();
+            writePitrBoundary(pitrBoundaryLsn, pitrBoundaryTimestamp);
+            return true;
+        } catch (InterruptedException | RuntimeException | LoggerErrorException e) {
+            lastPitrFailure = e;
+            return false;
+        } finally {
+            if (paused) {
+                concurrencyControl.resumeNewTransactions();
+            }
+            if (admissionPaused) {
+                pitrAdmission.resumeAdmission();
+            }
+        }
     }
 
-    /** Rebuilds indexes and statistics after a real snapshot restore; unavailable here. */
-    private boolean rebuildIndexesAndStatistics() {
-        return true;
+    private void resetConcurrencyStateFromWal() {
+        if (concurrencyControl instanceof ConcurrencyMaintenance maintenance) {
+            long maxId = 0;
+            for (WALRecord record : logger.getLogsSorted()) {
+                maxId = Math.max(maxId, record.getIdTransaction());
+            }
+            maintenance.initializeAfterRecovery(new RecoveryInfo(maxId, maxId));
+        }
     }
 
-    /** Resets CCM state and generators; unavailable without a CCM maintenance contract. */
-    private boolean resetConcurrencyState(int highestTransactionId, long highestTimestamp) {
-        return true;
+    private long latestCommitLsn(long targetTimestamp) {
+        long targetLsn = 0;
+        for (WALRecord record : logger.getLogsSorted()) {
+            if (record.getLogType() == LogType.COMMIT && record.getTimestamp() <= targetTimestamp) {
+                targetLsn = Math.max(targetLsn, record.getLsn());
+            }
+        }
+        return targetLsn;
     }
 
-    /** Reopens QP admission after recovery; unavailable without a server-admission contract. */
-    private boolean resumeClientAdmission() {
-        return true;
+    private Path boundaryPath() {
+        String logPath = logger.getLogFilePath();
+        if (logPath == null || logPath.isEmpty()) {
+            return Path.of(System.getProperty("java.io.tmpdir"), "rafendb-pitr.pointer");
+        }
+        return Path.of(logPath + ".pitr");
+    }
+
+    private void writePitrBoundary(long lsn, long timestamp) throws LoggerErrorException {
+        if (lsn <= 0) {
+            return;
+        }
+        Path pointer = boundaryPath();
+        Path parent = pointer.toAbsolutePath().getParent();
+        Path temporary =
+                pointer.resolveSibling(
+                        pointer.getFileName() + ".tmp-" + Thread.currentThread().threadId());
+        try {
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(
+                    temporary,
+                    lsn + ":" + timestamp + System.lineSeparator(),
+                    StandardCharsets.US_ASCII);
+            try (var channel =
+                    java.nio.channels.FileChannel.open(
+                            temporary, java.nio.file.StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+            try {
+                Files.move(
+                        temporary,
+                        pointer,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, pointer, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(temporary);
+            } catch (IOException cleanup) {
+                e.addSuppressed(cleanup);
+            }
+            throw new LoggerErrorException("Failed to persist PITR boundary", e);
+        }
+    }
+
+    private void loadPitrBoundary() {
+        pitrBoundaryLsn = 0;
+        pitrBoundaryTimestamp = 0;
+        try {
+            Path pointer = boundaryPath();
+            if (!Files.exists(pointer)) {
+                return;
+            }
+            String[] parts =
+                    Files.readString(pointer, StandardCharsets.US_ASCII).trim().split(":", -1);
+            if (parts.length != 2) {
+                return;
+            }
+            long lsn = Long.parseLong(parts[0]);
+            long timestamp = Long.parseLong(parts[1]);
+            if (lsn > 0 && timestamp >= 0) {
+                pitrBoundaryLsn = lsn;
+                pitrBoundaryTimestamp = timestamp;
+            }
+        } catch (IOException | RuntimeException ignored) {
+            pitrBoundaryLsn = 0;
+            pitrBoundaryTimestamp = 0;
+        }
+    }
+
+    private boolean runRecovery(
+            List<WALRecord> wal, long timestampBoundary, long lsnBoundary, Integer targetTx)
+            throws LoggerErrorException {
+        boolean restored = restore(wal, timestampBoundary, lsnBoundary, targetTx);
+        if (restored && lsnBoundary > 0) {
+            pitrBoundaryLsn = lsnBoundary;
+            pitrBoundaryTimestamp = timestampBoundary;
+            writePitrBoundary(lsnBoundary, timestampBoundary);
+        }
+        return restored;
     }
 
     private boolean restore(
@@ -256,7 +598,19 @@ public final class PitrManager {
 
     private List<WALRecord> durableWal() throws LoggerErrorException {
         logger.flushAll();
-        return logger.getLogsSorted();
+        List<WALRecord> wal = logger.getLogsSorted();
+        validateWalOrder(wal);
+        return wal;
+    }
+
+    private static void validateWalOrder(List<WALRecord> wal) {
+        long previousLsn = 0;
+        for (WALRecord record : wal) {
+            if (record.getLsn() <= previousLsn) {
+                throw new IllegalStateException("WAL LSNs are not strictly increasing");
+            }
+            previousLsn = record.getLsn();
+        }
     }
 
     private static long latestCommitTimestamp(List<WALRecord> wal) {
@@ -320,5 +674,22 @@ public final class PitrManager {
 
     public synchronized List<WALRecord> getWalRecords() {
         return logger.getLogsSorted();
+    }
+
+    /** Returns the durable PITR boundary LSN, or zero if no PITR has completed. */
+    public synchronized long getPitrBoundaryLsn() {
+        loadPitrBoundary();
+        return pitrBoundaryLsn;
+    }
+
+    /** Returns the durable PITR boundary timestamp, or zero if no PITR has completed. */
+    public synchronized long getPitrBoundaryTimestamp() {
+        loadPitrBoundary();
+        return pitrBoundaryTimestamp;
+    }
+
+    /** Returns the exception behind the latest failed real PITR operation, if one occurred. */
+    public synchronized Throwable getLastPitrFailure() {
+        return lastPitrFailure;
     }
 }

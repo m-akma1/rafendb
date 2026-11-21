@@ -181,6 +181,131 @@ public class CatalogManager {
         }
     }
 
+    /** Copies catalog, allocation, table and index files into a snapshot staging directory. */
+    public synchronized void captureSnapshotFiles(Path snapshotDirectory)
+            throws StorageInternalException {
+        ensureLoaded();
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+        try {
+            Path target = snapshotDirectory.toAbsolutePath().normalize();
+            Files.createDirectories(target);
+            copyFile(directory.resolve(SNAPSHOT_FILE), target.resolve(SNAPSHOT_FILE));
+            copyFile(directory.resolve(ALLOC_FILE), target.resolve(ALLOC_FILE));
+            for (String fileName : tableFiles.values()) {
+                copyFile(directory.resolve(fileName), target.resolve(fileName));
+            }
+            for (String fileName : indexFiles.values()) {
+                copyFile(directory.resolve(fileName), target.resolve(fileName));
+            }
+        } catch (IOException e) {
+            throw wrap("failed to capture storage snapshot", e);
+        }
+    }
+
+    /** Atomically replaces live catalog/allocation/table/index files from a snapshot directory. */
+    public synchronized void restoreSnapshotFiles(Path snapshotDirectory)
+            throws StorageInternalException {
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+        try {
+            Path source = snapshotDirectory.toAbsolutePath().normalize();
+            if (!Files.isDirectory(source)) {
+                throw new StorageInternalException("snapshot directory does not exist");
+            }
+            Path liveSnapshot = source.resolve(SNAPSHOT_FILE);
+            Path liveAlloc = source.resolve(ALLOC_FILE);
+            if (!Files.isRegularFile(liveSnapshot) || !Files.isRegularFile(liveAlloc)) {
+                throw new StorageInternalException(
+                        "snapshot catalog or allocation file is missing");
+            }
+
+            Map<String, String> snapshotTableFiles = new LinkedHashMap<>();
+            Map<String, String> snapshotIndexFiles = new LinkedHashMap<>();
+            readSnapshot(
+                    liveSnapshot,
+                    new LinkedHashMap<>(),
+                    snapshotTableFiles,
+                    new HashMap<>(),
+                    new HashMap<>(),
+                    new LinkedHashMap<>(),
+                    snapshotIndexFiles);
+
+            replaceFile(liveSnapshot, directory.resolve(SNAPSHOT_FILE));
+            replaceFile(liveAlloc, directory.resolve(ALLOC_FILE));
+
+            for (String fileName : snapshotTableFiles.values()) {
+                Path restored = source.resolve(fileName);
+                if (!Files.isRegularFile(restored)) {
+                    throw new StorageInternalException(
+                            "snapshot table file is missing: " + fileName);
+                }
+            }
+            for (String fileName : snapshotIndexFiles.values()) {
+                Path restored = source.resolve(fileName);
+                if (!Files.isRegularFile(restored)) {
+                    throw new StorageInternalException(
+                            "snapshot index file is missing: " + fileName);
+                }
+            }
+
+            for (String fileName : tableFiles.values()) {
+                if (!snapshotTableFiles.containsValue(fileName)) {
+                    Files.deleteIfExists(directory.resolve(fileName));
+                }
+            }
+            for (String fileName : indexFiles.values()) {
+                if (!snapshotIndexFiles.containsValue(fileName)) {
+                    Files.deleteIfExists(directory.resolve(fileName));
+                }
+            }
+
+            for (String fileName : snapshotTableFiles.values()) {
+                replaceFile(source.resolve(fileName), directory.resolve(fileName));
+            }
+            for (String fileName : snapshotIndexFiles.values()) {
+                replaceFile(source.resolve(fileName), directory.resolve(fileName));
+            }
+        } catch (IOException e) {
+            throw wrap("failed to restore storage snapshot", e);
+        }
+    }
+
+    private static void copyFile(Path source, Path target) throws IOException {
+        if (!Files.isRegularFile(source)) {
+            throw new IOException("missing snapshot file: " + source);
+        }
+        Files.createDirectories(target.getParent());
+        Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try (FileChannel channel =
+                FileChannel.open(
+                        target,
+                        java.nio.file.StandardOpenOption.READ,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+            channel.force(true);
+        }
+    }
+
+    private void replaceFile(Path source, Path target) throws IOException {
+        Files.createDirectories(target.getParent());
+        Path temporary = target.resolveSibling(target.getFileName() + ".pitr.tmp");
+        Files.copy(source, temporary, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try (FileChannel channel =
+                FileChannel.open(
+                        temporary,
+                        java.nio.file.StandardOpenOption.READ,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+            channel.force(true);
+        }
+        try {
+            Files.move(
+                    temporary,
+                    target,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     // Allocation high-water
 
     /**

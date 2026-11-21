@@ -1,5 +1,8 @@
 package org.rafendb.recovery.restart;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -261,11 +264,38 @@ public class CrashRecoveryEngine {
             return List.of();
         }
         List<WALRecord> allLogs = logger.getLogsSorted();
+        long pitrLsn = readPitrBoundaryLsn();
+        if (pitrLsn > 0) {
+            allLogs = allLogs.stream().filter(record -> record.getLsn() <= pitrLsn).toList();
+            return allLogs;
+        }
         long checkpointLsn = CheckpointManager.readLastCompletedCheckpointLsn(logger);
         if (checkpointLsn <= 0) {
             return allLogs;
         }
         return allLogs.stream().filter(record -> record.getLsn() > checkpointLsn).toList();
+    }
+
+    private long readPitrBoundaryLsn() {
+        String logPath = logger.getLogFilePath();
+        if (logPath == null || logPath.isEmpty()) {
+            return 0;
+        }
+        try {
+            Path pointer = Path.of(logPath + ".pitr");
+            if (!Files.exists(pointer)) {
+                return 0;
+            }
+            String value = Files.readString(pointer, StandardCharsets.US_ASCII).trim();
+            int separator = value.indexOf(':');
+            if (separator <= 0) {
+                return 0;
+            }
+            long lsn = Long.parseLong(value.substring(0, separator));
+            return lsn > 0 ? lsn : 0;
+        } catch (RuntimeException | java.io.IOException e) {
+            return 0;
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package org.rafendb.api.storage;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.ToLongFunction;
 import org.rafendb.common.error.StorageInternalException;
@@ -32,6 +33,22 @@ import org.rafendb.common.txn.ChangeRecord;
  * {@link #flush()}. Isolation is CCM's job.
  */
 public interface StorageManager extends StorageQuery, StorageRecovery, AutoCloseable {
+
+    /**
+     * Creates a consistent logical or physical snapshot of the live database for PITR.
+     *
+     * @param snapshotDirectory destination directory, not null
+     * @throws StorageInternalException if snapshot files cannot be created or flushed
+     */
+    void captureSnapshot(Path snapshotDirectory) throws StorageInternalException;
+
+    /**
+     * Restores the live database from a previously captured snapshot.
+     *
+     * @param snapshotDirectory snapshot directory, not null
+     * @throws StorageInternalException if snapshot files are corrupt or restoration fails
+     */
+    void restoreSnapshot(Path snapshotDirectory) throws StorageInternalException;
 
     /**
      * Lists every foreign key that references {@code table}, from any table including itself.

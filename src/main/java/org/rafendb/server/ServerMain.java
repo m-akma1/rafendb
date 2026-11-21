@@ -17,6 +17,7 @@ import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.engine.Engine;
 import org.rafendb.engine.Flags;
 import org.rafendb.engine.Version;
+import org.rafendb.recovery.pitr.PitrAdmission;
 
 /**
  * The multi-client server (QP-02) and its entry point. Every accepted connection gets its own
@@ -31,7 +32,7 @@ import org.rafendb.engine.Version;
  * <p>Thread-safe. The monitor of this object guards {@link #stopping} and the step that registers
  * a new connection; it is never held while waiting for connections to end.
  */
-public final class ServerMain {
+public final class ServerMain implements PitrAdmission {
     private final ServerConfig config;
     private final QueryProcessor processor;
     private final ProtocolType protocol;
@@ -40,6 +41,7 @@ public final class ServerMain {
     private final Map<Integer, ClientConnection> connections = new ConcurrentHashMap<>();
     private final CountDownLatch stopped = new CountDownLatch(1);
     private boolean stopping;
+    private boolean maintenanceAdmission;
 
     /**
      * Starts the server.
@@ -210,6 +212,43 @@ public final class ServerMain {
         System.out.println(line);
     }
 
+    /** Stops new client admissions while PITR or another exclusive restore is running. */
+    @Override
+    public synchronized void pauseAdmission() {
+        maintenanceAdmission = true;
+    }
+
+    /** Resumes client admissions after an exclusive recovery completes successfully. */
+    @Override
+    public synchronized void resumeAdmission() {
+        maintenanceAdmission = false;
+    }
+
+    /** Returns whether new client admissions are temporarily paused. */
+    public synchronized boolean isAdmissionPaused() {
+        return maintenanceAdmission;
+    }
+
+    /** Waits until no client connections remain, or until the timeout expires. */
+    @Override
+    public boolean awaitNoActiveSessions(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (!connections.isEmpty()) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return false;
+            }
+            try {
+                Thread.sleep(Math.min(10, TimeUnit.NANOSECONDS.toMillis(remaining)));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void acceptLoop() {
         while (true) {
             Socket socket;
@@ -246,7 +285,7 @@ public final class ServerMain {
      * @return false if the server is stopping and the connection was not started
      */
     private synchronized boolean register(ClientConnection connection) {
-        if (stopping) {
+        if (stopping || maintenanceAdmission) {
             return false;
         }
         connections.put(connection.id(), connection);

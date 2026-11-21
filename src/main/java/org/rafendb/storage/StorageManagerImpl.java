@@ -1,6 +1,7 @@
 package org.rafendb.storage;
 
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -428,6 +429,42 @@ public class StorageManagerImpl implements StorageManager {
         ensureOpen();
         buffers.flushAll();
         catalog.save();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized void captureSnapshot(Path snapshotDirectory)
+            throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+        if (!openCursors.isEmpty()) {
+            throw new StorageInternalException("cannot capture snapshot with open cursors");
+        }
+        buffers.flushAll();
+        catalog.save();
+        catalog.captureSnapshotFiles(snapshotDirectory);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized void restoreSnapshot(Path snapshotDirectory)
+            throws StorageInternalException {
+        ensureOpen();
+        Objects.requireNonNull(snapshotDirectory, "snapshotDirectory");
+        if (!openCursors.isEmpty()) {
+            throw new StorageInternalException("cannot restore snapshot with open cursors");
+        }
+        buffers.invalidateAll();
+        blocks.closeFiles();
+        indexes.invalidateAll();
+        catalog.restoreSnapshotFiles(snapshotDirectory);
+        catalog.load();
+        indexes.beginSession();
+        for (String table : catalog.listTables()) {
+            try (RecordCursor rows = scan(table)) {
+                indexes.rebuild(table, rows);
+            }
+        }
     }
 
     /** {@inheritDoc} */

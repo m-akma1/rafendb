@@ -4,14 +4,101 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Base64;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.rafendb.common.schema.Column;
+import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.tuple.Rid;
+import org.rafendb.common.tuple.Row;
+import org.rafendb.common.type.DataType;
+import org.rafendb.common.type.Value;
 import org.rafendb.recovery.log.LogType;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.recovery.log.WALRecord;
 
 class PitrManagerTest {
+    @Test
+    void realStorageSnapshotRestoresCatalogRowsAndReplaysCommitBoundary(
+            @TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path walPath = dir.resolve("pitr.wal");
+        java.nio.file.Path dataDir = dir.resolve("data");
+        try (Logger logger = new Logger(walPath);
+                org.rafendb.api.storage.StorageManager storage =
+                        org.rafendb.engine.Engine.storage(dataDir, 8, logger)) {
+            storage.createTable(
+                    new TableSchema(
+                            "items",
+                            java.util.List.of(
+                                    new Column("id", DataType.INTEGER, 0, false, true),
+                                    new Column("name", DataType.VARCHAR, 40, false, false))));
+
+            PitrManager pitr =
+                    new PitrManager(
+                            logger,
+                            storage,
+                            new org.rafendb.mock.concurrency.MockConcurrencyControl());
+            pitr.captureLiveSnapshot(System.currentTimeMillis());
+
+            Row first =
+                    new Row(
+                            java.util.List.of(
+                                    Value.ofInt(1), Value.ofText(DataType.VARCHAR, "first")));
+            logger.logTransactionEvent(1, LogType.BEGIN);
+            Rid firstRid = storage.reserveRid("items", first);
+            String firstImage =
+                    "B64:" + Base64.getEncoder().encodeToString(storage.encodeRow("items", first));
+            long firstLsn =
+                    logger.logDataChange(
+                            1,
+                            LogType.INSERT,
+                            System.currentTimeMillis(),
+                            "items",
+                            0L,
+                            firstRid,
+                            null,
+                            firstImage);
+            storage.insert("items", firstRid, first, firstLsn);
+            logger.logTransactionEvent(1, LogType.COMMIT);
+
+            Row second =
+                    new Row(
+                            java.util.List.of(
+                                    Value.ofInt(2), Value.ofText(DataType.VARCHAR, "second")));
+            logger.logTransactionEvent(2, LogType.BEGIN);
+            Rid secondRid = storage.reserveRid("items", second);
+            String secondImage =
+                    "B64:" + Base64.getEncoder().encodeToString(storage.encodeRow("items", second));
+            long secondLsn =
+                    logger.logDataChange(
+                            2,
+                            LogType.INSERT,
+                            System.currentTimeMillis(),
+                            "items",
+                            0L,
+                            secondRid,
+                            null,
+                            secondImage);
+            storage.insert("items", secondRid, second, secondLsn);
+            logger.logTransactionEvent(2, LogType.COMMIT);
+
+            assertTrue(
+                    pitr.recoverToTransaction(1),
+                    () ->
+                            pitr.getLastPitrFailure() == null
+                                    ? "PITR returned false without an exception"
+                                    : pitr.getLastPitrFailure().toString());
+            assertTrue(
+                    storage.fetch("items", firstRid).isPresent(),
+                    "transaction 1 row missing after PITR");
+            assertTrue(
+                    storage.fetch("items", secondRid).isEmpty(),
+                    "transaction 2 row remained after PITR");
+            assertTrue(pitr.getPitrBoundaryLsn() > 0);
+        }
+    }
+
     @Test
     void timestampTargetUsesCommitTimeAndExcludesLateCommit() throws Exception {
         Logger logger = new Logger();
