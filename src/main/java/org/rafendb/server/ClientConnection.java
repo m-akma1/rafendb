@@ -5,11 +5,15 @@ import java.net.Socket;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
+import java.util.StringJoiner;
+import java.util.function.Supplier;
 import org.rafendb.api.processor.Session;
 import org.rafendb.common.Component;
 import org.rafendb.common.error.RafenDBInternalException;
 import org.rafendb.common.error.RafenDBRuntimeException;
+import org.rafendb.engine.MetaCommands;
 import org.rafendb.engine.Version;
 import org.rafendb.net.Message;
 import org.rafendb.net.MessageReader;
@@ -19,7 +23,7 @@ import org.rafendb.net.TxState;
 
 /**
  * One client connection with its own {@link Session} (QP-02), served on its own virtual thread.
- * Sends {@code HELLO}, then answers every {@code QUERY} with {@code (RESULT | NOTICE)* ERROR?
+ * Sends {@code HELLO}, then answers every {@code QUERY} and {@code META} with {@code (RESULT | NOTICE)* ERROR?
  * READY}. When it ends, for any reason, its session is closed, which aborts an open transaction.
  *
  * <p>Errors follow {@code common.error}: a {@link RafenDBRuntimeException} message is sent as is;
@@ -100,7 +104,26 @@ final class ClientConnection implements Runnable {
         for (Message request = reader.read(); request != null; request = reader.read()) {
             switch (request.type()) {
                 case QUERY -> {
-                    if (!beginReply() || !finishReply(execute(session, request.payload()))) {
+                    String sql = request.payload();
+                    if (!beginReply()
+                            || !finishReply(
+                                    execute(
+                                            session,
+                                            sql,
+                                            () -> ResultRenderer.render(session.execute(sql))))) {
+                        return;
+                    }
+                }
+                case META -> {
+                    String line = request.payload();
+                    if (!beginReply()
+                            || !finishReply(
+                                    execute(
+                                            session,
+                                            line,
+                                            () ->
+                                                    renderSections(
+                                                            server.metaCommands().run(line))))) {
                         return;
                     }
                 }
@@ -127,16 +150,22 @@ final class ClientConnection implements Runnable {
         }
     }
 
-    /** Runs one statement and builds its reply; never throws for a failed statement. */
-    private Message[] execute(Session session, String sql) {
+    /**
+     * Runs one statement or meta-command and builds its reply; never throws for a failed one.
+     *
+     * @param request what the client sent, for the server log
+     * @param run runs it and returns the rendered result
+     */
+    private Message[] execute(Session session, String request, Supplier<String> run) {
         Message outcome;
         try {
-            outcome = new Message(MessageType.RESULT, ResultRenderer.render(session.execute(sql)));
+            outcome = new Message(MessageType.RESULT, run.get());
         } catch (RafenDBRuntimeException e) {
             outcome = new Message(MessageType.ERROR, e.getMessage());
         } catch (RuntimeException e) {
             Component blamed = blame(e);
-            System.err.println(tag() + " internal error at " + blamed + " while running: " + sql);
+            System.err.println(
+                    tag() + " internal error at " + blamed + " while running: " + request);
             e.printStackTrace();
             outcome =
                     new Message(
@@ -231,6 +260,16 @@ final class ClientConnection implements Runnable {
         } catch (IOException ignored) {
             // The client is already gone; closing the socket follows anyway.
         }
+    }
+
+    /** Renders each section, its title above it, separated by a blank line. */
+    private static String renderSections(List<MetaCommands.Section> sections) {
+        StringJoiner text = new StringJoiner("\n\n");
+        for (MetaCommands.Section section : sections) {
+            String rows = ResultRenderer.render(section.rows());
+            text.add(section.title() == null ? rows : section.title() + "\n" + rows);
+        }
+        return text.toString();
     }
 
     private String hello() {

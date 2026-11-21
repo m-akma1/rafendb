@@ -13,17 +13,15 @@ import org.rafendb.common.tuple.Row;
 import org.rafendb.common.tuple.StoredRow;
 import org.rafendb.common.txn.AccessResult;
 import org.rafendb.common.txn.ChangeRecord;
-import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.error.QueryExecutionException;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.EventLog;
 import org.rafendb.processor.operator.FakeCcm;
 import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.operator.filter.FilterOp;
 import org.rafendb.processor.operator.scan.TableScanOp;
@@ -49,13 +47,8 @@ class DeleteOpTest {
 
     private final EventLog events = new EventLog();
     private final FakeCcm ccm = new FakeCcm(events);
-    private final SessionContext session = new SessionContext(1);
     private final FakeStorage storage = new FakeStorage(DOSEN, List.of(BUDI, ANI, CICI), events);
-    private final ExecutionContext context = new ExecutionContext(session, ccm, storage, null);
-
-    DeleteOpTest() {
-        session.setCurrentTxId(new TxId(1));
-    }
+    private final FakeSession session = new FakeSession(ccm, storage);
 
     private static StoredRow row(int slot, int id, String nama) {
         return new StoredRow(
@@ -64,22 +57,22 @@ class DeleteOpTest {
     }
 
     private DeleteOp deleteAll() {
-        return new DeleteOp(context, new TableScanOp(context, "dosen", null), "dosen");
+        return new DeleteOp(session, new TableScanOp(session, "dosen", null), "dosen");
     }
 
     private DeleteOp deleteOne(ResultRow row) {
-        return new DeleteOp(context, new FakeChildOp(List.of(), List.of(row)), "dosen");
+        return new DeleteOp(session, new FakeChildOp(List.of(), List.of(row)), "dosen");
     }
 
     @Test
     void deleteWithWhereRemovesOnlyMatchingRows() {
         FilterOp where =
                 new FilterOp(
-                        new TableScanOp(context, "dosen", null),
+                        new TableScanOp(session, "dosen", null),
                         ID_IS_2,
                         new DefaultExpressionEvaluator());
 
-        assertEquals(1L, new DeleteOp(context, where, "dosen").execute());
+        assertEquals(1L, new DeleteOp(session, where, "dosen").execute());
 
         assertEquals(List.of(BUDI.rid(), CICI.rid()), List.copyOf(storage.rows().keySet()));
     }
@@ -124,7 +117,7 @@ class DeleteOpTest {
         ccm.answerNext(AccessResult.aborted("deadlock"));
 
         assertThrows(
-                TransactionAbortedException.class, new DeleteOp(context, child, "dosen")::execute);
+                TransactionAbortedException.class, new DeleteOp(session, child, "dosen")::execute);
 
         assertEquals(1, child.getCloseCount());
         assertEquals(List.of("ccm.access WRITE dosen", "ccm.abort T1"), events);
@@ -139,7 +132,6 @@ class DeleteOpTest {
 
         assertEquals(3, storage.rows().size());
         assertEquals(1, events.count("ccm.abort"));
-        assertNull(session.getCurrentTxId());
     }
 
     @Test
@@ -170,7 +162,7 @@ class DeleteOpTest {
 
     @Test
     void noActiveTransactionIsRejected() {
-        session.setCurrentTxId(null);
+        session.setCurrentTx(null);
 
         assertThrows(IllegalStateException.class, deleteAll()::execute);
 
@@ -182,7 +174,7 @@ class DeleteOpTest {
         FakeChildOp child =
                 new FakeChildOp(List.of(), List.of(new ResultRow(BUDI.row().values(), null)));
 
-        assertThrows(IllegalStateException.class, new DeleteOp(context, child, "dosen")::execute);
+        assertThrows(IllegalStateException.class, new DeleteOp(session, child, "dosen")::execute);
 
         assertEquals(1, child.getCloseCount());
         assertEquals(3, storage.rows().size());
@@ -205,7 +197,7 @@ class DeleteOpTest {
         FakeChildOp child = new FakeChildOp(List.of(), List.of());
         child.failNextOpen();
 
-        assertThrows(RuntimeException.class, new DeleteOp(context, child, "dosen")::execute);
+        assertThrows(RuntimeException.class, new DeleteOp(session, child, "dosen")::execute);
 
         assertEquals(1, child.getCloseCount());
     }

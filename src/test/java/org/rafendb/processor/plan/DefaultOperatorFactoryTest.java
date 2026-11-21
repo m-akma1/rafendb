@@ -18,12 +18,12 @@ import org.rafendb.common.schema.TableSchema;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.execution.ExecutionPlan;
 import org.rafendb.processor.expr.DefaultExpressionEvaluator;
 import org.rafendb.processor.operator.FakeCcm;
 import org.rafendb.processor.operator.FakeChildOp;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.FakeStorage;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.write.DMLOperator;
@@ -49,16 +49,14 @@ class DefaultOperatorFactoryTest {
                     new Expr.ColumnRef(null, "salary"),
                     CreateIndexPlanNode.IndexKind.BTREE);
 
-    private final ExecutionContext context =
-            new ExecutionContext(
-                    new SessionContext(1),
+    private final FakeSession context =
+            new FakeSession(
                     new FakeCcm(),
                     new FakeStorage(
                             new TableSchema(
                                     "employees",
                                     List.of(new Column("id", DataType.INTEGER, 0, false, true))),
-                            List.of()),
-                    null);
+                            List.of()));
 
     @Test
     void scanBindingForwardsContextTableAndAliasWithoutOpening() {
@@ -125,9 +123,9 @@ class DefaultOperatorFactoryTest {
         assertEquals(2, built.size());
         assertNull(built.get(0).executedTx, "preparing must not run the insert");
 
-        context.getSContext().setCurrentTxId(new TxId(11));
+        context.setCurrentTx(new TxId(11));
         assertEquals(1, first.action().execute().affectedRows());
-        context.getSContext().setCurrentTxId(new TxId(12));
+        context.setCurrentTx(new TxId(12));
         second.action().execute();
 
         assertEquals(new TxId(11), built.get(0).executedTx);
@@ -211,7 +209,7 @@ class DefaultOperatorFactoryTest {
                             assertSame(context, ctx);
                             assertSame(INDEX, node);
                             return () -> {
-                                assertEquals(new TxId(31), ctx.getSContext().getCurrentTxId());
+                                assertEquals(new TxId(31), ctx.currentTx());
                                 runs[0]++;
                                 return new ExecutionPlan.CommandResult(0, "created");
                             };
@@ -219,7 +217,7 @@ class DefaultOperatorFactoryTest {
 
         var action = indexOnly(indexes).createIndex(INDEX);
         assertEquals(0, runs[0]);
-        context.getSContext().setCurrentTxId(new TxId(31));
+        context.setCurrentTx(new TxId(31));
 
         assertEquals(0, action.execute().affectedRows());
         assertEquals(1, runs[0]);
@@ -385,16 +383,16 @@ class DefaultOperatorFactoryTest {
 
     /** Records which transaction was active when it ran. */
     private static final class RecordingInsert implements DMLOperator {
-        private final ExecutionContext context;
+        private final SessionView context;
         private TxId executedTx;
 
-        private RecordingInsert(ExecutionContext context) {
+        private RecordingInsert(SessionView context) {
             this.context = context;
         }
 
         @Override
         public Long execute() {
-            executedTx = context.getSContext().getCurrentTxId();
+            executedTx = context.currentTx();
             return 1L;
         }
     }

@@ -9,7 +9,7 @@ import org.rafendb.common.tuple.Rid;
 import org.rafendb.common.tuple.Row;
 import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.tuple.ResultRow;
@@ -36,11 +36,11 @@ public final class DeleteOp implements DMLOperator {
      * @param table nama tabel
      * @throws NullPointerException kalau context, storage manager-nya, child, atau table null
      */
-    public DeleteOp(ExecutionContext context, Operator child, String table) {
+    public DeleteOp(SessionView context, Operator child, String table) {
         Objects.requireNonNull(context, "context");
         this.child = Objects.requireNonNull(child, "child");
         this.table = Objects.requireNonNull(table, "table");
-        this.storage = Objects.requireNonNull(context.getStorageManager(), "storage");
+        this.storage = Objects.requireNonNull(context.storageDQL(), "storage");
         this.support = new WriteSupport(context);
     }
 

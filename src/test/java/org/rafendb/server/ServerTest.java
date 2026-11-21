@@ -30,6 +30,8 @@ import org.rafendb.common.Component;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.ProcessorRuntimeException;
 import org.rafendb.common.query.QueryResult;
+import org.rafendb.engine.MetaCommands;
+import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.net.Message;
 import org.rafendb.net.MessageReader;
 import org.rafendb.net.MessageType;
@@ -44,7 +46,12 @@ class ServerTest {
 
     @BeforeEach
     void start() throws IOException {
-        server = new ServerMain(new ServerConfig(0, WAIT), processor, ProtocolType.LOCK_BASED);
+        server =
+                new ServerMain(
+                        new ServerConfig(0, WAIT),
+                        processor,
+                        new MetaCommands(new MockStorageManager()),
+                        ProtocolType.LOCK_BASED);
         server.start();
     }
 
@@ -112,6 +119,29 @@ class ServerTest {
             assertFalse(crashed.messages.getFirst().payload().contains(FakeSession.SECRET));
 
             assertEquals(MessageType.RESULT, a.query("SELECT").messages.getFirst().type());
+        }
+    }
+
+    @Test
+    void metaCommandsAnswerWithoutTouchingTheTransaction() throws IOException {
+        try (TestClient a = connect()) {
+            a.query("BEGIN");
+
+            Reply tables = a.meta("\\dt");
+            assertEquals(MessageType.RESULT, tables.messages.getFirst().type());
+            assertTrue(tables.messages.getFirst().payload().contains("prodi"));
+            assertEquals(TxState.ACTIVE, tables.state());
+
+            Reply unknown = a.meta("\\d nope");
+            assertEquals(MessageType.ERROR, unknown.messages.getFirst().type());
+            assertEquals(TxState.ACTIVE, unknown.state());
+
+            assertEquals(TxState.IDLE, a.query("COMMIT").state());
+            assertEquals(
+                    0,
+                    processor.sessions.getFirst().executed.stream()
+                            .filter(sql -> sql.startsWith("\\"))
+                            .count());
         }
     }
 
@@ -202,6 +232,11 @@ class ServerTest {
             return reply();
         }
 
+        Reply meta(String line) throws IOException {
+            writer.write(new Message(MessageType.META, line));
+            return reply();
+        }
+
         Reply reply() throws IOException {
             List<Message> messages = new ArrayList<>();
             Message message;
@@ -243,6 +278,7 @@ class ServerTest {
         static final String SECRET = "test internal detail";
 
         final RecordingProcessor owner;
+        final List<String> executed = new CopyOnWriteArrayList<>();
         final CountDownLatch closed = new CountDownLatch(1);
         volatile TxState state = TxState.IDLE;
         volatile Session.TxState stateWhenClosed;
@@ -253,6 +289,7 @@ class ServerTest {
 
         @Override
         public QueryResult execute(String sql) {
+            executed.add(sql);
             return switch (sql) {
                 case "BEGIN" -> {
                     state = TxState.ACTIVE;

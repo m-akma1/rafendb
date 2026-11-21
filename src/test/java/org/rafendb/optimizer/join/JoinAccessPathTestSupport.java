@@ -14,9 +14,8 @@ import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.optimizer.cost.Cost;
 import org.rafendb.optimizer.cost.CostModel;
-import org.rafendb.processor.api.ExecutionContext;
-import org.rafendb.processor.api.SessionContext;
 import org.rafendb.processor.execution.ExecutionPlan;
+import org.rafendb.processor.operator.FakeSession;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.operator.index.IndexScanOp;
 import org.rafendb.processor.operator.scan.TableScanOp;
@@ -32,14 +31,13 @@ final class JoinAccessPathTestSupport {
 
     /** Counts QP result rows by their ordered values so duplicate rows remain visible. */
     static Map<List<Value>, Integer> rows(MockStorageManager storage, PlanNode root) {
-        var session = new SessionContext(1);
         var concurrency = new MockConcurrencyControl();
-        session.setCurrentTxId(concurrency.begin());
-        var context = new ExecutionContext(session, concurrency, storage, null);
+        var session = new FakeSession(concurrency, storage);
+        session.setCurrentTx(concurrency.begin());
         var factory =
                 new DefaultOperatorFactory(
-                        DefaultOperatorFactory.bindScan(context, TableScanOp::new),
-                        DefaultOperatorFactory.bindIndexScan(context, IndexScanOp::new),
+                        DefaultOperatorFactory.bindScan(session, TableScanOp::new),
+                        DefaultOperatorFactory.bindIndexScan(session, IndexScanOp::new),
                         insert -> fail("Unexpected INSERT"),
                         (update, child) -> fail("Unexpected UPDATE"),
                         (delete, child) -> fail("Unexpected DELETE"),

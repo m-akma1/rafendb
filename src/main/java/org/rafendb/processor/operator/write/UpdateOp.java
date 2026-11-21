@@ -16,7 +16,7 @@ import org.rafendb.common.txn.ChangeRecord;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.type.DataType;
 import org.rafendb.common.type.Value;
-import org.rafendb.processor.api.ExecutionContext;
+import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.expr.ExpressionEvaluator;
 import org.rafendb.processor.operator.Operator;
 import org.rafendb.processor.schema.ColumnSchema;
@@ -59,7 +59,7 @@ public final class UpdateOp implements DMLOperator {
     private final Expr valueExpr;
     private final Operator child;
     private final ExpressionEvaluator evaluator;
-    private final ExecutionContext ctx;
+    private final SessionView ctx;
     private final WriteSupport support;
 
     /**
@@ -75,7 +75,7 @@ public final class UpdateOp implements DMLOperator {
             Expr valueExpr,
             Operator child,
             ExpressionEvaluator evaluator,
-            ExecutionContext ctx) {
+            SessionView ctx) {
         this.table = Objects.requireNonNull(table, "table");
         this.column = Objects.requireNonNull(column, "column");
         this.valueExpr = Objects.requireNonNull(valueExpr, "valueExpr");
@@ -90,7 +90,7 @@ public final class UpdateOp implements DMLOperator {
     public Long execute() {
         TxId tx = support.requireTx();
         support.acquireWrite(tx, table);
-        StorageQuery sm = ctx.getStorageManager();
+        StorageQuery sm = ctx.storageDQL();
 
         List<Change> changes = collect(sm);
 
