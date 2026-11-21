@@ -110,13 +110,8 @@ public final class Engine implements AutoCloseable {
         }
     }
 
-    /**
-     * Builds an engine backed by {@link MockQueryProcessor} that opens nothing; the same as
-     * starting with QP mocked.
-     *
-     * @return the engine
-     */
-    public static Engine withMocks() {
+    /** An engine over {@link MockQueryProcessor} that opens nothing ({@code --mock=qp}). */
+    private static Engine mockProcessorOnly() {
         return new Engine(new MockQueryProcessor(), ProtocolType.LOCK_BASED, null, null);
     }
 
@@ -135,7 +130,7 @@ public final class Engine implements AutoCloseable {
             log(
                     "Query Processor: mock; no data is opened"
                             + (config.mocks().size() > 1 ? " (other mocks are ignored)." : "."));
-            return withMocks();
+            return mockProcessorOnly();
         }
         Resources resources = new Resources(config.drainTimeout());
         try {

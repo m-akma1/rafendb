@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.rafendb.api.concurrency.ProtocolType;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.engine.Engine;
+import org.rafendb.engine.EngineConfig;
 import org.rafendb.engine.Flags;
 import org.rafendb.engine.Version;
 
@@ -48,6 +49,7 @@ public final class ServerMain {
      */
     public static void main(String[] args) {
         ServerConfig config;
+        EngineConfig engineConfig;
         try {
             Flags flags = Flags.parse(args);
             if (flags.has("version")) {
@@ -64,6 +66,7 @@ public final class ServerMain {
                     new ServerConfig(
                             flags.intValue("port", defaults.port()),
                             timeout == null ? defaults.shutdownTimeout() : seconds(timeout));
+            engineConfig = EngineConfig.fromFlags(flags).withDrainTimeout(config.shutdownTimeout());
             flags.rejectUnknown();
         } catch (IllegalArgumentException e) {
             System.err.println(e.getMessage());
@@ -73,26 +76,42 @@ public final class ServerMain {
         }
 
         System.out.println(Version.banner("Server"));
-        Engine engine = Engine.withMocks();
+        Engine engine;
+        try {
+            engine = Engine.start(engineConfig);
+        } catch (Engine.StartupException e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+            return;
+        }
         ServerMain server;
         try {
             server = new ServerMain(config, engine.processor(), engine.concurrencyProtocol());
         } catch (BindException e) {
+            engine.close();
             System.err.println("Port " + config.port() + " is already in use.");
             System.exit(1);
             return;
         } catch (IOException e) {
+            engine.close();
             System.err.println("Cannot listen on port " + config.port() + ": " + e.getMessage());
             System.exit(1);
             return;
         }
+        // Sessions close first (each aborts its own transaction), then the engine.
         Runtime.getRuntime()
                 .addShutdownHook(
-                        new Thread(() -> server.shutdown("interrupted"), "rafendb-shutdown-hook"));
+                        new Thread(
+                                () -> {
+                                    server.shutdown("interrupted");
+                                    engine.close();
+                                },
+                                "rafendb-shutdown-hook"));
         server.start();
         System.out.println(
                 "Listening on port " + server.port() + ". Press Ctrl+C to stop the server.");
         server.awaitStopped();
+        engine.close(); // after a client's \shutdown; idempotent with the hook
     }
 
     /**
@@ -273,6 +292,17 @@ public final class ServerMain {
         System.out.println(
                 "  --timeout=<s>  shutdown waiting timeout in seconds (default "
                         + defaults.shutdownTimeout().toSeconds()
+                        + ")");
+        EngineConfig engine = EngineConfig.defaults();
+        System.out.println("  --dir=<path>   data directory (default " + engine.dir() + ")");
+        System.out.println("  --seed         load the sample database into an empty database");
+        System.out.println("  --protocol=lock|timestamp  concurrency protocol (default lock)");
+        System.out.println(
+                "  --mock=<list>  mock components, any of qp,sm,ccm,frm; mocking sm, ccm,"
+                        + " or frm uses a temporary directory instead of --dir");
+        System.out.println(
+                "  --frames=<n>   buffer pool size in pages (default "
+                        + engine.bufferFrames()
                         + ")");
         System.out.println("  --help         show this help");
         System.out.println("  --version      show the version");
