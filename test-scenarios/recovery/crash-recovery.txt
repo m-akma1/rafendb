@@ -22,4 +22,30 @@
 #   - Record (3) == tidak ada        [UNDO berhasil]
 #
 # Cara Verifikasi Otomatis:
-#   Jalankan FRManagerDriver.runAllTests() -> [TEST] Real Storage Multi-Tx Recovery: PASSED
+#   Jalankan RecoveryDriver.runAllTests() -> [TEST] Real Storage Multi-Tx Recovery: PASSED
+#   atau scripts\run.cmd driver recovery --run=test-scenarios\recovery\crash-recovery.txt
+
+begin 101
+insert 101 accounts 1 Alice
+commit 101
+checkpoint
+begin 102
+insert 102 accounts 2 Bob
+rollback 102
+begin 103
+update-wal 103 accounts 1 Alice-V2
+commit 103
+begin 104
+insert 104 accounts 3 Charlie
+crash
+recover
+assert val accounts 1 Alice-V2
+assert val accounts 2 null
+assert val accounts 3 null
+assert exists accounts 1 true
+assert exists accounts 2 false
+assert exists accounts 3 false
+assert status 101 COMMITTED
+assert status 102 ABORTED
+assert status 103 COMMITTED
+assert status 104 ABORTED

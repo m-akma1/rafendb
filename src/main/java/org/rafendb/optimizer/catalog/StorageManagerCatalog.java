@@ -2,7 +2,7 @@ package org.rafendb.optimizer.catalog;
 
 import java.util.List;
 import java.util.Objects;
-import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.common.schema.IndexInfo;
 import org.rafendb.common.schema.TableSchema;
@@ -14,7 +14,7 @@ import org.rafendb.common.schema.TableStats;
  * <p>Thread-safety follows the supplied storage manager's contract.
  */
 public final class StorageManagerCatalog implements Catalog {
-    private final StorageManager storageManager;
+    private final StorageMetadata storageManager;
 
     /**
      * Creates an adapter; the storage manager must be non-null and thread-safe.
@@ -22,7 +22,7 @@ public final class StorageManagerCatalog implements Catalog {
      * @param storageManager source storage manager
      * @throws NullPointerException if {@code storageManager} is {@code null}
      */
-    public StorageManagerCatalog(StorageManager storageManager) {
+    public StorageManagerCatalog(StorageMetadata storageManager) {
         this.storageManager = Objects.requireNonNull(storageManager, "storageManager");
     }
 

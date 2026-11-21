@@ -39,4 +39,13 @@ public abstract sealed class RafenDBRuntimeException extends RuntimeException
     public String getMessage() {
         return "Runtime error at " + component.displayName() + ": " + super.getMessage();
     }
+
+    /**
+     * Returns the component this error is attributed to.
+     *
+     * @return the component, never {@code null}
+     */
+    public Component component() {
+        return component;
+    }
 }

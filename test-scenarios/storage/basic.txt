@@ -1,4 +1,4 @@
-# Skenario dasar Storage Manager. Jalankan: --run test-scenarios/storage/basic.txt
+# Jalankan di database baru: --dir=data --run=test-scenarios/storage/basic.txt
 sample
 tables
 insert customers 9999 "Uji Coba" 10.5 A
