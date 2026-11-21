@@ -22,9 +22,11 @@ final class ExprBinder {
     record Typed(Expr expr, Kind kind, DataType dataType, String description) {}
 
     private final Scope scope;
+    private final QueryBinder queryBinder;
 
-    ExprBinder(Scope scope) {
+    ExprBinder(Scope scope, QueryBinder queryBinder) {
         this.scope = scope;
+        this.queryBinder = queryBinder;
     }
 
     Typed bind(Expr expr) {
@@ -36,7 +38,7 @@ final class ExprBinder {
                             ? (c.type() == DataType.INTEGER ? Kind.INTEGER : Kind.FLOAT)
                             : Kind.TEXT;
             return new Typed(
-                    new ColumnRef(r.table().qualifier(), c.name(), r.offset()),
+                    new ColumnRef(r.table().qualifier(), c.name(), r.offset(), r.scopeDepth()),
                     kind,
                     c.type(),
                     "column '" + r.table().qualifier() + "." + c.name() + "'");
@@ -50,6 +52,39 @@ final class ExprBinder {
                             ? (type == DataType.INTEGER ? Kind.INTEGER : Kind.FLOAT)
                             : Kind.TEXT;
             return new Typed(expr, kind, type, "literal " + literal.value());
+        }
+        if (expr instanceof Expr.ScalarSubquery subquery) {
+            QueryBinder.SubqueryBinding output =
+                    queryBinder.bindSubquery(subquery.query(), true, scope);
+            return new Typed(
+                    new Expr.ScalarSubquery(output.query()),
+                    output.kind(),
+                    output.dataType(),
+                    "scalar subquery");
+        }
+        if (expr instanceof Expr.ExistsSubquery subquery) {
+            QueryBinder.SubqueryBinding result =
+                    queryBinder.bindSubquery(subquery.query(), false, scope);
+            return new Typed(
+                    new Expr.ExistsSubquery(result.query()), Kind.BOOLEAN, null, "EXISTS subquery");
+        }
+        if (expr instanceof Expr.InSubquery subquery) {
+            Typed value = bind(subquery.value());
+            QueryBinder.SubqueryBinding output =
+                    queryBinder.bindSubquery(subquery.query(), true, scope);
+            requireComparable(
+                    value,
+                    new Typed(
+                            new Expr.ScalarSubquery(output.query()),
+                            output.kind(),
+                            output.dataType(),
+                            "subquery result"),
+                    "IN");
+            return new Typed(
+                    new Expr.InSubquery(value.expr(), output.query()),
+                    Kind.BOOLEAN,
+                    null,
+                    "IN subquery");
         }
         if (!(expr instanceof Binary binary))
             throw new ValidationException("Unsupported expression: " + expr);
@@ -93,14 +128,7 @@ final class ExprBinder {
                 || op == Op.GE
                 || op == Op.LT
                 || op == Op.LE) {
-            require(
-                    left.kind() == Kind.NULL
-                            || right.kind() == Kind.NULL
-                            || numeric(left.kind()) && numeric(right.kind())
-                            || left.kind() == Kind.TEXT && right.kind() == Kind.TEXT,
-                    "Cannot compare incompatible types",
-                    left,
-                    right);
+            requireComparable(left, right, "comparison");
             if (left.kind() == Kind.NULL && right.dataType() != null)
                 rewritten = new Binary(op, typedNull(right.dataType()), right.expr());
             else if (right.kind() == Kind.NULL && left.dataType() != null)
@@ -172,6 +200,19 @@ final class ExprBinder {
 
     private static boolean numeric(Kind kind) {
         return kind == Kind.INTEGER || kind == Kind.FLOAT;
+    }
+
+    private static void requireComparable(Typed left, Typed right, String operation) {
+        require(
+                left.kind() == Kind.NULL
+                        || right.kind() == Kind.NULL
+                        || numeric(left.kind()) && numeric(right.kind())
+                        || left.kind() == Kind.TEXT && right.kind() == Kind.TEXT,
+                operation.equals("comparison")
+                        ? "Cannot compare incompatible types"
+                        : operation + " compares incompatible types",
+                left,
+                right);
     }
 
     private static Expr typedNull(DataType type) {

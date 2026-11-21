@@ -19,10 +19,12 @@ import org.rafendb.common.query.FromItem;
  */
 final class FromBinder {
     private final Scope scope;
+    private final QueryBinder queryBinder;
     private final Set<String> merged = new HashSet<>();
 
-    FromBinder(Scope scope) {
+    FromBinder(Scope scope, QueryBinder queryBinder) {
         this.scope = scope;
+        this.queryBinder = queryBinder;
     }
 
     /** Keys ({@code table.column}, lower case) merged away by NATURAL JOINs seen so far. */
@@ -61,6 +63,6 @@ final class FromBinder {
     }
 
     private ExprBinder conditionBinder(FromItem node) {
-        return new ExprBinder(scope.restrictTo(node.tableRefs()).withHidden(merged));
+        return new ExprBinder(scope.restrictTo(node.tableRefs()).withHidden(merged), queryBinder);
     }
 }
