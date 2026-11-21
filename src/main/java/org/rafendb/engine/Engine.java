@@ -6,13 +6,25 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import org.rafendb.api.concurrency.ProtocolType;
+import org.rafendb.api.optimizer.QueryOptimizer;
 import org.rafendb.api.processor.QueryProcessor;
 import org.rafendb.api.recovery.RecoveryManager;
 import org.rafendb.api.storage.StorageManager;
+import org.rafendb.api.storage.StorageMetadata;
 import org.rafendb.api.storage.WalSync;
 import org.rafendb.common.error.StorageInternalException;
 import org.rafendb.mock.concurrency.MockConcurrencyControl;
 import org.rafendb.mock.processor.MockQueryProcessor;
+import org.rafendb.optimizer.QueryOptimizerImpl;
+import org.rafendb.optimizer.binder.QueryBinder;
+import org.rafendb.optimizer.catalog.CachingCatalog;
+import org.rafendb.optimizer.catalog.Catalog;
+import org.rafendb.optimizer.catalog.StorageManagerCatalog;
+import org.rafendb.optimizer.cost.CostModel;
+import org.rafendb.optimizer.cost.StatsCostModel;
+import org.rafendb.optimizer.join.JoinAccessPathOptimizer;
+import org.rafendb.optimizer.parser.QueryParser;
+import org.rafendb.optimizer.plan.InitialPlanBuilder;
 import org.rafendb.recovery.FRManager;
 import org.rafendb.recovery.log.Logger;
 import org.rafendb.storage.StorageManagerImpl;
@@ -64,6 +76,23 @@ public final class Engine {
      */
     public static Engine withMocks() {
         return new Engine(new MockQueryProcessor(), new MockConcurrencyControl().activeProtocol());
+    }
+
+    /**
+     * Builds one Query Optimizer over the storage's metadata. It is not thread-safe and caches
+     * metadata, so each session gets its own.
+     *
+     * @param storage where table schemas, statistics, and indexes are read from
+     * @return a new optimizer
+     */
+    public static QueryOptimizer optimizer(StorageMetadata storage) {
+        Catalog catalog = new CachingCatalog(new StorageManagerCatalog(storage));
+        CostModel costs = new StatsCostModel(catalog);
+        return new QueryOptimizerImpl(
+                new QueryParser(),
+                new QueryBinder(catalog),
+                new JoinAccessPathOptimizer(storage, costs),
+                new InitialPlanBuilder(costs));
     }
 
     /**

@@ -3,15 +3,33 @@ package org.rafendb.processor.session;
 import java.util.Objects;
 import java.util.function.Supplier;
 import org.rafendb.api.concurrency.ConcurrencyControl;
-import org.rafendb.api.processor.Session.TxState;
+import org.rafendb.api.optimizer.QueryOptimizer;
+import org.rafendb.api.processor.Session;
 import org.rafendb.api.storage.StorageQuery;
 import org.rafendb.common.error.ConcurrencyInternalException;
+import org.rafendb.common.error.OptimizerInternalException;
 import org.rafendb.common.error.ProcessorRuntimeException;
+import org.rafendb.common.plan.QueryPlan;
+import org.rafendb.common.query.ExplainQuery;
+import org.rafendb.common.query.ParsedQuery;
+import org.rafendb.common.query.QueryResult;
+import org.rafendb.common.query.SelectQuery;
+import org.rafendb.common.query.TransactionQuery;
 import org.rafendb.common.txn.TxId;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
 import org.rafendb.processor.api.SessionView;
 import org.rafendb.processor.error.TransactionAbortedException;
+import org.rafendb.processor.expr.DefaultExpressionEvaluator;
+import org.rafendb.processor.operator.index.CreateIndexOp;
+import org.rafendb.processor.operator.index.IndexScanOp;
+import org.rafendb.processor.operator.scan.TableScanOp;
+import org.rafendb.processor.operator.write.DeleteOp;
+import org.rafendb.processor.operator.write.InsertOp;
+import org.rafendb.processor.operator.write.UpdateOp;
+import org.rafendb.processor.plan.DefaultOperatorFactory;
+import org.rafendb.processor.plan.DefaultPlanTranslator;
+import org.rafendb.processor.plan.PlanTranslator;
 
 /**
  * One client's session. It is the only writer of its transaction state; operators read it through
@@ -26,21 +44,57 @@ import org.rafendb.processor.error.TransactionAbortedException;
  * matter whether CCM, an operator, or the session aborted first. If CCM cannot confirm the rollback,
  * the transaction is kept and the session stays FAILED, so a later ABORT retries it.
  *
+ * <p>Each statement is parsed and bound by the session's own optimizer, then dispatched: transaction
+ * statements change the state, a SELECT is optimized, translated, and read in full inside its
+ * transaction.
+ *
  * <p>Used by one thread at a time. {@link #transactionState()} and {@link #close()} may be called
  * from another thread.
  */
-final class SessionImpl implements SessionView {
+final class SessionImpl implements Session, SessionView {
     private final ConcurrencyControl ccm;
     private final StorageQuery storage;
+    private final QueryOptimizer optimizer;
+    private final PlanTranslator translator;
 
     private volatile TxState state = TxState.IDLE;
     private volatile TxId tx;
     private volatile boolean implicit;
     private volatile boolean open = true;
 
-    SessionImpl(ConcurrencyControl ccm, StorageQuery storage) {
+    SessionImpl(ConcurrencyControl ccm, StorageQuery storage, QueryOptimizer optimizer) {
         this.ccm = Objects.requireNonNull(ccm, "ccm");
         this.storage = Objects.requireNonNull(storage, "storage");
+        this.optimizer = Objects.requireNonNull(optimizer, "optimizer");
+        // Operators read this session's transaction through SessionView when they run.
+        this.translator =
+                new DefaultPlanTranslator(
+                        new DefaultOperatorFactory(
+                                DefaultOperatorFactory.bindScan(this, TableScanOp::new),
+                                DefaultOperatorFactory.bindIndexScan(this, IndexScanOp::new),
+                                DefaultOperatorFactory.bindInsert(this, InsertOp::new),
+                                DefaultOperatorFactory.bindUpdate(
+                                        this, new DefaultExpressionEvaluator(), UpdateOp::new),
+                                DefaultOperatorFactory.bindDelete(this, DeleteOp::new),
+                                DefaultOperatorFactory.bindCreateIndex(this, CreateIndexOp::new)));
+    }
+
+    @Override
+    public QueryResult execute(String sql) {
+        Objects.requireNonNull(sql, "sql");
+        requireOpen();
+        try {
+            ParsedQuery query = optimizer.parse(sql);
+            if (state == TxState.FAILED && !isAbort(query)) {
+                throw onlyAbortAccepted();
+            }
+            return dispatch(query);
+        } catch (RuntimeException | Error e) {
+            if (state == TxState.ACTIVE && !implicit) {
+                fail(e); // e.g. a syntax error inside BEGIN; statements already failed themselves
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -63,12 +117,8 @@ final class SessionImpl implements SessionView {
         return storage;
     }
 
-    /**
-     * Returns the transaction state; IDLE once closed.
-     *
-     * @return the state
-     */
-    TxState transactionState() {
+    @Override
+    public TxState transactionState() {
         return open ? state : TxState.IDLE;
     }
 
@@ -143,13 +193,50 @@ final class SessionImpl implements SessionView {
      * Closes the session: rolls back its transaction, if any, and stops its lock waits. Idempotent.
      * A rollback CCM cannot confirm stays with CCM; the session is gone either way.
      */
-    synchronized void close() {
+    @Override
+    public synchronized void close() {
         if (!open) {
             return;
         }
         open = false;
         rollBack();
         end();
+    }
+
+    private QueryResult dispatch(ParsedQuery query) {
+        return switch (query) {
+            case TransactionQuery transaction -> transaction(transaction.kind());
+            case SelectQuery select -> {
+                QueryPlan plan = optimize(select);
+                yield runStatement(() -> ResultMapper.rows(translator.translate(plan)));
+            }
+            case ExplainQuery explain ->
+                    new QueryResult.Status(optimizer.explain(optimize(explain.selectQuery())));
+            default -> throw new ProcessorRuntimeException("This statement is not supported yet");
+        };
+    }
+
+    private QueryResult transaction(TransactionQuery.Kind kind) {
+        switch (kind) {
+            case BEGIN -> begin();
+            case COMMIT -> commit();
+            case ABORT -> abort();
+        }
+        return new QueryResult.Status(kind.name());
+    }
+
+    /** Plans before the transaction starts, so a query that cannot be planned locks nothing. */
+    private QueryPlan optimize(SelectQuery select) {
+        try {
+            return optimizer.optimize(select);
+        } catch (OptimizerInternalException e) {
+            throw new ProcessorRuntimeException("Could not plan the query", e);
+        }
+    }
+
+    private static boolean isAbort(ParsedQuery query) {
+        return query instanceof TransactionQuery transaction
+                && transaction.kind() == TransactionQuery.Kind.ABORT;
     }
 
     /**

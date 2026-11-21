@@ -8,25 +8,35 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.rafendb.api.processor.Session;
 import org.rafendb.api.processor.Session.TxState;
 import org.rafendb.common.error.ConcurrencyInternalException;
 import org.rafendb.common.error.ProcessorRuntimeException;
+import org.rafendb.common.query.QueryResult;
 import org.rafendb.common.txn.TxResult;
 import org.rafendb.common.txn.TxStatus;
+import org.rafendb.common.type.Value;
+import org.rafendb.engine.Engine;
 import org.rafendb.mock.storage.MockStorageManager;
 import org.rafendb.processor.error.TransactionAbortedException;
 import org.rafendb.processor.operator.FakeCcm;
 
 /**
- * The session's transaction state machine against a scripted CCM (which always hands out T1).
+ * The session against a scripted CCM (which always hands out T1), the mock SM's {@code prodi} (3
+ * rows) and {@code mahasiswa} (5 rows), and the real optimizer.
  *
- * <p>Steps: {@code BEGIN}, {@code COMMIT}, {@code ABORT}; {@code RUN} is a statement that needs the
- * transaction; {@code ERR} is a statement that fails; {@code CCMERR} is a statement whose
- * transaction CCM aborted first (as TableLocks and WriteSupport do), so the session aborts again.
+ * <p>State-machine steps: {@code BEGIN}, {@code COMMIT}, {@code ABORT}; {@code RUN} is a statement
+ * that needs the transaction; {@code ERR} is a statement that fails; {@code CCMERR} is a statement
+ * whose transaction CCM aborted first (as TableLocks and WriteSupport do), so the session aborts
+ * again.
  */
 class SessionImplTest {
     private final FakeCcm ccm = new FakeCcm();
-    private final SessionImpl session = new SessionImpl(ccm, new MockStorageManager());
+    private final MockStorageManager storage = new MockStorageManager();
+    private final SessionImpl session =
+            (SessionImpl)
+                    new QueryProcessorImpl(ccm, storage, () -> Engine.optimizer(storage))
+                            .openSession();
 
     @ParameterizedTest(name = "[{index}] {0}: {1}")
     @CsvSource(
@@ -64,6 +74,58 @@ class SessionImplTest {
         assertEquals(events == null ? List.of() : Arrays.asList(events.split(", ")), ccm.events());
     }
 
+    @ParameterizedTest(name = "[{index}] {0}")
+    @CsvSource(
+            delimiter = '~', // one column; SQL may contain ';'
+            textBlock =
+                    """
+            SELECT * FROM prodi => rows3 IDLE
+            SELECT nim, nama FROM mahasiswa WHERE ipk > 3.5; => rows2 IDLE
+            SELECT nama FROM mahasiswa WHERE nim = 13524275 => rows1 IDLE
+            SELECT * FROM mahasiswa JOIN prodi ON mahasiswa.kode_prodi = prodi.kode => rows5 IDLE
+            SELECT * FROM nope => ValidationException IDLE
+            COMMIT => ProcessorRuntimeException IDLE | ABORT => ProcessorRuntimeException IDLE
+            BEGIN => BEGIN ACTIVE | SELECT * FROM prodi => rows3 ACTIVE | COMMIT => COMMIT IDLE
+            BEGIN => BEGIN ACTIVE | BEGIN => ProcessorRuntimeException FAILED | ABORT => ABORT IDLE
+            BEGIN => BEGIN ACTIVE | SELEC * FROM prodi => SyntaxException FAILED | SELECT * FROM prodi => ProcessorRuntimeException FAILED | COMMIT => ProcessorRuntimeException FAILED | ABORT => ABORT IDLE
+            BEGIN => BEGIN ACTIVE | SELECT * FROM nope => ValidationException FAILED | ABORT => ABORT IDLE | SELECT * FROM prodi => rows3 IDLE
+            """)
+    void statementsGiveTheirResultAndLeaveTheSessionInTheExpectedState(String script) {
+        for (String step : script.split("\\|")) {
+            String[] sides = step.split("=>");
+            String[] expected = sides[1].strip().split(" ");
+            assertEquals(expected[0], outcomeOf(sides[0].strip()), step);
+            assertEquals(TxState.valueOf(expected[1]), session.transactionState(), step);
+        }
+    }
+
+    @Test
+    void aSelectReadsUnderTheReadLockOfItsOwnTransaction() {
+        session.execute("SELECT * FROM prodi");
+
+        assertEquals(List.of("ccm.begin", "ccm.access READ prodi", "ccm.commit T1"), ccm.events());
+    }
+
+    @Test
+    void headersAreColumnNamesQualifiedOnlyWhenShared() {
+        var rows =
+                (QueryResult.Rows)
+                        session.execute(
+                                "SELECT mahasiswa.nama, prodi.nama, nim FROM mahasiswa"
+                                        + " JOIN prodi ON mahasiswa.kode_prodi = prodi.kode");
+
+        assertEquals(List.of("mahasiswa.nama", "prodi.nama", "nim"), rows.columns());
+    }
+
+    @Test
+    void orderByDecidesTheRowOrder() {
+        var rows =
+                (QueryResult.Rows) session.execute("SELECT nim FROM mahasiswa ORDER BY nim DESC");
+
+        assertEquals(List.of(Value.ofInt(18224280)), rows.rows().getFirst().values());
+        assertEquals(List.of(Value.ofInt(13224279)), rows.rows().getLast().values());
+    }
+
     @Test
     void closeRollsBackOnceAndEverythingAfterIsRejected() {
         session.begin();
@@ -78,7 +140,14 @@ class SessionImplTest {
         for (String step : List.of("BEGIN", "COMMIT", "ABORT", "RUN")) {
             assertThrows(IllegalStateException.class, action(step), step);
         }
+        assertThrows(IllegalStateException.class, () -> session.execute("SELECT * FROM prodi"));
         assertEquals(2, ccm.events().size(), "a closed session never reaches CCM");
+    }
+
+    @Test
+    void nullSqlIsRejected() {
+        Session open = session;
+        assertThrows(NullPointerException.class, () -> open.execute(null));
     }
 
     private void configure(String setup) {
@@ -119,6 +188,19 @@ class SessionImplTest {
                                     });
             default -> throw new IllegalArgumentException(step);
         };
+    }
+
+    /** {@code rowsN}, the status text, {@code affectedN}, or the simple name of what was thrown. */
+    private String outcomeOf(String sql) {
+        try {
+            return switch (session.execute(sql)) {
+                case QueryResult.Rows rows -> "rows" + rows.rows().size();
+                case QueryResult.Status status -> status.message();
+                case QueryResult.Affected affected -> "affected" + affected.count();
+            };
+        } catch (RuntimeException e) {
+            return e.getClass().getSimpleName();
+        }
     }
 
     /** {@code ok}, or the simple name of what the step threw. */
